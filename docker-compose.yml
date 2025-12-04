@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  querydog:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_SECURE=${CLICKHOUSE_SECURE:-1}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-9440}
+      - CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:-8443}
+      - PORT=3001
+    restart: unless-stopped
