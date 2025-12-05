@@ -61,7 +61,7 @@ const MAP_TYPE_PATTERN = /^Map\(/;
 const TUPLE_TYPE_PATTERN = /^Tuple\(/;
 
 function getColumnWidth(name: string, type: string): number {
-  if (name === 'query') return 350;
+  if (name === 'query') return 700;
   if (name === 'query_id' || name === 'initial_query_id') return 200;
   if (name.includes('time') && !name.includes('_ms')) return 150;
   if (name === 'exception' || name === 'stack_trace') return 250;
@@ -81,7 +81,7 @@ function formatHeaderName(name: string): string {
 const QUERY_LOG_PRIORITY_COLUMNS = ['event_time', 'query_id', 'query'];
 
 // Priority columns for part_log
-const PART_LOG_PRIORITY_COLUMNS = ['event_time'];
+const PART_LOG_PRIORITY_COLUMNS = ['event_time', 'table', 'database', 'event_type', 'part_name'];
 
 // Default visible columns for part_log
 const DEFAULT_VISIBLE_PART_LOG_COLUMNS = new Set([

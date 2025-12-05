@@ -1,10 +1,12 @@
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { useState } from 'react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useQueryStore } from '../stores/queryStore';
-import type { ChartMetric } from '../stores/queryStore';
+import { Activity, Clock } from 'lucide-react';
 import { format } from 'date-fns';
-import { Activity, Clock, HardDrive, Rows3 } from 'lucide-react';
 
-const CHART_CONFIGS: Record<ChartMetric, {
+type PartLogChartMetric = 'count' | 'duration';
+
+const CHART_CONFIGS: Record<PartLogChartMetric, {
   dataKey: string;
   label: string;
   color: string;
@@ -12,41 +14,21 @@ const CHART_CONFIGS: Record<ChartMetric, {
 }> = {
   count: {
     dataKey: 'count',
-    label: 'Queries',
-    color: '#3b82f6',
+    label: 'Events',
+    color: '#10b981',
     formatter: (v) => v.toLocaleString(),
   },
   duration: {
     dataKey: 'avg_duration',
     label: 'Avg Duration',
-    color: '#10b981',
+    color: '#3b82f6',
     formatter: (v) => v >= 1000 ? (v / 1000).toFixed(2) + 's' : v.toFixed(0) + 'ms',
-  },
-  memory: {
-    dataKey: 'avg_memory',
-    label: 'Avg Memory',
-    color: '#f59e0b',
-    formatter: (v) => {
-      if (v >= 1073741824) return (v / 1073741824).toFixed(1) + ' GB';
-      if (v >= 1048576) return (v / 1048576).toFixed(1) + ' MB';
-      if (v >= 1024) return (v / 1024).toFixed(1) + ' KB';
-      return v.toFixed(0) + ' B';
-    },
-  },
-  result_rows: {
-    dataKey: 'avg_result_rows',
-    label: 'Avg Result Rows',
-    color: '#8b5cf6',
-    formatter: (v) => {
-      if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
-      if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
-      return v.toFixed(0);
-    },
   },
 };
 
-export function TimelineChart() {
-  const { timeSeries, bucketSize, loading, chartMetric, setChartMetric } = useQueryStore();
+export function PartLogTimelineChart() {
+  const { partLogTimeSeries, bucketSize, partLogLoading } = useQueryStore();
+  const [chartMetric, setChartMetric] = useState<PartLogChartMetric>('count');
 
   const config = CHART_CONFIGS[chartMetric];
 
@@ -62,11 +44,9 @@ export function TimelineChart() {
     }
   };
 
-  const tabs: { metric: ChartMetric; label: string; icon: typeof Activity }[] = [
+  const tabs: { metric: PartLogChartMetric; label: string; icon: typeof Activity }[] = [
     { metric: 'count', label: 'Count', icon: Activity },
     { metric: 'duration', label: 'Duration', icon: Clock },
-    { metric: 'memory', label: 'Memory', icon: HardDrive },
-    { metric: 'result_rows', label: 'Result Rows', icon: Rows3 },
   ];
 
   const renderTabs = () => (
@@ -88,7 +68,7 @@ export function TimelineChart() {
     </div>
   );
 
-  if (loading && timeSeries.length === 0) {
+  if (partLogLoading && partLogTimeSeries.length === 0) {
     return (
       <div>
         {renderTabs()}
@@ -104,13 +84,14 @@ export function TimelineChart() {
       {renderTabs()}
       <div className="h-36 bg-gray-900 border border-gray-700 rounded">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={timeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }}>
+          <AreaChart data={partLogTimeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }}>
             <defs>
-              <linearGradient id={`color-${chartMetric}`} x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={`partLog-${chartMetric}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={config.color} stopOpacity={0.3} />
                 <stop offset="95%" stopColor={config.color} stopOpacity={0} />
               </linearGradient>
             </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
             <XAxis
               dataKey="time"
               tickFormatter={formatTime}
@@ -139,8 +120,10 @@ export function TimelineChart() {
               type="monotone"
               dataKey={config.dataKey}
               stroke={config.color}
+              strokeWidth={1.5}
               fillOpacity={1}
-              fill={`url(#color-${chartMetric})`}
+              fill={`url(#partLog-${chartMetric})`}
+              isAnimationActive={false}
             />
           </AreaChart>
         </ResponsiveContainer>

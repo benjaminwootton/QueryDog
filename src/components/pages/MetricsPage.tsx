@@ -2,8 +2,8 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef } from 'ag-grid-community';
-import { BarChart2, Clock, RefreshCw, Search } from 'lucide-react';
-import { fetchMetrics, fetchAsyncMetrics } from '../../services/api';
+import { BarChart2, Clock, RefreshCw, Search, Zap } from 'lucide-react';
+import { fetchMetrics, fetchAsyncMetrics, fetchEvents } from '../../services/api';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -13,19 +13,27 @@ const darkTheme = themeAlpine.withParams({
   oddRowBackgroundColor: '#111827',
   rowHoverColor: '#1f2937',
   borderColor: '#374151',
-  foregroundColor: '#f3f4f6',
+  foregroundColor: '#d1d5db',
   headerTextColor: '#f3f4f6',
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-  fontSize: 10,
-  cellTextColor: '#f3f4f6',
+  fontSize: 9,
+  headerFontSize: 11,
+  headerFontWeight: 600,
+  cellTextColor: '#d1d5db',
   rowHeight: 28,
   headerHeight: 30,
 });
 
-type MetricsTab = 'metrics' | 'async';
+type MetricsTab = 'metrics' | 'async' | 'events';
 
 interface MetricRow {
   metric: string;
+  value: number | string;
+  description: string;
+}
+
+interface EventRow {
+  event: string;
   value: number | string;
   description: string;
 }
@@ -43,15 +51,17 @@ export function MetricsPage() {
   const [activeTab, setActiveTab] = useState<MetricsTab>('metrics');
   const [metrics, setMetrics] = useState<MetricRow[]>([]);
   const [asyncMetrics, setAsyncMetrics] = useState<MetricRow[]>([]);
+  const [events, setEvents] = useState<EventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [m, am] = await Promise.all([fetchMetrics(), fetchAsyncMetrics()]);
-      setMetrics(m as MetricRow[]);
-      setAsyncMetrics(am as MetricRow[]);
+      const [m, am, ev] = await Promise.all([fetchMetrics(), fetchAsyncMetrics(), fetchEvents()]);
+      setMetrics(m as unknown as MetricRow[]);
+      setAsyncMetrics(am as unknown as MetricRow[]);
+      setEvents(ev as unknown as EventRow[]);
     } catch (err) {
       console.error('Failed to load metrics:', err);
     } finally {
@@ -63,32 +73,29 @@ export function MetricsPage() {
     loadData();
   }, [loadData]);
 
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
-  }, [loadData]);
-
   const tabs: { id: MetricsTab; label: string; icon: typeof BarChart2 }[] = [
     { id: 'metrics', label: 'Metrics', icon: BarChart2 },
     { id: 'async', label: 'Async Metrics', icon: Clock },
+    { id: 'events', label: 'Events', icon: Zap },
   ];
 
-  const currentData = activeTab === 'metrics' ? metrics : asyncMetrics;
+  const currentData = activeTab === 'events' ? events : (activeTab === 'metrics' ? metrics : asyncMetrics);
+  const nameField = activeTab === 'events' ? 'event' : 'metric';
 
   const filteredData = useMemo(() => {
     if (!search) return currentData;
     const lowerSearch = search.toLowerCase();
-    return currentData.filter(row =>
-      row.metric.toLowerCase().includes(lowerSearch) ||
-      row.description.toLowerCase().includes(lowerSearch)
-    );
+    return currentData.filter(row => {
+      const name = (row as MetricRow).metric || (row as EventRow).event || '';
+      return name.toLowerCase().includes(lowerSearch) ||
+        row.description.toLowerCase().includes(lowerSearch);
+    });
   }, [currentData, search]);
 
-  const columnDefs: ColDef<MetricRow>[] = useMemo(() => [
+  const columnDefs = useMemo((): ColDef<MetricRow | EventRow>[] => [
     {
-      headerName: 'Metric',
-      field: 'metric',
+      headerName: activeTab === 'events' ? 'Event' : 'Metric',
+      field: nameField as 'metric' | 'event',
       sortable: true,
       resizable: true,
       width: 300,
@@ -99,7 +106,8 @@ export function MetricsPage() {
       sortable: true,
       resizable: true,
       width: 150,
-      cellStyle: { textAlign: 'right', color: '#60a5fa' },
+      sort: 'desc',
+      cellStyle: { textAlign: 'right', color: '#60a5fa' } as const,
       valueFormatter: (params) => formatValue(params.value),
       comparator: (a, b) => Number(a) - Number(b),
     },
@@ -109,9 +117,9 @@ export function MetricsPage() {
       sortable: true,
       resizable: true,
       flex: 1,
-      cellStyle: { color: '#9ca3af' },
+      cellStyle: { color: '#9ca3af' } as const,
     },
-  ], []);
+  ], [activeTab, nameField]);
 
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
@@ -159,17 +167,19 @@ export function MetricsPage() {
       </div>
 
       <div className="flex-1 overflow-hidden p-4">
-        <AgGridReact<MetricRow>
-          theme={darkTheme}
-          rowData={filteredData}
-          columnDefs={columnDefs}
-          defaultColDef={defaultColDef}
-          loading={loading}
-          animateRows={false}
-          suppressCellFocus={true}
-          enableCellTextSelection={true}
-          getRowId={(params) => params.data.metric}
-        />
+        <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
+          <AgGridReact<MetricRow | EventRow>
+            theme={darkTheme}
+            rowData={filteredData}
+            columnDefs={columnDefs}
+            defaultColDef={defaultColDef}
+            loading={loading}
+            animateRows={false}
+            suppressCellFocus={true}
+            enableCellTextSelection={true}
+            getRowId={(params) => (params.data as MetricRow).metric || (params.data as EventRow).event}
+          />
+        </div>
       </div>
     </div>
   );

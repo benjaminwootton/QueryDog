@@ -15,11 +15,13 @@ const darkTheme = themeAlpine.withParams({
   oddRowBackgroundColor: '#111827',
   rowHoverColor: '#1f2937',
   borderColor: '#374151',
-  foregroundColor: '#f3f4f6',
+  foregroundColor: '#d1d5db',
   headerTextColor: '#f3f4f6',
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-  fontSize: 10,
-  cellTextColor: '#f3f4f6',
+  fontSize: 9,
+  headerFontSize: 11,
+  headerFontWeight: 600,
+  cellTextColor: '#d1d5db',
   rowHeight: 28,
   headerHeight: 30,
 });
@@ -140,7 +142,7 @@ export function PartLogTable() {
   }), []);
 
   return (
-    <div className="h-full w-full">
+    <div className="h-full w-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
       <AgGridReact<PartLogEntry>
         theme={darkTheme}
         rowData={partLogEntries}

@@ -5,7 +5,7 @@ import { fetchHistogram } from '../services/api';
 import type { HistogramData } from '../types/queryLog';
 import { HISTOGRAM_FIELDS } from '../types/queryLog';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+const COLORS = ['#7dd3fc', '#38bdf8', '#60a5fa', '#93c5fd', '#a5d8ff', '#74c0fc', '#4dabf7', '#339af0', '#228be6', '#1c7ed6'];
 
 interface HistogramCardProps {
   field: string;
@@ -46,7 +46,7 @@ function HistogramCard({ field, label, data, loading, onFilterClick }: Histogram
     <div className="bg-gray-900 border border-gray-700 rounded p-3">
       <h3 className="text-xs font-semibold text-gray-400 mb-3">{label}</h3>
       <div style={{ minHeight: minBoxHeight }}>
-        <BarChart data={displayData} layout="vertical" margin={{ top: 0, right: 10, left: 0, bottom: 0 }} barSize={BAR_HEIGHT} width={280} height={chartHeight}>
+        <BarChart data={displayData} layout="vertical" margin={{ top: 0, right: 10, left: 0, bottom: 0 }} barSize={BAR_HEIGHT} width={360} height={chartHeight}>
           <XAxis type="number" tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
           <YAxis
             type="category"
@@ -68,9 +68,9 @@ function HistogramCard({ field, label, data, loading, onFilterClick }: Histogram
               fontSize: '11px',
             }}
             cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-            formatter={(value: number, name: string, props: { payload: HistogramData }) => [
-              value.toLocaleString(),
-              props.payload.name || '(empty)'
+            formatter={(value, _name, props) => [
+              Number(value).toLocaleString(),
+              (props.payload as HistogramData)?.name || '(empty)'
             ]}
           />
           <Bar
@@ -81,7 +81,7 @@ function HistogramCard({ field, label, data, loading, onFilterClick }: Histogram
               position: 'right',
               fill: '#9ca3af',
               fontSize: 9,
-              formatter: (value: number) => value.toLocaleString(),
+              formatter: (value) => Number(value).toLocaleString(),
             }}
           >
             {displayData.map((_, index) => (
@@ -124,7 +124,8 @@ export function HistogramsTab() {
     };
 
     loadHistograms();
-  }, [timeRange, search, fieldFilters]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRange.start.getTime(), timeRange.end.getTime(), search, fieldFilters]);
 
   const handleFilterClick = (field: string, value: string) => {
     const current = fieldFilters[field] || [];
@@ -135,7 +136,7 @@ export function HistogramsTab() {
 
   return (
     <div className="p-3 overflow-auto h-full">
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {HISTOGRAM_FIELDS.map(({ field, label }) => (
           <HistogramCard
             key={field}

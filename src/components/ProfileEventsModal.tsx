@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { X, Play, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
+import { X, Copy, Check, ExternalLink } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
-import { fetchExplainPlan } from '../services/api';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -38,16 +37,13 @@ function ArrayDisplay({ items, label }: ArrayDisplayProps) {
 
 export function ProfileEventsModal() {
   const { selectedEntry, setSelectedEntry } = useQueryStore();
-  const [explainPlan, setExplainPlan] = useState<string[] | null>(null);
-  const [explainLoading, setExplainLoading] = useState(false);
-  const [explainError, setExplainError] = useState<string | null>(null);
-  const [explainExpanded, setExplainExpanded] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [queryCopied, setQueryCopied] = useState(false);
 
   if (!selectedEntry) return null;
 
-  const profileEvents = selectedEntry.ProfileEvents || {};
-  const settings = selectedEntry.Settings || {};
+  const profileEvents = (selectedEntry.ProfileEvents || {}) as Record<string, number>;
+  const settings = (selectedEntry.Settings || {}) as Record<string, string>;
 
   const sortedEvents = Object.entries(profileEvents)
     .filter(([, value]) => value > 0)
@@ -55,26 +51,26 @@ export function ProfileEventsModal() {
 
   const sortedSettings = Object.entries(settings).sort((a, b) => a[0].localeCompare(b[0]));
 
-  const handleExplainPlan = async () => {
-    setExplainLoading(true);
-    setExplainError(null);
-    try {
-      const result = await fetchExplainPlan(selectedEntry.query as string);
-      // Extract the explain output - typically in 'explain' field
-      const lines = result.map(row => row.explain || row.plan || JSON.stringify(row));
-      setExplainPlan(lines as string[]);
-    } catch (err) {
-      setExplainError(err instanceof Error ? err.message : 'Failed to run explain');
-    } finally {
-      setExplainLoading(false);
+  const handleAnalyseQuery = () => {
+    const query = selectedEntry.query as string;
+    // Use the global function exposed by App.tsx to open the query editor
+    const openQueryEditor = (window as unknown as { openQueryEditor?: (query: string) => void }).openQueryEditor;
+    if (openQueryEditor) {
+      openQueryEditor(query);
+      handleClose();
     }
   };
 
   const handleClose = () => {
     setSelectedEntry(null);
-    setExplainPlan(null);
-    setExplainError(null);
     setCopied(false);
+    setQueryCopied(false);
+  };
+
+  const handleCopyQuery = async () => {
+    await navigator.clipboard.writeText(String(selectedEntry.query || ''));
+    setQueryCopied(true);
+    setTimeout(() => setQueryCopied(false), 2000);
   };
 
   const handleCopyProfileEvents = async () => {
@@ -95,7 +91,7 @@ export function ProfileEventsModal() {
         <div className="flex items-center justify-between p-3 border-b border-gray-700">
           <div>
             <h2 className="text-sm font-semibold text-white">Query Details</h2>
-            <p className="text-xs text-gray-400 font-mono">{selectedEntry.query_id}</p>
+            <p className="text-xs text-gray-400 font-mono">{String(selectedEntry.query_id || '')}</p>
           </div>
           <button onClick={handleClose} className="text-gray-400 hover:text-white">
             <X className="w-4 h-4" />
@@ -106,98 +102,70 @@ export function ProfileEventsModal() {
           {/* Query */}
           <div className="mb-4">
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-xs font-semibold text-gray-400">Query</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-gray-400">Query</h3>
+                <button
+                  onClick={handleCopyQuery}
+                  className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                  title="Copy query"
+                >
+                  {queryCopied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                  {queryCopied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
               <button
-                onClick={handleExplainPlan}
-                disabled={explainLoading}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 rounded text-white"
+                onClick={handleAnalyseQuery}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 rounded text-white"
               >
-                <Play className="w-3 h-3" />
-                {explainLoading ? 'Running...' : 'Explain Plan'}
+                <ExternalLink className="w-3 h-3" />
+                Analyse Query
               </button>
             </div>
             <pre className="bg-gray-800 p-3 rounded text-xs text-gray-300 max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-mono">
-              {selectedEntry.query}
+              {String(selectedEntry.query || '')}
             </pre>
           </div>
-
-          {/* Explain Plan Result */}
-          {(explainPlan || explainError) && (
-            <div className="mb-4">
-              <button
-                onClick={() => setExplainExpanded(!explainExpanded)}
-                className="flex items-center gap-1 text-xs font-semibold text-gray-400 mb-1 hover:text-gray-300"
-              >
-                {explainExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                Explain Plan
-              </button>
-              {explainExpanded && (
-                <>
-                  {explainError ? (
-                    <div className="bg-red-900/30 border border-red-800 p-2 rounded text-xs text-red-300">
-                      {explainError}
-                    </div>
-                  ) : (
-                    <pre className="bg-gray-800 p-3 rounded text-xs text-green-300 max-h-64 overflow-auto whitespace-pre-wrap font-mono">
-                      {explainPlan?.join('\n')}
-                    </pre>
-                  )}
-                </>
-              )}
-            </div>
-          )}
 
           {/* Summary Stats */}
           <div className="grid grid-cols-6 gap-2 mb-4">
             <div className="bg-gray-800 p-2 rounded">
               <div className="text-xs text-gray-400">Duration</div>
-              <div className="text-sm font-semibold text-white">{formatNumber(selectedEntry.query_duration_ms)} ms</div>
+              <div className="text-sm font-semibold text-white">{formatNumber(Number(selectedEntry.query_duration_ms) || 0)} ms</div>
             </div>
             <div className="bg-gray-800 p-2 rounded">
               <div className="text-xs text-gray-400">Memory</div>
-              <div className="text-sm font-semibold text-white">{formatBytes(selectedEntry.memory_usage)}</div>
+              <div className="text-sm font-semibold text-white">{formatBytes(Number(selectedEntry.memory_usage) || 0)}</div>
             </div>
             <div className="bg-gray-800 p-2 rounded">
               <div className="text-xs text-gray-400">Read Rows</div>
-              <div className="text-sm font-semibold text-white">{formatNumber(selectedEntry.read_rows)}</div>
+              <div className="text-sm font-semibold text-white">{formatNumber(Number(selectedEntry.read_rows) || 0)}</div>
             </div>
             <div className="bg-gray-800 p-2 rounded">
               <div className="text-xs text-gray-400">Read Bytes</div>
-              <div className="text-sm font-semibold text-white">{formatBytes(selectedEntry.read_bytes)}</div>
+              <div className="text-sm font-semibold text-white">{formatBytes(Number(selectedEntry.read_bytes) || 0)}</div>
             </div>
             <div className="bg-gray-800 p-2 rounded">
               <div className="text-xs text-gray-400">Result Rows</div>
-              <div className="text-sm font-semibold text-white">{formatNumber(selectedEntry.result_rows)}</div>
+              <div className="text-sm font-semibold text-white">{formatNumber(Number(selectedEntry.result_rows) || 0)}</div>
             </div>
             <div className="bg-gray-800 p-2 rounded">
               <div className="text-xs text-gray-400">Written Rows</div>
-              <div className="text-sm font-semibold text-white">{formatNumber(selectedEntry.written_rows)}</div>
+              <div className="text-sm font-semibold text-white">{formatNumber(Number(selectedEntry.written_rows) || 0)}</div>
             </div>
           </div>
 
           {/* Exception if any */}
-          {selectedEntry.exception && (
+          {Boolean(selectedEntry.exception) && (
             <div className="mb-4">
-              <h3 className="text-xs font-semibold text-red-400 mb-1">Exception (Code: {selectedEntry.exception_code})</h3>
+              <h3 className="text-xs font-semibold text-red-400 mb-1">Exception (Code: {String(selectedEntry.exception_code || '')})</h3>
               <pre className="bg-red-900/30 border border-red-800 p-2 rounded text-xs text-red-300 overflow-x-auto">
-                {selectedEntry.exception}
+                {String(selectedEntry.exception)}
               </pre>
             </div>
           )}
 
-          {/* Arrays Section */}
-          <div className="mb-4">
-            <ArrayDisplay items={selectedEntry.used_functions} label="Used Functions" />
-            <ArrayDisplay items={selectedEntry.used_aggregate_functions} label="Aggregate Functions" />
-            <ArrayDisplay items={selectedEntry.used_table_functions} label="Table Functions" />
-            <ArrayDisplay items={selectedEntry.used_data_type_families} label="Data Types" />
-            <ArrayDisplay items={selectedEntry.databases} label="Databases" />
-            <ArrayDisplay items={selectedEntry.tables} label="Tables" />
-            <ArrayDisplay items={selectedEntry.columns} label="Columns" />
-          </div>
-
           {/* Two column layout for ProfileEvents and Settings */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 mb-4">
             {/* Profile Events */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -263,6 +231,14 @@ export function ProfileEventsModal() {
                 </table>
               </div>
             </div>
+          </div>
+
+          {/* Arrays Section - Used Functions, etc. */}
+          <div>
+            <ArrayDisplay items={(selectedEntry.used_functions || []) as string[]} label="Used Functions" />
+            <ArrayDisplay items={(selectedEntry.used_aggregate_functions || []) as string[]} label="Aggregate Functions" />
+            <ArrayDisplay items={(selectedEntry.used_table_functions || []) as string[]} label="Table Functions" />
+            <ArrayDisplay items={(selectedEntry.used_data_type_families || []) as string[]} label="Data Types" />
           </div>
         </div>
       </div>

@@ -19,6 +19,7 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@tailwindcss/postcss": "^4.1.17",
+    "@xyflow/react": "^12.10.0",
     "ag-grid-community": "^34.3.1",
     "ag-grid-react": "^34.3.1",
     "autoprefixer": "^10.4.22",

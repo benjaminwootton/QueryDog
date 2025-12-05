@@ -1,15 +1,21 @@
-import { Database, BarChart3 } from 'lucide-react';
+import { Database, BarChart3, ChevronLeft, ChevronRight, Activity, Layers } from 'lucide-react';
 import { TimeRangeSelector } from '../TimeRangeSelector';
 import { SearchBar } from '../SearchBar';
 import { TimelineChart } from '../TimelineChart';
 import { QueryTable } from '../QueryTable';
+import { GroupedQueriesTable } from '../GroupedQueriesTable';
 import { HistogramsTab } from '../HistogramsTab';
+import { ProfileEventsTable } from '../ProfileEventsTable';
 import { ColumnSelector } from '../ColumnSelector';
 import { FilterPanel } from '../FilterPanel';
 import { useQueryStore } from '../../stores/queryStore';
 
 export function QueriesPage() {
-  const { activeTab, setActiveTab, totalCount, fieldFilters } = useQueryStore();
+  const { activeTab, setActiveTab, totalCount, fieldFilters, pageSize, currentPage, setCurrentPage } = useQueryStore();
+
+  const totalPages = Math.ceil(totalCount / pageSize);
+  const startRow = currentPage * pageSize + 1;
+  const endRow = Math.min((currentPage + 1) * pageSize, totalCount);
 
   const activeFilterCount = Object.values(fieldFilters).filter((v) => v.length > 0).length;
 
@@ -53,6 +59,28 @@ export function QueriesPage() {
           Queries
         </button>
         <button
+          onClick={() => setActiveTab('grouped')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'grouped'
+              ? 'border-blue-500 text-blue-400'
+              : 'border-transparent text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          <Layers className="w-3 h-3" />
+          Grouped
+        </button>
+        <button
+          onClick={() => setActiveTab('profileEvents')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'profileEvents'
+              ? 'border-blue-500 text-blue-400'
+              : 'border-transparent text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          <Activity className="w-3 h-3" />
+          Profile Events
+        </button>
+        <button
           onClick={() => setActiveTab('histograms')}
           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
             activeTab === 'histograms'
@@ -64,7 +92,35 @@ export function QueriesPage() {
           Histograms
         </button>
         {activeTab === 'queries' && (
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-4">
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-gray-400">
+                  {startRow.toLocaleString()}-{endRow.toLocaleString()} of {totalCount.toLocaleString()}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(currentPage - 1)}
+                    disabled={currentPage === 0}
+                    className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Previous page"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-gray-300 px-2">
+                    {currentPage + 1} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(currentPage + 1)}
+                    disabled={currentPage >= totalPages - 1}
+                    className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Next page"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
             <ColumnSelector />
           </div>
         )}
@@ -73,6 +129,8 @@ export function QueriesPage() {
       {/* Main Content */}
       <div className="flex-1 overflow-hidden p-4">
         {activeTab === 'queries' && <QueryTable />}
+        {activeTab === 'grouped' && <GroupedQueriesTable />}
+        {activeTab === 'profileEvents' && <ProfileEventsTable />}
         {activeTab === 'histograms' && <HistogramsTab />}
       </div>
     </div>

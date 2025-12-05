@@ -8,6 +8,7 @@ import {
   fetchPartLog,
   fetchPartLogCount,
   fetchPartLogColumnMetadata,
+  fetchPartLogTimeSeries,
 } from '../services/api';
 import { createColumnsFromMetadata } from '../types/queryLog';
 
@@ -20,8 +21,13 @@ export function useQueryData() {
     rangeFilters,
     sortField,
     sortOrder,
+    pageSize,
+    currentPage,
     partLogSortField,
     partLogSortOrder,
+    partLogFieldFilters,
+    partLogPageSize,
+    partLogCurrentPage,
     setEntries,
     setTimeSeries,
     setTotalCount,
@@ -29,6 +35,7 @@ export function useQueryData() {
     setError,
     setColumns,
     setPartLogEntries,
+    setPartLogTimeSeries,
     setPartLogTotalCount,
     setPartLogLoading,
     setPartLogColumns,
@@ -75,9 +82,11 @@ export function useQueryData() {
     setLoading(true);
     setError(null);
 
+    const offset = currentPage * pageSize;
+
     try {
       const [entries, timeSeries, total] = await Promise.all([
-        fetchQueryLog(timeRange, search, sortField, sortOrder, fieldFilters, rangeFilters),
+        fetchQueryLog(timeRange, search, sortField, sortOrder, fieldFilters, rangeFilters, pageSize, offset),
         fetchTimeSeries(timeRange, bucketSize, search, fieldFilters, rangeFilters),
         fetchTotalCount(timeRange, search, fieldFilters, rangeFilters),
       ]);
@@ -90,14 +99,18 @@ export function useQueryData() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    timeRange,
+    timeRange.start.getTime(),
+    timeRange.end.getTime(),
     bucketSize,
     search,
     fieldFilters,
     rangeFilters,
     sortField,
     sortOrder,
+    pageSize,
+    currentPage,
     setEntries,
     setTimeSeries,
     setTotalCount,
@@ -108,24 +121,35 @@ export function useQueryData() {
   const loadPartLogData = useCallback(async () => {
     setPartLogLoading(true);
 
+    const offset = partLogCurrentPage * partLogPageSize;
+
     try {
-      const [entries, total] = await Promise.all([
-        fetchPartLog(timeRange, partLogSortField, partLogSortOrder),
-        fetchPartLogCount(timeRange),
+      const [entries, timeSeries, total] = await Promise.all([
+        fetchPartLog(timeRange, partLogSortField, partLogSortOrder, partLogFieldFilters, partLogPageSize, offset),
+        fetchPartLogTimeSeries(timeRange, bucketSize, partLogFieldFilters),
+        fetchPartLogCount(timeRange, partLogFieldFilters),
       ]);
 
       setPartLogEntries(entries);
+      setPartLogTimeSeries(timeSeries);
       setPartLogTotalCount(total);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load part log data');
     } finally {
       setPartLogLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    timeRange,
+    timeRange.start.getTime(),
+    timeRange.end.getTime(),
+    bucketSize,
     partLogSortField,
     partLogSortOrder,
+    partLogFieldFilters,
+    partLogPageSize,
+    partLogCurrentPage,
     setPartLogEntries,
+    setPartLogTimeSeries,
     setPartLogTotalCount,
     setPartLogLoading,
     setError,

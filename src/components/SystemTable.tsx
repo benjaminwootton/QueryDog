@@ -14,11 +14,13 @@ const darkTheme = themeAlpine.withParams({
   oddRowBackgroundColor: '#111827',
   rowHoverColor: '#1f2937',
   borderColor: '#374151',
-  foregroundColor: '#f3f4f6',
+  foregroundColor: '#d1d5db',
   headerTextColor: '#f3f4f6',
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-  fontSize: 10,
-  cellTextColor: '#f3f4f6',
+  fontSize: 9,
+  headerFontSize: 11,
+  headerFontWeight: 600,
+  cellTextColor: '#d1d5db',
   rowHeight: 28,
   headerHeight: 30,
 });
@@ -51,14 +53,16 @@ function ArrayCellRenderer({ value }: { value: unknown[] }) {
 }
 
 interface SystemTableProps {
-  title: string;
-  fetchData: () => Promise<Record<string, unknown>[]>;
+  title?: string;
+  fetchData: (filters?: Record<string, string[]>) => Promise<Record<string, unknown>[]>;
   fetchColumns?: () => Promise<ColumnMetadata[]>;
   defaultColumns?: ColumnConfig[];
+  defaultVisibleFields?: string[];
+  filters?: Record<string, string[]>;
   getRowId?: (data: Record<string, unknown>) => string;
   onSortChange?: (field: string, order: 'ASC' | 'DESC') => void;
-  autoRefresh?: boolean;
-  refreshInterval?: number;
+  hideTitle?: boolean;
+  hideHeader?: boolean;
 }
 
 export function SystemTable({
@@ -66,10 +70,12 @@ export function SystemTable({
   fetchData,
   fetchColumns,
   defaultColumns,
+  defaultVisibleFields,
+  filters,
   getRowId,
   onSortChange,
-  autoRefresh = false,
-  refreshInterval = 5000,
+  hideTitle = false,
+  hideHeader = false,
 }: SystemTableProps) {
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns || []);
@@ -86,36 +92,44 @@ export function SystemTable({
     fetchColumns()
       .then((metadata) => {
         const cols = createColumnsFromMetadata(metadata, 'query_log');
-        // Make all columns visible by default for system tables
-        setColumns(cols.map(c => ({ ...c, visible: true })));
+        // If defaultVisibleFields is provided, only show those and sort by that order
+        if (defaultVisibleFields && defaultVisibleFields.length > 0) {
+          const visibleSet = new Set(defaultVisibleFields);
+          const sortedCols = cols
+            .map(c => ({ ...c, visible: visibleSet.has(c.field) }))
+            .sort((a, b) => {
+              const aIndex = defaultVisibleFields.indexOf(a.field);
+              const bIndex = defaultVisibleFields.indexOf(b.field);
+              if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+              if (aIndex !== -1) return -1;
+              if (bIndex !== -1) return 1;
+              return 0;
+            });
+          setColumns(sortedCols);
+        } else {
+          setColumns(cols.map(c => ({ ...c, visible: true })));
+        }
       })
       .catch((err) => console.error('Failed to load columns:', err));
-  }, [fetchColumns]);
+  }, [fetchColumns, defaultVisibleFields]);
 
   // Load data
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchData();
+      const result = await fetchData(filters);
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
       setLoading(false);
     }
-  }, [fetchData]);
+  }, [fetchData, filters]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  // Auto-refresh
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(loadData, refreshInterval);
-    return () => clearInterval(interval);
-  }, [autoRefresh, refreshInterval, loadData]);
 
   const toggleColumnVisibility = useCallback((field: string) => {
     setColumns(cols => cols.map(c => c.field === field ? { ...c, visible: !c.visible } : c));
@@ -179,61 +193,63 @@ export function SystemTable({
   }), []);
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-900/50 border-b border-gray-700">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-white">{title}</h2>
-          <span className="text-xs text-gray-400">{data.length.toLocaleString()} rows</span>
-          {error && <span className="text-xs text-red-400">{error}</span>}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-          {columns.length > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => setColumnSelectorOpen(!columnSelectorOpen)}
-                className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
-                title="Configure columns"
-              >
-                <Settings className="w-3.5 h-3.5" />
-              </button>
-              {columnSelectorOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setColumnSelectorOpen(false)} />
-                  <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg z-50 min-w-[200px]">
-                    <div className="flex items-center justify-between p-2 border-b border-gray-700">
-                      <span className="text-xs font-semibold text-gray-300">Columns</span>
-                      <button onClick={() => setColumnSelectorOpen(false)} className="text-gray-400 hover:text-white">
-                        <X className="w-3 h-3" />
-                      </button>
+    <div className="h-full flex flex-col bg-gray-900 border border-gray-700 rounded overflow-hidden">
+      {!hideHeader && (
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-900/50 border-b border-gray-700">
+          <div className="flex items-center gap-3">
+            {!hideTitle && title && <h2 className="text-sm font-semibold text-white">{title}</h2>}
+            <span className="text-xs text-gray-400">{data.length.toLocaleString()} rows</span>
+            {error && <span className="text-xs text-red-400">{error}</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadData}
+              disabled={loading}
+              className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
+              title="Refresh"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            {columns.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setColumnSelectorOpen(!columnSelectorOpen)}
+                  className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+                  title="Configure columns"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                </button>
+                {columnSelectorOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setColumnSelectorOpen(false)} />
+                    <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg z-50 min-w-[200px]">
+                      <div className="flex items-center justify-between p-2 border-b border-gray-700">
+                        <span className="text-xs font-semibold text-gray-300">Columns</span>
+                        <button onClick={() => setColumnSelectorOpen(false)} className="text-gray-400 hover:text-white">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto p-1">
+                        {columns.map((col) => (
+                          <label key={col.field} className="flex items-center gap-2 p-1.5 hover:bg-gray-700 rounded cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={col.visible}
+                              onChange={() => toggleColumnVisibility(col.field)}
+                              className="w-3 h-3 rounded border-gray-500 bg-gray-700 text-blue-500"
+                            />
+                            <span className="text-xs text-gray-300">{col.headerName}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                    <div className="max-h-64 overflow-y-auto p-1">
-                      {columns.map((col) => (
-                        <label key={col.field} className="flex items-center gap-2 p-1.5 hover:bg-gray-700 rounded cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={col.visible}
-                            onChange={() => toggleColumnVisibility(col.field)}
-                            className="w-3 h-3 rounded border-gray-500 bg-gray-700 text-blue-500"
-                          />
-                          <span className="text-xs text-gray-300">{col.headerName}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <div className="flex-1">
         <AgGridReact
           theme={darkTheme}

@@ -32,21 +32,21 @@ export function InstancePage() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden p-4">
         {activeTab === 'users' && (
           <SystemTable
-            title="system.users"
             fetchData={fetchUsers}
             fetchColumns={fetchUsersColumns}
             getRowId={(data) => String(data.name)}
+            hideHeader
           />
         )}
         {activeTab === 'settings' && (
           <SystemTable
-            title="system.settings"
             fetchData={fetchSettings}
             fetchColumns={fetchSettingsColumns}
             getRowId={(data) => String(data.name)}
+            hideHeader
           />
         )}
       </div>
