@@ -21,6 +21,7 @@ interface ConnectionInfo {
   host: string;
   port: string;
   secure: boolean;
+  user: string;
 }
 
 function App() {
@@ -133,7 +134,7 @@ function App() {
           {error && <span className="text-xs text-red-400">{error}</span>}
           {connectionInfo && (
             <span className="text-xs text-gray-400 font-mono">
-              {connectionInfo.secure ? 'https://' : ''}{connectionInfo.host}:{connectionInfo.port}
+              {connectionInfo.user}@{connectionInfo.host}:{connectionInfo.port}
             </span>
           )}
           <button

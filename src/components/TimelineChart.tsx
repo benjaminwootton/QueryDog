@@ -330,11 +330,15 @@ export function TimelineChart() {
                 cursor={{ fill: 'transparent' }}
                 labelFormatter={formatTime}
                 formatter={(value: number, name: string) => [value.toLocaleString(), name]}
+                itemSorter={(item) => {
+                  const order = { Select: 0, Insert: 1, Delete: 2, Other: 3 };
+                  return order[item.dataKey as keyof typeof order] ?? 4;
+                }}
               />
               <Bar dataKey="Select" stackId="1" fill="#10b981" fillOpacity={0.8} />
               <Bar dataKey="Insert" stackId="1" fill="#60a5fa" fillOpacity={0.8} />
               <Bar dataKey="Delete" stackId="1" fill="#ef4444" fillOpacity={0.8} />
-              <Bar dataKey="Other" stackId="1" fill="#9ca3af" fillOpacity={0.8} />
+              <Bar dataKey="Other" stackId="1" fill="#a855f7" fillOpacity={0.8} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -352,7 +356,7 @@ export function TimelineChart() {
             <span className="text-gray-400">Delete</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: '#9ca3af' }} />
+            <div className="w-3 h-3 rounded" style={{ backgroundColor: '#a855f7' }} />
             <span className="text-gray-400">Other</span>
           </div>
         </div>
@@ -382,8 +386,8 @@ export function TimelineChart() {
                   <stop offset="95%" stopColor="#ef4444" stopOpacity={0.1} />
                 </linearGradient>
                 <linearGradient id="color-other" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#9ca3af" stopOpacity={0.6} />
-                  <stop offset="95%" stopColor="#9ca3af" stopOpacity={0.1} />
+                  <stop offset="5%" stopColor="#a855f7" stopOpacity={0.6} />
+                  <stop offset="95%" stopColor="#a855f7" stopOpacity={0.1} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -410,6 +414,10 @@ export function TimelineChart() {
                 }}
                 labelFormatter={formatTime}
                 formatter={(value: number, name: string) => [value.toLocaleString(), name]}
+                itemSorter={(item) => {
+                  const order = { Select: 0, Insert: 1, Delete: 2, Other: 3 };
+                  return order[item.dataKey as keyof typeof order] ?? 4;
+                }}
               />
               <Area
                 type="monotone"
@@ -436,7 +444,7 @@ export function TimelineChart() {
                 type="monotone"
                 dataKey="Other"
                 stackId="1"
-                stroke="#9ca3af"
+                stroke="#a855f7"
                 fill="url(#color-other)"
               />
             </AreaChart>
@@ -456,7 +464,7 @@ export function TimelineChart() {
             <span className="text-gray-400">Delete</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: '#9ca3af' }} />
+            <div className="w-3 h-3 rounded" style={{ backgroundColor: '#a855f7' }} />
             <span className="text-gray-400">Other</span>
           </div>
         </div>

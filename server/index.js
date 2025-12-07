@@ -31,6 +31,7 @@ app.get('/api/connection-info', (req, res) => {
     host: process.env.CLICKHOUSE_HOST,
     port: process.env.CLICKHOUSE_PORT_HTTP,
     secure: process.env.CLICKHOUSE_SECURE === '1',
+    user: process.env.CLICKHOUSE_USER,
   });
 });
 
@@ -2431,6 +2432,6 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 8001;
-app.listen(PORT, () => {
-  console.log(`QueryDog running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`QueryDog running on http://0.0.0.0:${PORT}`);
 });

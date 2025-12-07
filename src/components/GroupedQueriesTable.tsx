@@ -141,10 +141,10 @@ export function GroupedQueriesTable() {
     {
       headerName: '',
       field: 'normalized_query_hash',
-      width: 40,
+      width: 44,
       sortable: false,
       cellRenderer: ActionCellRenderer,
-      cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' } as CellStyle,
+      cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 } as CellStyle,
     },
     {
       headerName: 'Last Seen',
