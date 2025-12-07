@@ -3,12 +3,14 @@ import { useQueryStore } from '../stores/queryStore';
 import {
   fetchQueryLog,
   fetchTimeSeries,
+  fetchStackedTimeSeries,
   fetchTotalCount,
   fetchColumnMetadata,
   fetchPartLog,
   fetchPartLogCount,
   fetchPartLogColumnMetadata,
   fetchPartLogTimeSeries,
+  fetchPartLogStackedTimeSeries,
 } from '../services/api';
 import { createColumnsFromMetadata } from '../types/queryLog';
 
@@ -23,6 +25,7 @@ export function useQueryData() {
     sortOrder,
     pageSize,
     currentPage,
+    chartType,
     partLogSortField,
     partLogSortOrder,
     partLogFieldFilters,
@@ -30,12 +33,14 @@ export function useQueryData() {
     partLogCurrentPage,
     setEntries,
     setTimeSeries,
+    setStackedTimeSeries,
     setTotalCount,
     setLoading,
     setError,
     setColumns,
     setPartLogEntries,
     setPartLogTimeSeries,
+    setPartLogStackedTimeSeries,
     setPartLogTotalCount,
     setPartLogLoading,
     setPartLogColumns,
@@ -85,14 +90,16 @@ export function useQueryData() {
     const offset = currentPage * pageSize;
 
     try {
-      const [entries, timeSeries, total] = await Promise.all([
+      const [entries, timeSeries, stackedSeries, total] = await Promise.all([
         fetchQueryLog(timeRange, search, sortField, sortOrder, fieldFilters, rangeFilters, pageSize, offset),
         fetchTimeSeries(timeRange, bucketSize, search, fieldFilters, rangeFilters),
+        fetchStackedTimeSeries(timeRange, bucketSize, search, fieldFilters, rangeFilters),
         fetchTotalCount(timeRange, search, fieldFilters, rangeFilters),
       ]);
 
       setEntries(entries);
       setTimeSeries(timeSeries);
+      setStackedTimeSeries(stackedSeries);
       setTotalCount(total);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -111,8 +118,10 @@ export function useQueryData() {
     sortOrder,
     pageSize,
     currentPage,
+    chartType,
     setEntries,
     setTimeSeries,
+    setStackedTimeSeries,
     setTotalCount,
     setLoading,
     setError,
@@ -124,14 +133,16 @@ export function useQueryData() {
     const offset = partLogCurrentPage * partLogPageSize;
 
     try {
-      const [entries, timeSeries, total] = await Promise.all([
+      const [entries, timeSeries, stackedSeries, total] = await Promise.all([
         fetchPartLog(timeRange, partLogSortField, partLogSortOrder, partLogFieldFilters, partLogPageSize, offset),
         fetchPartLogTimeSeries(timeRange, bucketSize, partLogFieldFilters),
+        fetchPartLogStackedTimeSeries(timeRange, bucketSize, partLogFieldFilters),
         fetchPartLogCount(timeRange, partLogFieldFilters),
       ]);
 
       setPartLogEntries(entries);
       setPartLogTimeSeries(timeSeries);
+      setPartLogStackedTimeSeries(stackedSeries);
       setPartLogTotalCount(total);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load part log data');
@@ -150,6 +161,7 @@ export function useQueryData() {
     partLogCurrentPage,
     setPartLogEntries,
     setPartLogTimeSeries,
+    setPartLogStackedTimeSeries,
     setPartLogTotalCount,
     setPartLogLoading,
     setError,

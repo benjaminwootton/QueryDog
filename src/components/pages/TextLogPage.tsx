@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
-import { FileText, ChevronLeft, ChevronRight, Filter, X, Search, Activity } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { FileText, ChevronLeft, ChevronRight, Filter, X, Search, Activity, AlertTriangle } from 'lucide-react';
+import { AgGridReact } from 'ag-grid-react';
+import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import type { ColDef, ICellRendererParams, RowClickedEvent, SortChangedEvent } from 'ag-grid-community';
 import { useQueryStore } from '../../stores/queryStore';
 import {
   fetchTextLog,
@@ -10,7 +13,29 @@ import {
   type TextLogTimeSeriesPoint,
 } from '../../services/api';
 import { TimeRangeSelector } from '../TimeRangeSelector';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { addSeconds, addMinutes, addHours } from 'date-fns';
+
+// Register AG Grid Community modules
+ModuleRegistry.registerModules([AllCommunityModule]);
+
+// Create dark theme with JetBrains Mono for cells, lighter weight
+const darkTheme = themeAlpine.withParams({
+  backgroundColor: '#111827',
+  headerBackgroundColor: '#1f2937',
+  oddRowBackgroundColor: '#111827',
+  rowHoverColor: '#1f2937',
+  borderColor: '#374151',
+  foregroundColor: '#9ca3af',
+  headerTextColor: '#f3f4f6',
+  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  fontSize: 9,
+  headerFontSize: 11,
+  headerFontWeight: 600,
+  cellTextColor: '#9ca3af',
+  rowHeight: 26,
+  headerHeight: 30,
+});
 
 function formatDateTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -19,7 +44,6 @@ function formatDateTime(dateStr: string): string {
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
   });
 }
 
@@ -43,7 +67,7 @@ function getLevelColor(level: string): string {
 }
 
 export function TextLogPage() {
-  const { timeRange, bucketSize } = useQueryStore();
+  const { timeRange, bucketSize, setTimeRange } = useQueryStore();
 
   const [entries, setEntries] = useState<TextLogEntry[]>([]);
   const [timeSeries, setTimeSeries] = useState<TextLogTimeSeriesPoint[]>([]);
@@ -52,15 +76,32 @@ export function TextLogPage() {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [filters, setFilters] = useState<Record<string, string[]>>({});
-  const [sortField] = useState('event_time');
-  const [sortOrder] = useState<'ASC' | 'DESC'>('DESC');
+  const [sortField, setSortField] = useState('event_time');
+  const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
   const [currentPage, setCurrentPage] = useState(0);
   const [selectedEntry, setSelectedEntry] = useState<TextLogEntry | null>(null);
 
   // Filter dropdown state
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const [levelOptions, setLevelOptions] = useState<string[]>([]);
-  const [loggerOptions, setLoggerOptions] = useState<string[]>([]);
+
+  // Chart tab state
+  const [chartTab, setChartTab] = useState<'count' | 'errors'>('count');
+
+  // Handle tab change with filter update
+  const handleChartTabChange = useCallback((tab: 'count' | 'errors') => {
+    setChartTab(tab);
+    if (tab === 'errors') {
+      setFilters(prev => ({ ...prev, level: ['Error', 'Warning', 'Fatal'] }));
+    } else {
+      // When switching back to count, remove the level filter
+      setFilters(prev => {
+        const { level: _, ...rest } = prev;
+        return rest;
+      });
+    }
+    setCurrentPage(0);
+  }, []);
 
   const pageSize = 500;
 
@@ -84,13 +125,9 @@ export function TextLogPage() {
 
   // Load filter options
   useEffect(() => {
-    Promise.all([
-      fetchTextLogDistinct('level', timeRange),
-      fetchTextLogDistinct('logger_name', timeRange),
-    ]).then(([levels, loggers]) => {
-      setLevelOptions(levels);
-      setLoggerOptions(loggers.slice(0, 50)); // Limit to 50
-    }).catch(console.error);
+    fetchTextLogDistinct('level', timeRange)
+      .then(setLevelOptions)
+      .catch(console.error);
   }, [timeRange]);
 
   useEffect(() => {
@@ -131,6 +168,94 @@ export function TextLogPage() {
     setCurrentPage(0);
   };
 
+  // AG Grid column definitions
+  const columnDefs: ColDef<TextLogEntry>[] = useMemo(() => [
+    {
+      headerName: 'Time',
+      field: 'event_time',
+      width: 160,
+      sortable: true,
+      sort: 'desc',
+      valueFormatter: (params) => formatDateTime(params.value),
+    },
+    {
+      headerName: 'Level',
+      field: 'level',
+      width: 90,
+      sortable: true,
+      cellRenderer: (params: ICellRendererParams<TextLogEntry>) => (
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${getLevelColor(params.value)}`}>
+          {params.value}
+        </span>
+      ),
+    },
+    {
+      headerName: 'Logger',
+      field: 'logger_name',
+      width: 180,
+      sortable: true,
+      tooltipField: 'logger_name',
+    },
+    {
+      headerName: 'Message',
+      field: 'message',
+      flex: 1,
+      minWidth: 300,
+      sortable: false,
+      tooltipField: 'message',
+    },
+  ], []);
+
+  const defaultColDef = useMemo(() => ({
+    resizable: true,
+  }), []);
+
+  const onSortChanged = useCallback((event: SortChangedEvent) => {
+    const sortModel = event.api.getColumnState().find(c => c.sort);
+    if (sortModel) {
+      setSortField(sortModel.colId);
+      setSortOrder(sortModel.sort === 'asc' ? 'ASC' : 'DESC');
+    }
+  }, []);
+
+  const onRowClicked = useCallback((event: RowClickedEvent<TextLogEntry>) => {
+    if (event.data) {
+      setSelectedEntry(selectedEntry?.event_time === event.data.event_time &&
+                       selectedEntry?.message === event.data.message ? null : event.data);
+    }
+  }, [selectedEntry]);
+
+  // Handle click on chart to filter to that time bucket
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleChartClick = useCallback((data: any) => {
+    const timeStr = data?.activeLabel;
+    if (!timeStr) return;
+
+    const clickedTime = new Date(timeStr.replace(' ', 'T'));
+    if (isNaN(clickedTime.getTime())) return;
+
+    let endTime: Date;
+    switch (bucketSize) {
+      case 'second':
+        endTime = addSeconds(clickedTime, 1);
+        break;
+      case 'hour':
+        endTime = addHours(clickedTime, 1);
+        break;
+      default:
+        endTime = addMinutes(clickedTime, 1);
+        break;
+    }
+
+    setTimeRange({ start: clickedTime, end: endTime });
+
+    // If clicking on Errors & Warnings chart, also set the level filter
+    if (chartTab === 'errors') {
+      setFilters(prev => ({ ...prev, level: ['Error', 'Warning', 'Fatal'] }));
+      setCurrentPage(0);
+    }
+  }, [bucketSize, setTimeRange, chartTab]);
+
   const totalPages = Math.ceil(totalCount / pageSize);
   const startRow = currentPage * pageSize + 1;
   const endRow = Math.min((currentPage + 1) * pageSize, totalCount);
@@ -161,65 +286,30 @@ export function TextLogPage() {
             {filterDropdownOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setFilterDropdownOpen(false)} />
-                <div className="absolute left-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg z-50 min-w-[280px]">
+                <div className="absolute left-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg z-50 min-w-[180px]">
                   <div className="flex items-center justify-between p-2 border-b border-gray-700">
-                    <span className="text-xs font-semibold text-gray-300">Filters</span>
-                    <div className="flex items-center gap-2">
-                      {activeFilterCount > 0 && (
-                        <button
-                          onClick={clearFilters}
-                          className="text-xs text-red-400 hover:text-red-300"
-                        >
-                          Clear all
-                        </button>
-                      )}
-                      <button onClick={() => setFilterDropdownOpen(false)} className="text-gray-400 hover:text-white">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
+                    <span className="text-xs font-semibold text-gray-300">Level</span>
+                    <button onClick={() => setFilterDropdownOpen(false)} className="text-gray-400 hover:text-white">
+                      <X className="w-3 h-3" />
+                    </button>
                   </div>
-                  <div className="max-h-96 overflow-y-auto">
-                    {/* Level filter */}
-                    <div className="p-2 border-b border-gray-700/50">
-                      <div className="text-[10px] text-gray-400 uppercase mb-1">Level</div>
-                      <div className="flex flex-wrap gap-1">
-                        {levelOptions.map(level => (
-                          <button
-                            key={level}
-                            onClick={() => toggleFilter('level', level)}
-                            className={`px-2 py-1 text-xs rounded transition-colors ${
-                              filters.level?.includes(level)
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            }`}
-                          >
-                            {level}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Logger filter */}
-                    <div className="p-2">
-                      <div className="text-[10px] text-gray-400 uppercase mb-1">Logger (top 50)</div>
-                      <div className="max-h-40 overflow-y-auto">
-                        <div className="flex flex-wrap gap-1">
-                          {loggerOptions.map(logger => (
-                            <button
-                              key={logger}
-                              onClick={() => toggleFilter('logger_name', logger)}
-                              className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
-                                filters.logger_name?.includes(logger)
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                              }`}
-                            >
-                              {logger}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                  <div className="p-2 space-y-1">
+                    {levelOptions.map(level => (
+                      <label
+                        key={level}
+                        className="flex items-center gap-2 cursor-pointer hover:bg-gray-700/50 rounded px-1 py-0.5"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={filters.level?.includes(level) || false}
+                          onChange={() => toggleFilter('level', level)}
+                          className="w-3 h-3 rounded border-gray-500 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+                        />
+                        <span className={`text-xs ${getLevelColor(level)} px-1.5 py-0.5 rounded`}>
+                          {level}
+                        </span>
+                      </label>
+                    ))}
                   </div>
                 </div>
               </>
@@ -289,15 +379,36 @@ export function TextLogPage() {
       <div className="px-4 pt-4 pb-3 shrink-0">
         <div className="flex gap-1 border-b border-gray-700 mb-2">
           <button
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors border-blue-500 text-blue-400"
+            onClick={() => handleChartTabChange('count')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              chartTab === 'count'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
           >
             <Activity className="w-3 h-3" />
             Count
           </button>
+          <button
+            onClick={() => handleChartTabChange('errors')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              chartTab === 'errors'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            <AlertTriangle className="w-3 h-3" />
+            Errors & Warnings
+          </button>
         </div>
-        <div className="h-36 bg-gray-900 border border-gray-700 rounded">
+        <div className="h-36 bg-gray-900 border border-gray-700 rounded relative cursor-pointer">
+          {loading && timeSeries.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-gray-400 text-xs">Loading...</span>
+            </div>
+          )}
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={timeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }}>
+            <AreaChart data={timeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }} onClick={handleChartClick}>
               <defs>
                 <linearGradient id="color-total" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -338,10 +449,15 @@ export function TextLogPage() {
                 }}
                 labelFormatter={(value) => new Date(value).toLocaleString()}
               />
-              <Legend wrapperStyle={{ fontSize: '10px' }} />
-              <Area type="monotone" dataKey="count" name="Total" stroke="#3b82f6" fillOpacity={1} fill="url(#color-total)" />
-              <Area type="monotone" dataKey="errors" name="Errors" stroke="#ef4444" fillOpacity={1} fill="url(#color-errors)" />
-              <Area type="monotone" dataKey="warnings" name="Warnings" stroke="#eab308" fillOpacity={1} fill="url(#color-warnings)" />
+              {chartTab === 'count' && (
+                <Area type="monotone" dataKey="count" name="Total" stroke="#3b82f6" fillOpacity={1} fill="url(#color-total)" />
+              )}
+              {chartTab === 'errors' && (
+                <>
+                  <Area type="monotone" dataKey="errors" name="Errors" stroke="#ef4444" fillOpacity={1} fill="url(#color-errors)" />
+                  <Area type="monotone" dataKey="warnings" name="Warnings" stroke="#eab308" fillOpacity={1} fill="url(#color-warnings)" />
+                </>
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -387,46 +503,22 @@ export function TextLogPage() {
         </div>
       </div>
 
-      {/* Log entries table */}
-      <div className="flex-1 overflow-auto p-4">
-        <div className="border border-gray-700 rounded overflow-hidden">
-          <table className="w-full text-xs">
-            <thead className="bg-gray-800 sticky top-0 z-10">
-              <tr>
-                <th className="w-36 px-2 py-2 text-left text-gray-400 font-medium border-b border-gray-700">Time</th>
-                <th className="w-20 px-2 py-2 text-left text-gray-400 font-medium border-b border-gray-700">Level</th>
-                <th className="w-40 px-2 py-2 text-left text-gray-400 font-medium border-b border-gray-700">Logger</th>
-                <th className="px-2 py-2 text-left text-gray-400 font-medium border-b border-gray-700">Message</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry, idx) => (
-                <tr
-                  key={`${entry.event_time}-${idx}`}
-                  className={`border-b border-gray-800 hover:bg-gray-800/50 cursor-pointer ${
-                    idx % 2 === 0 ? 'bg-gray-900/30' : ''
-                  } ${selectedEntry === entry ? 'bg-blue-900/30' : ''}`}
-                  onClick={() => setSelectedEntry(selectedEntry === entry ? null : entry)}
-                >
-                  <td className="px-2 py-1.5 text-gray-400 font-mono whitespace-nowrap">
-                    {formatDateTime(entry.event_time)}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${getLevelColor(entry.level)}`}>
-                      {entry.level}
-                    </span>
-                  </td>
-                  <td className="px-2 py-1.5 text-gray-300 font-mono truncate max-w-[160px]" title={entry.logger_name}>
-                    {entry.logger_name}
-                  </td>
-                  <td className="px-2 py-1.5 text-gray-200 truncate max-w-[600px]" title={entry.message}>
-                    {entry.message}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/* Log entries table - AG Grid */}
+      <div className="flex-1 overflow-hidden p-4">
+        <AgGridReact
+          theme={darkTheme}
+          rowData={entries}
+          columnDefs={columnDefs}
+          defaultColDef={defaultColDef}
+          onSortChanged={onSortChanged}
+          onRowClicked={onRowClicked}
+          getRowId={(params) => `${params.data.event_time}-${params.data.message?.slice(0, 50)}`}
+          rowSelection="single"
+          suppressCellFocus={true}
+          enableCellTextSelection={true}
+          loading={loading}
+          animateRows={false}
+        />
       </div>
 
       {/* Detail panel */}

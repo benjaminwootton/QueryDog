@@ -113,13 +113,15 @@ export function ProfileEventsModal() {
                   {queryCopied ? 'Copied' : 'Copy'}
                 </button>
               </div>
-              <button
-                onClick={handleAnalyseQuery}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 rounded text-white"
-              >
-                <ExternalLink className="w-3 h-3" />
-                Analyse Query
-              </button>
+              {selectedEntry.query_kind === 'Select' && (
+                <button
+                  onClick={handleAnalyseQuery}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 rounded text-white"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Analyse Query
+                </button>
+              )}
             </div>
             <pre className="bg-gray-800 p-3 rounded text-xs text-gray-300 max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-mono">
               {String(selectedEntry.query || '')}

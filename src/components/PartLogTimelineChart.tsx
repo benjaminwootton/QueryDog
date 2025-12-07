@@ -1,36 +1,69 @@
-import { useState } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { useMemo, useCallback } from 'react';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useQueryStore } from '../stores/queryStore';
+import type { ChartAggregation, PartLogStackedTimeSeriesPoint } from '../stores/queryStore';
 import { Activity, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
-type PartLogChartMetric = 'count' | 'duration';
-
-const CHART_CONFIGS: Record<PartLogChartMetric, {
-  dataKey: string;
-  label: string;
-  color: string;
-  formatter: (value: number) => string;
-}> = {
-  count: {
-    dataKey: 'count',
-    label: 'Events',
-    color: '#10b981',
-    formatter: (v) => v.toLocaleString(),
-  },
-  duration: {
-    dataKey: 'avg_duration',
-    label: 'Avg Duration',
-    color: '#3b82f6',
-    formatter: (v) => v >= 1000 ? (v / 1000).toFixed(2) + 's' : v.toFixed(0) + 'ms',
-  },
+const AGGREGATION_LABELS: Record<ChartAggregation, string> = {
+  avg: 'Avg',
+  sum: 'Sum',
+  min: 'Min',
+  max: 'Max',
 };
 
-export function PartLogTimelineChart() {
-  const { partLogTimeSeries, bucketSize, partLogLoading } = useQueryStore();
-  const [chartMetric, setChartMetric] = useState<PartLogChartMetric>('count');
+// Colors for stacked chart by event type - blue/green scheme like queries
+const EVENT_TYPE_COLORS: Record<keyof Omit<PartLogStackedTimeSeriesPoint, 'time'>, string> = {
+  NewPart: '#10b981',      // Green (like Select)
+  MergeParts: '#60a5fa',   // Light Blue (like Insert)
+  DownloadPart: '#34d399', // Light Green
+  RemovePart: '#3b82f6',   // Blue
+  MutatePart: '#06b6d4',   // Cyan
+  Other: '#9ca3af',        // Gray (like Other)
+};
 
-  const config = CHART_CONFIGS[chartMetric];
+function getChartConfig(metric: 'count' | 'duration', aggregation: ChartAggregation) {
+  const formatDuration = (v: number) => v >= 1000 ? (v / 1000).toFixed(2) + 's' : v.toFixed(0) + 'ms';
+
+  if (metric === 'count') {
+    return {
+      dataKey: 'count',
+      label: 'Events',
+      color: '#10b981',
+      formatter: (v: number) => v.toLocaleString(),
+    };
+  }
+
+  return {
+    dataKey: `${aggregation}_duration`,
+    label: `${AGGREGATION_LABELS[aggregation]} Duration`,
+    color: '#3b82f6',
+    formatter: formatDuration,
+  };
+}
+
+export function PartLogTimelineChart() {
+  const { partLogTimeSeries, partLogStackedTimeSeries, bucketSize, partLogLoading, chartAggregation, chartType, setTimeRange, partLogChartMetric, setPartLogChartMetric } = useQueryStore();
+
+  const config = useMemo(() => getChartConfig(partLogChartMetric, chartAggregation), [partLogChartMetric, chartAggregation]);
+
+  // For non-Count metrics, don't allow stacked charts (they only make sense for count by event type)
+  const effectiveChartType = partLogChartMetric !== 'count' && (chartType === 'stacked-bar' || chartType === 'stacked-line')
+    ? 'bar'
+    : chartType;
+
+  // Handle click on chart to filter to that time bucket
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleChartClick = useCallback((data: any) => {
+    const timeStr = data?.activeLabel;
+    if (!timeStr) return;
+
+    const clickedTime = new Date(timeStr.replace(' ', 'T'));
+    if (isNaN(clickedTime.getTime())) return;
+
+    // Set both start and end to the same clicked time
+    setTimeRange({ start: clickedTime, end: clickedTime });
+  }, [setTimeRange]);
 
   const formatTime = (time: string) => {
     const date = new Date(time);
@@ -44,19 +77,21 @@ export function PartLogTimelineChart() {
     }
   };
 
-  const tabs: { metric: PartLogChartMetric; label: string; icon: typeof Activity }[] = [
+  const tabs: { metric: 'count' | 'duration'; label: string; icon: typeof Activity }[] = [
     { metric: 'count', label: 'Count', icon: Activity },
     { metric: 'duration', label: 'Duration', icon: Clock },
   ];
 
+  const eventTypes: (keyof Omit<PartLogStackedTimeSeriesPoint, 'time'>)[] = ['NewPart', 'MergeParts', 'DownloadPart', 'RemovePart', 'MutatePart', 'Other'];
+
   const renderTabs = () => (
-    <div className="flex gap-1 border-b border-gray-700 mb-2">
+    <div className="flex gap-1 border-b border-gray-700 mb-2 items-center">
       {tabs.map(({ metric, label, icon: Icon }) => (
         <button
           key={metric}
-          onClick={() => setChartMetric(metric)}
+          onClick={() => setPartLogChartMetric(metric)}
           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
-            chartMetric === metric
+            partLogChartMetric === metric
               ? 'border-blue-500 text-blue-400'
               : 'border-transparent text-gray-400 hover:text-gray-300'
           }`}
@@ -72,21 +107,179 @@ export function PartLogTimelineChart() {
     return (
       <div>
         {renderTabs()}
-        <div className="h-36 bg-gray-900 border border-gray-700 rounded flex items-center justify-center">
+        <div className="h-72 bg-gray-900 border border-gray-700 rounded flex items-center justify-center">
           <span className="text-gray-400 text-xs">Loading...</span>
         </div>
       </div>
     );
   }
 
+  // Render stacked bar chart
+  if (effectiveChartType === 'stacked-bar') {
+    return (
+      <div>
+        {renderTabs()}
+        <div className="h-72 bg-gray-900 border border-gray-700 rounded cursor-pointer">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={partLogStackedTimeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }} onClick={handleChartClick}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+              <XAxis
+                dataKey="time"
+                tickFormatter={formatTime}
+                tick={{ fontSize: 9, fill: '#9ca3af' }}
+                axisLine={{ stroke: '#374151' }}
+                tickLine={{ stroke: '#374151' }}
+              />
+              <YAxis
+                tick={{ fontSize: 9, fill: '#9ca3af' }}
+                axisLine={{ stroke: '#374151' }}
+                tickLine={{ stroke: '#374151' }}
+                width={50}
+                tickFormatter={(v) => v.toLocaleString()}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#1f2937',
+                  border: '1px solid #374151',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                }}
+                cursor={{ fill: 'transparent' }}
+                labelFormatter={formatTime}
+              />
+              {eventTypes.map((eventType) => (
+                <Bar
+                  key={eventType}
+                  dataKey={eventType}
+                  stackId="events"
+                  fill={EVENT_TYPE_COLORS[eventType]}
+                  fillOpacity={0.8}
+                  isAnimationActive={false}
+                />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    );
+  }
+
+  // Render stacked line (area) chart
+  if (effectiveChartType === 'stacked-line') {
+    return (
+      <div>
+        {renderTabs()}
+        <div className="h-72 bg-gray-900 border border-gray-700 rounded cursor-pointer">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={partLogStackedTimeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }} onClick={handleChartClick}>
+              <defs>
+                {eventTypes.map((eventType) => (
+                  <linearGradient key={eventType} id={`partLog-stacked-${eventType}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={EVENT_TYPE_COLORS[eventType]} stopOpacity={0.8} />
+                    <stop offset="95%" stopColor={EVENT_TYPE_COLORS[eventType]} stopOpacity={0.3} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+              <XAxis
+                dataKey="time"
+                tickFormatter={formatTime}
+                tick={{ fontSize: 9, fill: '#9ca3af' }}
+                axisLine={{ stroke: '#374151' }}
+                tickLine={{ stroke: '#374151' }}
+              />
+              <YAxis
+                tick={{ fontSize: 9, fill: '#9ca3af' }}
+                axisLine={{ stroke: '#374151' }}
+                tickLine={{ stroke: '#374151' }}
+                width={50}
+                tickFormatter={(v) => v.toLocaleString()}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#1f2937',
+                  border: '1px solid #374151',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                }}
+                labelFormatter={formatTime}
+              />
+              {eventTypes.map((eventType) => (
+                <Area
+                  key={eventType}
+                  type="monotone"
+                  dataKey={eventType}
+                  stackId="events"
+                  stroke={EVENT_TYPE_COLORS[eventType]}
+                  strokeWidth={1}
+                  fillOpacity={1}
+                  fill={`url(#partLog-stacked-${eventType})`}
+                  isAnimationActive={false}
+                />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    );
+  }
+
+  // Render regular bar chart
+  if (effectiveChartType === 'bar') {
+    return (
+      <div>
+        {renderTabs()}
+        <div className="h-72 bg-gray-900 border border-gray-700 rounded cursor-pointer">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={partLogTimeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }} onClick={handleChartClick}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+              <XAxis
+                dataKey="time"
+                tickFormatter={formatTime}
+                tick={{ fontSize: 9, fill: '#9ca3af' }}
+                axisLine={{ stroke: '#374151' }}
+                tickLine={{ stroke: '#374151' }}
+              />
+              <YAxis
+                tick={{ fontSize: 9, fill: '#9ca3af' }}
+                axisLine={{ stroke: '#374151' }}
+                tickLine={{ stroke: '#374151' }}
+                width={50}
+                tickFormatter={config.formatter}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#1f2937',
+                  border: '1px solid #374151',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                }}
+                cursor={{ fill: 'transparent' }}
+                labelFormatter={formatTime}
+                formatter={(value) => [config.formatter(Number(value)), config.label]}
+              />
+              <Bar
+                dataKey={config.dataKey}
+                fill={config.color}
+                fillOpacity={0.8}
+                isAnimationActive={false}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    );
+  }
+
+  // Render line (area) chart (default)
   return (
     <div>
       {renderTabs()}
-      <div className="h-36 bg-gray-900 border border-gray-700 rounded">
+      <div className="h-72 bg-gray-900 border border-gray-700 rounded cursor-pointer">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={partLogTimeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }}>
+          <AreaChart data={partLogTimeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }} onClick={handleChartClick}>
             <defs>
-              <linearGradient id={`partLog-${chartMetric}`} x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={`partLog-${partLogChartMetric}-${chartAggregation}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={config.color} stopOpacity={0.3} />
                 <stop offset="95%" stopColor={config.color} stopOpacity={0} />
               </linearGradient>
@@ -122,7 +315,7 @@ export function PartLogTimelineChart() {
               stroke={config.color}
               strokeWidth={1.5}
               fillOpacity={1}
-              fill={`url(#partLog-${chartMetric})`}
+              fill={`url(#partLog-${partLogChartMetric}-${chartAggregation})`}
               isAnimationActive={false}
             />
           </AreaChart>

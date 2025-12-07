@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText } from 'lucide-react';
+import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText, Layers } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
 import { PartsPage } from './components/pages/PartsPage';
+import { PartLogPage } from './components/pages/PartLogPage';
 import { ActivityPage } from './components/pages/ActivityPage';
 import { MetricsPage } from './components/pages/MetricsPage';
 import { InstancePage } from './components/pages/InstancePage';
@@ -13,8 +14,14 @@ import { QueryEditor } from './components/QueryEditor';
 import { useQueryStore } from './stores/queryStore';
 import { useQueryData } from './hooks/useQueryData';
 
-type NavItem = 'queries' | 'textlog' | 'parts' | 'activity' | 'metrics' | 'instance';
+type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'metrics' | 'instance';
 type RefreshInterval = 'off' | 10 | 30 | 60;
+
+interface ConnectionInfo {
+  host: string;
+  port: string;
+  secure: boolean;
+}
 
 function App() {
   const [navItem, setNavItem] = useState<NavItem>('queries');
@@ -23,13 +30,31 @@ function App() {
   const [browserOpen, setBrowserOpen] = useState(false);
   const [queryEditorOpen, setQueryEditorOpen] = useState(false);
   const [queryEditorInitialQuery, setQueryEditorInitialQuery] = useState('');
-  const { loading, error } = useQueryStore();
+  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
+  const { loading, error, setActiveTab, setChartMetric, setTimeRange } = useQueryStore();
   const { refresh } = useQueryData();
+
+  // Fetch connection info on mount
+  useEffect(() => {
+    fetch('/api/connection-info')
+      .then(res => {
+        if (!res.ok) throw new Error('Backend not available');
+        return res.json();
+      })
+      .then(info => {
+        setConnectionInfo(info);
+        setBackendError(null);
+      })
+      .catch(() => setBackendError('Backend server not running. Please start the server.'));
+  }, []);
 
   // Expose function to open query editor with a query (for use by ProfileEventsModal)
   useEffect(() => {
     (window as unknown as { openQueryEditor: (query: string) => void }).openQueryEditor = (query: string) => {
-      setQueryEditorInitialQuery(query);
+      // Strip off FORMAT JSON/JSONEachRow/etc from the end (added by ClickHouse for remote queries)
+      const cleanedQuery = query.replace(/\s+FORMAT\s+\w+\s*$/i, '').trim();
+      setQueryEditorInitialQuery(cleanedQuery);
       setQueryEditorOpen(true);
     };
   }, []);
@@ -56,10 +81,11 @@ function App() {
 
   const navItems: { id: NavItem; label: string; icon: typeof Database }[] = [
     { id: 'queries', label: 'Queries', icon: Database },
-    { id: 'textlog', label: 'Text Log', icon: FileText },
-    { id: 'parts', label: 'Part Log', icon: HardDrive },
+    { id: 'partlog', label: 'Parts Log', icon: Layers },
+    { id: 'parts', label: 'Tables', icon: HardDrive },
     { id: 'activity', label: 'Activity', icon: Activity },
     { id: 'metrics', label: 'Metrics', icon: BarChart2 },
+    { id: 'textlog', label: 'Text Log', icon: FileText },
     { id: 'instance', label: 'Instance', icon: Server },
   ];
 
@@ -68,10 +94,21 @@ function App() {
       {/* Header */}
       <header className="bg-gray-900 border-b border-gray-700 px-3 py-1.5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setNavItem('queries');
+              setActiveTab('queries');
+              setChartMetric('count');
+              // Reset to last 1 hour
+              const end = new Date();
+              const start = new Date(end.getTime() - 60 * 60 * 1000);
+              setTimeRange({ start, end });
+            }}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
             <Dog className="w-5 h-5 text-blue-400" />
             <h1 className="text-base font-bold text-white">Query Dog</h1>
-          </div>
+          </button>
 
           {/* Top Navigation */}
           <nav className="flex items-center gap-1">
@@ -94,6 +131,11 @@ function App() {
 
         <div className="flex items-center gap-3">
           {error && <span className="text-xs text-red-400">{error}</span>}
+          {connectionInfo && (
+            <span className="text-xs text-gray-400 font-mono">
+              {connectionInfo.secure ? 'https://' : ''}{connectionInfo.host}:{connectionInfo.port}
+            </span>
+          )}
           <button
             onClick={() => setBrowserOpen(true)}
             className="flex items-center gap-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 text-xs"
@@ -136,10 +178,33 @@ function App() {
         </div>
       </header>
 
+      {/* Backend Error Banner */}
+      {backendError && (
+        <div className="bg-red-900/50 border-b border-red-700 px-4 py-2 flex items-center justify-center gap-2">
+          <span className="text-red-300 text-sm">{backendError}</span>
+          <button
+            onClick={() => {
+              setBackendError(null);
+              fetch('http://localhost:3001/api/connection-info')
+                .then(res => {
+                  if (!res.ok) throw new Error('Backend not available');
+                  return res.json();
+                })
+                .then(setConnectionInfo)
+                .catch(() => setBackendError('Backend server not running. Please start the server.'));
+            }}
+            className="px-2 py-0.5 bg-red-700 hover:bg-red-600 rounded text-white text-xs"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="flex-1 overflow-hidden">
         {navItem === 'queries' && <QueriesPage />}
         {navItem === 'textlog' && <TextLogPage />}
+        {navItem === 'partlog' && <PartLogPage />}
         {navItem === 'parts' && <PartsPage />}
         {navItem === 'activity' && <ActivityPage />}
         {navItem === 'metrics' && <MetricsPage />}

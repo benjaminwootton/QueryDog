@@ -9,21 +9,21 @@ import type { QueryLogEntry } from '../types/queryLog';
 // Register AG Grid Community modules
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-// Create dark theme
+// Create dark theme with JetBrains Mono for cells, lighter weight
 const darkTheme = themeAlpine.withParams({
   backgroundColor: '#111827',
   headerBackgroundColor: '#1f2937',
   oddRowBackgroundColor: '#111827',
   rowHoverColor: '#1f2937',
   borderColor: '#374151',
-  foregroundColor: '#d1d5db',
+  foregroundColor: '#9ca3af',
   headerTextColor: '#f3f4f6',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
   fontSize: 9,
   headerFontSize: 11,
   headerFontWeight: 600,
-  cellTextColor: '#d1d5db',
-  rowHeight: 28,
+  cellTextColor: '#9ca3af',
+  rowHeight: 26,
   headerHeight: 30,
 });
 
@@ -108,7 +108,6 @@ export function QueryTable() {
               day: 'numeric',
               hour: '2-digit',
               minute: '2-digit',
-              second: '2-digit',
               hour12: false,
             });
           };
@@ -119,19 +118,23 @@ export function QueryTable() {
             const q = params.value as string;
             return q?.length > 80 ? q.substring(0, 80) + '...' : q;
           };
+          def.cellStyle = { color: '#60a5fa' };
+          break;
+        case 'tables':
+          def.cellStyle = { color: '#60a5fa' };
           break;
         case 'memory_usage':
         case 'read_bytes':
         case 'written_bytes':
         case 'result_bytes':
           def.valueFormatter = (params) => formatBytes(params.value as number);
-          def.cellStyle = { textAlign: 'right' };
+          def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
         case 'read_rows':
         case 'written_rows':
         case 'result_rows':
           def.valueFormatter = (params) => formatNumber(params.value as number);
-          def.cellStyle = { textAlign: 'right' };
+          def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
         case 'query_duration_ms':
           def.valueFormatter = (params) => {
@@ -139,20 +142,20 @@ export function QueryTable() {
             if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
             return ms + 'ms';
           };
-          def.cellStyle = { textAlign: 'right' };
+          def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
       }
 
       // Format bytes for any _bytes field
       if (col.field.endsWith('_bytes') && !def.valueFormatter) {
         def.valueFormatter = (params) => formatBytes(params.value as number);
-        def.cellStyle = { textAlign: 'right' };
+        def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
       // Format rows for any _rows field
       if (col.field.endsWith('_rows') && !def.valueFormatter) {
         def.valueFormatter = (params) => formatNumber(params.value as number);
-        def.cellStyle = { textAlign: 'right' };
+        def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
       defs.push(def);

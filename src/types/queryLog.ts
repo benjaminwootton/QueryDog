@@ -63,6 +63,7 @@ const TUPLE_TYPE_PATTERN = /^Tuple\(/;
 function getColumnWidth(name: string, type: string): number {
   if (name === 'query') return 700;
   if (name === 'query_id' || name === 'initial_query_id') return 200;
+  if (name === 'event_type') return 240;
   if (name.includes('time') && !name.includes('_ms')) return 150;
   if (name === 'exception' || name === 'stack_trace') return 250;
   if (ARRAY_TYPE_PATTERN.test(type) || MAP_TYPE_PATTERN.test(type)) return 180;
@@ -118,7 +119,7 @@ export function createColumnsFromMetadata(metadata: ColumnMetadata[], tableName:
 
 // Fallback columns if metadata fetch fails
 export const FALLBACK_COLUMNS: ColumnConfig[] = [
-  { field: 'event_time', headerName: 'Event Time', comment: 'Query starting time.', type: 'DateTime', visible: true, width: 150, sortable: true },
+  { field: 'event_time', headerName: 'Event Time', comment: 'Query starting time.', type: 'DateTime', visible: true, width: 178, sortable: true },
   { field: 'query_id', headerName: 'Query ID', comment: 'ID of the query.', type: 'String', visible: true, width: 200, sortable: true },
   { field: 'query', headerName: 'Query', comment: 'Query string.', type: 'String', visible: true, width: 350, sortable: false },
   { field: 'query_duration_ms', headerName: 'Duration', comment: 'Duration of query execution in milliseconds.', type: 'UInt64', visible: true, width: 90, sortable: true },
@@ -129,8 +130,8 @@ export const FALLBACK_COLUMNS: ColumnConfig[] = [
 
 // Fallback columns for part_log
 export const FALLBACK_PART_LOG_COLUMNS: ColumnConfig[] = [
-  { field: 'event_time', headerName: 'Event Time', comment: 'Time of the event.', type: 'DateTime', visible: true, width: 150, sortable: true },
-  { field: 'event_type', headerName: 'Event Type', comment: 'Type of the event.', type: 'String', visible: true, width: 120, sortable: true },
+  { field: 'event_time', headerName: 'Event Time', comment: 'Time of the event.', type: 'DateTime', visible: true, width: 178, sortable: true },
+  { field: 'event_type', headerName: 'Event Type', comment: 'Type of the event.', type: 'String', visible: true, width: 240, sortable: true },
   { field: 'database', headerName: 'Database', comment: 'Name of the database.', type: 'String', visible: true, width: 120, sortable: true },
   { field: 'table', headerName: 'Table', comment: 'Name of the table.', type: 'String', visible: true, width: 150, sortable: true },
   { field: 'part_name', headerName: 'Part Name', comment: 'Name of the data part.', type: 'String', visible: true, width: 200, sortable: true },
@@ -139,15 +140,19 @@ export const FALLBACK_PART_LOG_COLUMNS: ColumnConfig[] = [
 ];
 
 export const HISTOGRAM_FIELDS = [
-  { field: 'client_name', label: 'Client Name' },
-  { field: 'user', label: 'User' },
-  { field: 'type', label: 'Query Type' },
+  // Row 1: Most important
   { field: 'query_kind', label: 'Query Kind' },
   { field: 'current_database', label: 'Database' },
+  { field: 'tables', label: 'Tables' },
+  // Row 2
+  { field: 'user', label: 'User' },
+  { field: 'client_name', label: 'Client Name' },
+  { field: 'type', label: 'Query Type' },
+  // Row 3
   { field: 'used_functions', label: 'Used Functions' },
   { field: 'used_aggregate_functions', label: 'Aggregate Functions' },
   { field: 'used_table_functions', label: 'Table Functions' },
-  { field: 'tables', label: 'Tables' },
+  // Row 4
   { field: 'exception_code', label: 'Exception Code' },
   { field: 'is_initial_query', label: 'Initial Query' },
   { field: 'client_hostname', label: 'Client Hostname' },

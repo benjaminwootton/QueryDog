@@ -2,26 +2,26 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef } from 'ag-grid-community';
-import { RefreshCw } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import { fetchProfileEvents } from '../services/api';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+// Create dark theme with JetBrains Mono for cells, lighter weight
 const darkTheme = themeAlpine.withParams({
   backgroundColor: '#111827',
   headerBackgroundColor: '#1f2937',
   oddRowBackgroundColor: '#111827',
   rowHoverColor: '#1f2937',
   borderColor: '#374151',
-  foregroundColor: '#d1d5db',
+  foregroundColor: '#9ca3af',
   headerTextColor: '#f3f4f6',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
   fontSize: 9,
   headerFontSize: 11,
   headerFontWeight: 600,
-  cellTextColor: '#d1d5db',
-  rowHeight: 28,
+  cellTextColor: '#9ca3af',
+  rowHeight: 26,
   headerHeight: 30,
 });
 
@@ -121,14 +121,14 @@ interface ProfileEventRow {
 }
 
 export function ProfileEventsTable() {
-  const { timeRange, fieldFilters } = useQueryStore();
+  const { timeRange, fieldFilters, search } = useQueryStore();
   const [data, setData] = useState<ProfileEventRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await fetchProfileEvents(timeRange, fieldFilters, PROFILE_EVENT_COLUMNS);
+      const result = await fetchProfileEvents(timeRange, fieldFilters, PROFILE_EVENT_COLUMNS, search);
       setData(result as ProfileEventRow[]);
     } catch (err) {
       console.error('Failed to load profile events:', err);
@@ -136,7 +136,7 @@ export function ProfileEventsTable() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange.start.getTime(), timeRange.end.getTime(), fieldFilters]);
+  }, [timeRange.start.getTime(), timeRange.end.getTime(), fieldFilters, search]);
 
   useEffect(() => {
     loadData();
@@ -158,7 +158,6 @@ export function ProfileEventsTable() {
             day: 'numeric',
             hour: '2-digit',
             minute: '2-digit',
-            second: '2-digit',
             hour12: false,
           });
         },
@@ -194,33 +193,18 @@ export function ProfileEventsTable() {
   }), []);
 
   return (
-    <div className="h-full flex flex-col bg-gray-900 border border-gray-700 rounded overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-900/50 border-b border-gray-700">
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-400">{data.length.toLocaleString()} rows</span>
-        </div>
-        <button
-          onClick={loadData}
-          disabled={loading}
-          className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
-          title="Refresh"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-        </button>
-      </div>
-      <div className="flex-1">
-        <AgGridReact
-          theme={darkTheme}
-          rowData={data}
-          columnDefs={columnDefs}
-          defaultColDef={defaultColDef}
-          loading={loading}
-          animateRows={false}
-          suppressCellFocus={true}
-          enableCellTextSelection={true}
-          getRowId={(params) => params.data.query_id}
-        />
-      </div>
+    <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
+      <AgGridReact
+        theme={darkTheme}
+        rowData={data}
+        columnDefs={columnDefs}
+        defaultColDef={defaultColDef}
+        loading={loading}
+        animateRows={false}
+        suppressCellFocus={true}
+        enableCellTextSelection={true}
+        getRowId={(params) => params.data.query_id}
+      />
     </div>
   );
 }

@@ -8,21 +8,21 @@ import type { PartLogEntry } from '../types/queryLog';
 // Register AG Grid Community modules
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-// Create dark theme
+// Create dark theme with JetBrains Mono for cells, lighter weight
 const darkTheme = themeAlpine.withParams({
   backgroundColor: '#111827',
   headerBackgroundColor: '#1f2937',
   oddRowBackgroundColor: '#111827',
   rowHoverColor: '#1f2937',
   borderColor: '#374151',
-  foregroundColor: '#d1d5db',
+  foregroundColor: '#9ca3af',
   headerTextColor: '#f3f4f6',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
   fontSize: 9,
   headerFontSize: 11,
   headerFontWeight: 600,
-  cellTextColor: '#d1d5db',
-  rowHeight: 28,
+  cellTextColor: '#9ca3af',
+  rowHeight: 26,
   headerHeight: 30,
 });
 
@@ -77,6 +77,9 @@ export function PartLogTable() {
 
       // Custom formatters for specific fields
       switch (col.field) {
+        case 'table':
+          def.cellStyle = { color: '#60a5fa' };
+          break;
         case 'event_time':
           def.valueFormatter = (params) => {
             if (!params.value) return '';
@@ -86,7 +89,6 @@ export function PartLogTable() {
               day: 'numeric',
               hour: '2-digit',
               minute: '2-digit',
-              second: '2-digit',
               hour12: false,
             });
           };
@@ -96,12 +98,12 @@ export function PartLogTable() {
         case 'bytes_on_disk':
         case 'peak_memory_usage':
           def.valueFormatter = (params) => formatBytes(params.value as number);
-          def.cellStyle = { textAlign: 'right' };
+          def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
         case 'rows':
         case 'rows_where_condition':
           def.valueFormatter = (params) => formatNumber(params.value as number);
-          def.cellStyle = { textAlign: 'right' };
+          def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
         case 'duration_ms':
           def.valueFormatter = (params) => {
@@ -109,14 +111,14 @@ export function PartLogTable() {
             if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
             return ms + 'ms';
           };
-          def.cellStyle = { textAlign: 'right' };
+          def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
       }
 
       // Format bytes for any _bytes field
       if (col.field.endsWith('_bytes') && !def.valueFormatter) {
         def.valueFormatter = (params) => formatBytes(params.value as number);
-        def.cellStyle = { textAlign: 'right' };
+        def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
       defs.push(def);

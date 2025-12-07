@@ -1,15 +1,41 @@
-import { useEffect, useState } from 'react';
-import { ChevronUp, ChevronDown, Loader2, Copy, Check } from 'lucide-react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { AgGridReact } from 'ag-grid-react';
+import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import type { ColDef, SortChangedEvent, ICellRendererParams, CellStyle } from 'ag-grid-community';
+import { Loader2, Copy, Check, X, Eye, ExternalLink, List } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import { fetchGroupedQueryLog, type GroupedQueryEntry } from '../services/api';
 
+// Register AG Grid Community modules
+ModuleRegistry.registerModules([AllCommunityModule]);
+
+// Create dark theme with JetBrains Mono for cells, lighter weight
+const darkTheme = themeAlpine.withParams({
+  backgroundColor: '#111827',
+  headerBackgroundColor: '#1f2937',
+  oddRowBackgroundColor: '#111827',
+  rowHoverColor: '#1f2937',
+  borderColor: '#374151',
+  foregroundColor: '#9ca3af',
+  headerTextColor: '#f3f4f6',
+  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  fontSize: 9,
+  headerFontSize: 11,
+  headerFontWeight: 600,
+  cellTextColor: '#9ca3af',
+  rowHeight: 26,
+  headerHeight: 30,
+});
+
 function formatDuration(ms: number): string {
+  if (ms == null) return 'N/A';
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
   return `${(ms / 60000).toFixed(2)}m`;
 }
 
 function formatBytes(bytes: number): string {
+  if (bytes == null) return 'N/A';
   if (bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -18,133 +44,30 @@ function formatBytes(bytes: number): string {
 }
 
 function formatNumber(num: number): string {
+  if (num == null) return 'N/A';
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
   if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
   return num.toLocaleString();
 }
 
 function formatDateTime(dateStr: string): string {
+  if (!dateStr) return 'N/A';
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return 'N/A';
   return date.toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
+    hour12: false,
   });
 }
-
-interface ColumnDef {
-  field: keyof GroupedQueryEntry;
-  label: string;
-  width: string;
-  sortable: boolean;
-  format?: (value: unknown, row: GroupedQueryEntry) => React.ReactNode;
-}
-
-const columns: ColumnDef[] = [
-  {
-    field: 'example_query',
-    label: 'Query',
-    width: 'min-w-[400px]',
-    sortable: false,
-    format: (value) => {
-      const query = String(value || '');
-      return (
-        <div className="font-mono text-[10px] text-gray-300 truncate max-w-[600px]" title={query}>
-          {query.slice(0, 200)}{query.length > 200 ? '...' : ''}
-        </div>
-      );
-    },
-  },
-  {
-    field: 'count',
-    label: 'Count',
-    width: 'w-20',
-    sortable: true,
-    format: (value) => (
-      <span className="text-blue-400 font-medium">{formatNumber(Number(value))}</span>
-    ),
-  },
-  {
-    field: 'avg_duration',
-    label: 'Avg Duration',
-    width: 'w-24',
-    sortable: true,
-    format: (value) => formatDuration(Number(value)),
-  },
-  {
-    field: 'max_duration',
-    label: 'Max Duration',
-    width: 'w-24',
-    sortable: true,
-    format: (value) => (
-      <span className="text-orange-400">{formatDuration(Number(value))}</span>
-    ),
-  },
-  {
-    field: 'total_duration',
-    label: 'Total Duration',
-    width: 'w-24',
-    sortable: true,
-    format: (value) => formatDuration(Number(value)),
-  },
-  {
-    field: 'avg_memory',
-    label: 'Avg Memory',
-    width: 'w-24',
-    sortable: true,
-    format: (value) => formatBytes(Number(value)),
-  },
-  {
-    field: 'max_memory',
-    label: 'Max Memory',
-    width: 'w-24',
-    sortable: true,
-    format: (value) => (
-      <span className="text-purple-400">{formatBytes(Number(value))}</span>
-    ),
-  },
-  {
-    field: 'avg_read_rows',
-    label: 'Avg Rows Read',
-    width: 'w-24',
-    sortable: true,
-    format: (value) => formatNumber(Number(value)),
-  },
-  {
-    field: 'total_read_bytes',
-    label: 'Total Read',
-    width: 'w-24',
-    sortable: true,
-    format: (value) => formatBytes(Number(value)),
-  },
-  {
-    field: 'user',
-    label: 'User',
-    width: 'w-24',
-    sortable: false,
-  },
-  {
-    field: 'first_seen',
-    label: 'First Seen',
-    width: 'w-32',
-    sortable: true,
-    format: (value) => formatDateTime(String(value)),
-  },
-  {
-    field: 'last_seen',
-    label: 'Last Seen',
-    width: 'w-32',
-    sortable: true,
-    format: (value) => formatDateTime(String(value)),
-  },
-];
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = async () => {
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -175,9 +98,26 @@ export function GroupedQueriesTable() {
     setGroupedLoading,
     setGroupedSortField,
     setGroupedSortOrder,
+    setSearch,
+    setActiveTab,
   } = useQueryStore();
 
-  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<GroupedQueryEntry | null>(null);
+
+  const ActionCellRenderer = useCallback((params: ICellRendererParams<GroupedQueryEntry>) => {
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setSelectedEntry(params.data!);
+        }}
+        className="p-1 hover:bg-gray-600 rounded"
+        title="View Details"
+      >
+        <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
+      </button>
+    );
+  }, []);
 
   // Fetch grouped data
   useEffect(() => {
@@ -196,14 +136,135 @@ export function GroupedQueriesTable() {
       .finally(() => setGroupedLoading(false));
   }, [timeRange, search, fieldFilters, rangeFilters, groupedSortField, groupedSortOrder, setGroupedEntries, setGroupedLoading]);
 
-  const handleSort = (field: string) => {
-    if (field === groupedSortField) {
-      setGroupedSortOrder(groupedSortOrder === 'DESC' ? 'ASC' : 'DESC');
-    } else {
-      setGroupedSortField(field);
-      setGroupedSortOrder('DESC');
+  // Column definitions for AG Grid
+  const columnDefs: ColDef<GroupedQueryEntry>[] = useMemo(() => [
+    {
+      headerName: '',
+      field: 'normalized_query_hash',
+      width: 40,
+      sortable: false,
+      cellRenderer: ActionCellRenderer,
+      cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' } as CellStyle,
+    },
+    {
+      headerName: 'Last Seen',
+      field: 'last_seen',
+      width: 150,
+      sortable: true,
+      valueFormatter: (params) => formatDateTime(params.value),
+    },
+    {
+      headerName: 'Query',
+      field: 'example_query',
+      minWidth: 300,
+      flex: 1,
+      sortable: false,
+      tooltipField: 'example_query',
+      valueFormatter: (params) => {
+        const q = params.value as string;
+        return q?.length > 100 ? q.substring(0, 100) + '...' : q;
+      },
+      cellStyle: { color: '#60a5fa' },
+    },
+    {
+      headerName: 'Count',
+      field: 'count',
+      width: 80,
+      sortable: true,
+      valueFormatter: (params) => formatNumber(params.value),
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+    },
+    {
+      headerName: 'Avg Duration',
+      field: 'avg_duration',
+      width: 100,
+      sortable: true,
+      valueFormatter: (params) => formatDuration(params.value),
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+    },
+    {
+      headerName: 'Max Duration',
+      field: 'max_duration',
+      width: 100,
+      sortable: true,
+      valueFormatter: (params) => formatDuration(params.value),
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+    },
+    {
+      headerName: 'Total Duration',
+      field: 'total_duration',
+      width: 100,
+      sortable: true,
+      valueFormatter: (params) => formatDuration(params.value),
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+    },
+    {
+      headerName: 'Avg Memory',
+      field: 'avg_memory',
+      width: 100,
+      sortable: true,
+      valueFormatter: (params) => formatBytes(params.value),
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+    },
+    {
+      headerName: 'Max Memory',
+      field: 'max_memory',
+      width: 100,
+      sortable: true,
+      valueFormatter: (params) => formatBytes(params.value),
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+    },
+    {
+      headerName: 'Avg Rows Read',
+      field: 'avg_read_rows',
+      width: 100,
+      sortable: true,
+      valueFormatter: (params) => formatNumber(params.value),
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+    },
+    {
+      headerName: 'Avg Rows Written',
+      field: 'avg_written_rows',
+      width: 110,
+      sortable: true,
+      valueFormatter: (params) => formatNumber(params.value),
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+    },
+    {
+      headerName: 'Total Read',
+      field: 'total_read_bytes',
+      width: 100,
+      sortable: true,
+      valueFormatter: (params) => formatBytes(params.value),
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+    },
+    {
+      headerName: 'User',
+      field: 'user',
+      width: 100,
+      sortable: false,
+    },
+    {
+      headerName: 'First Seen',
+      field: 'first_seen',
+      width: 130,
+      sortable: true,
+      valueFormatter: (params) => formatDateTime(params.value),
+    },
+  ], [ActionCellRenderer]);
+
+  const defaultColDef = useMemo(() => ({
+    resizable: true,
+  }), []);
+
+  const onSortChanged = useCallback((event: SortChangedEvent) => {
+    const sortModel = event.api.getColumnState().find(c => c.sort);
+    if (sortModel) {
+      setGroupedSortField(sortModel.colId);
+      setGroupedSortOrder(sortModel.sort === 'asc' ? 'ASC' : 'DESC');
     }
-  };
+  }, [setGroupedSortField, setGroupedSortOrder]);
+
 
   if (groupedLoading) {
     return (
@@ -215,109 +276,174 @@ export function GroupedQueriesTable() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="text-xs text-gray-400 mb-2">
-        {groupedEntries.length.toLocaleString()} unique queries
+      <div className="flex-1 min-h-0">
+        <AgGridReact
+          theme={darkTheme}
+          rowData={groupedEntries}
+          columnDefs={columnDefs}
+          defaultColDef={defaultColDef}
+          onSortChanged={onSortChanged}
+          getRowId={(params) => params.data.example_query}
+          animateRows={false}
+          suppressCellFocus={true}
+          enableCellTextSelection={true}
+        />
       </div>
-      <div className="flex-1 overflow-auto border border-gray-700 rounded">
-        <table className="w-full text-xs">
-          <thead className="bg-gray-800 sticky top-0 z-10">
-            <tr>
-              {columns.map((col) => (
-                <th
-                  key={col.field}
-                  className={`${col.width} px-2 py-2 text-left text-gray-400 font-medium border-b border-gray-700 ${
-                    col.sortable ? 'cursor-pointer hover:bg-gray-700' : ''
-                  }`}
-                  onClick={() => col.sortable && handleSort(col.field)}
-                >
-                  <div className="flex items-center gap-1">
-                    {col.label}
-                    {col.sortable && groupedSortField === col.field && (
-                      groupedSortOrder === 'DESC' ? (
-                        <ChevronDown className="w-3 h-3" />
-                      ) : (
-                        <ChevronUp className="w-3 h-3" />
-                      )
-                    )}
+
+      {/* Modal popup for grouped query details */}
+      {selectedEntry && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => setSelectedEntry(null)}>
+          <div
+            className="bg-gray-900 border border-gray-700 rounded-lg w-[900px] max-h-[85vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-3 border-b border-gray-700">
+              <div>
+                <h2 className="text-sm font-semibold text-white">Grouped Query Details</h2>
+                <p className="text-xs text-gray-400">
+                  {formatNumber(selectedEntry.count)} executions
+                </p>
+              </div>
+              <button onClick={() => setSelectedEntry(null)} className="text-gray-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-3">
+              {/* Query */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-semibold text-gray-400">Example Query</h3>
+                    <CopyButton text={selectedEntry.example_query} />
                   </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {groupedEntries.map((entry, idx) => (
-              <>
-                <tr
-                  key={entry.normalized_query_hash}
-                  className={`border-b border-gray-800 hover:bg-gray-800/50 cursor-pointer ${
-                    expandedRow === entry.normalized_query_hash ? 'bg-gray-800' : ''
-                  } ${idx % 2 === 0 ? 'bg-gray-900/30' : ''}`}
-                  onClick={() =>
-                    setExpandedRow(
-                      expandedRow === entry.normalized_query_hash
-                        ? null
-                        : entry.normalized_query_hash
-                    )
-                  }
-                >
-                  {columns.map((col) => (
-                    <td key={col.field} className={`${col.width} px-2 py-1.5 text-gray-300`}>
-                      {col.format
-                        ? col.format(entry[col.field], entry)
-                        : String(entry[col.field] ?? '')}
-                    </td>
-                  ))}
-                </tr>
-                {expandedRow === entry.normalized_query_hash && (
-                  <tr key={`${entry.normalized_query_hash}-expanded`}>
-                    <td colSpan={columns.length} className="bg-gray-800/70 p-4">
-                      <div className="space-y-3">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1">
-                            <div className="text-[10px] text-gray-500 uppercase mb-1">
-                              Example Query
-                            </div>
-                            <pre className="font-mono text-[10px] text-gray-300 whitespace-pre-wrap bg-gray-900 p-3 rounded border border-gray-700 max-h-48 overflow-auto">
-                              {entry.example_query}
-                            </pre>
-                          </div>
-                          <CopyButton text={entry.example_query} />
-                        </div>
-                        <div className="grid grid-cols-6 gap-4 text-[10px]">
-                          <div>
-                            <div className="text-gray-500 uppercase">Database</div>
-                            <div className="text-gray-300">{entry.current_database || 'N/A'}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 uppercase">Min Duration</div>
-                            <div className="text-green-400">{formatDuration(entry.min_duration)}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 uppercase">Total Memory</div>
-                            <div className="text-gray-300">{formatBytes(entry.total_memory)}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 uppercase">Total Read Rows</div>
-                            <div className="text-gray-300">{formatNumber(entry.total_read_rows)}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 uppercase">Avg Result Rows</div>
-                            <div className="text-gray-300">{formatNumber(entry.avg_result_rows)}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 uppercase">Total Result Rows</div>
-                            <div className="text-gray-300">{formatNumber(entry.total_result_rows)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        // Extract first 50 chars of query for search (enough to be unique)
+                        const searchTerm = selectedEntry.example_query.substring(0, 80).trim();
+                        setSearch(searchTerm);
+                        setActiveTab('queries');
+                        setSelectedEntry(null);
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 rounded text-white"
+                    >
+                      <List className="w-3 h-3" />
+                      List All
+                    </button>
+                    <button
+                      onClick={() => {
+                        const openQueryEditor = (window as unknown as { openQueryEditor?: (query: string) => void }).openQueryEditor;
+                        if (openQueryEditor) {
+                          openQueryEditor(selectedEntry.example_query);
+                          setSelectedEntry(null);
+                        }
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 rounded text-white"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Analyse Query
+                    </button>
+                  </div>
+                </div>
+                <pre className="bg-gray-800 p-3 rounded text-xs text-gray-300 max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-mono">
+                  {selectedEntry.example_query}
+                </pre>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-5 gap-2 mb-4">
+                <div className="bg-gray-800 p-2 rounded">
+                  <div className="text-xs text-gray-400">Count</div>
+                  <div className="text-sm font-semibold text-blue-400">{formatNumber(selectedEntry.count)}</div>
+                </div>
+                <div className="bg-gray-800 p-2 rounded">
+                  <div className="text-xs text-gray-400">User</div>
+                  <div className="text-sm font-semibold text-white">{selectedEntry.user || 'N/A'}</div>
+                </div>
+                <div className="bg-gray-800 p-2 rounded">
+                  <div className="text-xs text-gray-400">Database</div>
+                  <div className="text-sm font-semibold text-white">{selectedEntry.current_database || 'N/A'}</div>
+                </div>
+                <div className="bg-gray-800 p-2 rounded">
+                  <div className="text-xs text-gray-400">First Seen</div>
+                  <div className="text-sm font-semibold text-white">{formatDateTime(selectedEntry.first_seen)}</div>
+                </div>
+                <div className="bg-gray-800 p-2 rounded">
+                  <div className="text-xs text-gray-400">Last Seen</div>
+                  <div className="text-sm font-semibold text-white">{formatDateTime(selectedEntry.last_seen)}</div>
+                </div>
+              </div>
+
+              {/* Metrics Table with Min/Avg/Max/Total columns */}
+              <div className="bg-gray-800 rounded mb-4 overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-700 bg-gray-800/50">
+                      <th className="text-left p-2 text-gray-400 font-semibold">Metric</th>
+                      <th className="text-right p-2 text-green-400 font-semibold">Min</th>
+                      <th className="text-right p-2 text-blue-400 font-semibold">Avg</th>
+                      <th className="text-right p-2 text-orange-400 font-semibold">Max</th>
+                      <th className="text-right p-2 text-purple-400 font-semibold">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-gray-700/50">
+                      <td className="p-2 text-gray-300 font-medium">Duration</td>
+                      <td className="p-2 text-right text-green-400">{formatDuration(selectedEntry.min_duration)}</td>
+                      <td className="p-2 text-right text-blue-400">{formatDuration(selectedEntry.avg_duration)}</td>
+                      <td className="p-2 text-right text-orange-400">{formatDuration(selectedEntry.max_duration)}</td>
+                      <td className="p-2 text-right text-purple-400">{formatDuration(selectedEntry.total_duration)}</td>
+                    </tr>
+                    <tr className="border-b border-gray-700/50">
+                      <td className="p-2 text-gray-300 font-medium">Memory</td>
+                      <td className="p-2 text-right text-green-400">-</td>
+                      <td className="p-2 text-right text-blue-400">{formatBytes(selectedEntry.avg_memory)}</td>
+                      <td className="p-2 text-right text-orange-400">{formatBytes(selectedEntry.max_memory)}</td>
+                      <td className="p-2 text-right text-purple-400">{formatBytes(selectedEntry.total_memory)}</td>
+                    </tr>
+                    <tr className="border-b border-gray-700/50">
+                      <td className="p-2 text-gray-300 font-medium">Read Rows</td>
+                      <td className="p-2 text-right text-green-400">-</td>
+                      <td className="p-2 text-right text-blue-400">{formatNumber(selectedEntry.avg_read_rows)}</td>
+                      <td className="p-2 text-right text-orange-400">-</td>
+                      <td className="p-2 text-right text-purple-400">{formatNumber(selectedEntry.total_read_rows)}</td>
+                    </tr>
+                    <tr className="border-b border-gray-700/50">
+                      <td className="p-2 text-gray-300 font-medium">Read Bytes</td>
+                      <td className="p-2 text-right text-green-400">-</td>
+                      <td className="p-2 text-right text-blue-400">-</td>
+                      <td className="p-2 text-right text-orange-400">-</td>
+                      <td className="p-2 text-right text-purple-400">{formatBytes(selectedEntry.total_read_bytes)}</td>
+                    </tr>
+                    <tr>
+                      <td className="p-2 text-gray-300 font-medium">Result Rows</td>
+                      <td className="p-2 text-right text-green-400">-</td>
+                      <td className="p-2 text-right text-blue-400">{formatNumber(selectedEntry.avg_result_rows)}</td>
+                      <td className="p-2 text-right text-orange-400">-</td>
+                      <td className="p-2 text-right text-purple-400">{formatNumber(selectedEntry.total_result_rows)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Query Hash */}
+              <div className="bg-gray-800 p-2 rounded mb-4">
+                <div className="text-xs text-gray-400">Query Hash</div>
+                <div className="text-xs font-mono text-gray-300" title={String(selectedEntry.normalized_query_hash)}>
+                  {String(selectedEntry.normalized_query_hash)}
+                </div>
+              </div>
+
+              {/* Note about profile events */}
+              <div className="bg-gray-800/50 border border-gray-700 rounded p-3 text-xs text-gray-400">
+                <span className="font-semibold">Note:</span> ProfileEvents and Settings are not available for grouped queries as they are aggregated data.
+                Click on a specific query in the Queries tab to see detailed ProfileEvents.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

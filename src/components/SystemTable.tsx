@@ -1,27 +1,28 @@
-import { useMemo, useCallback, useEffect, useState, useRef } from 'react';
+import { useMemo, useCallback, useEffect, useState, useRef, useImperativeHandle, forwardRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent, ICellRendererParams } from 'ag-grid-community';
-import { Settings, X, RefreshCw } from 'lucide-react';
+import { Settings, X, Eye, RefreshCw } from 'lucide-react';
 import type { ColumnMetadata } from '../types/queryLog';
 import { createColumnsFromMetadata, type ColumnConfig } from '../types/queryLog';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+// Create dark theme with JetBrains Mono for cells, lighter weight
 const darkTheme = themeAlpine.withParams({
   backgroundColor: '#111827',
   headerBackgroundColor: '#1f2937',
   oddRowBackgroundColor: '#111827',
   rowHoverColor: '#1f2937',
   borderColor: '#374151',
-  foregroundColor: '#d1d5db',
+  foregroundColor: '#9ca3af',
   headerTextColor: '#f3f4f6',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
   fontSize: 9,
   headerFontSize: 11,
   headerFontWeight: 600,
-  cellTextColor: '#d1d5db',
-  rowHeight: 28,
+  cellTextColor: '#9ca3af',
+  rowHeight: 26,
   headerHeight: 30,
 });
 
@@ -52,6 +53,13 @@ function ArrayCellRenderer({ value }: { value: unknown[] }) {
   );
 }
 
+export interface SystemTableRef {
+  columns: ColumnConfig[];
+  toggleColumnVisibility: (field: string) => void;
+  columnSelectorOpen: boolean;
+  setColumnSelectorOpen: (open: boolean) => void;
+}
+
 interface SystemTableProps {
   title?: string;
   fetchData: (filters?: Record<string, string[]>) => Promise<Record<string, unknown>[]>;
@@ -61,11 +69,15 @@ interface SystemTableProps {
   filters?: Record<string, string[]>;
   getRowId?: (data: Record<string, unknown>) => string;
   onSortChange?: (field: string, order: 'ASC' | 'DESC') => void;
+  onColumnsChange?: (columns: ColumnConfig[]) => void;
   hideTitle?: boolean;
   hideHeader?: boolean;
+  showActionColumn?: boolean;
+  onRowAction?: (data: Record<string, unknown>) => void;
+  columnWidthOverrides?: Record<string, number>;
 }
 
-export function SystemTable({
+function SystemTableInner({
   title,
   fetchData,
   fetchColumns,
@@ -74,9 +86,13 @@ export function SystemTable({
   filters,
   getRowId,
   onSortChange,
+  onColumnsChange,
   hideTitle = false,
-  hideHeader = false,
-}: SystemTableProps) {
+  hideHeader = true,
+  showActionColumn = false,
+  onRowAction,
+  columnWidthOverrides,
+}: SystemTableProps, ref: React.ForwardedRef<SystemTableRef>) {
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns || []);
   const [loading, setLoading] = useState(true);
@@ -113,6 +129,13 @@ export function SystemTable({
       .catch((err) => console.error('Failed to load columns:', err));
   }, [fetchColumns, defaultVisibleFields]);
 
+  // Notify parent when columns change
+  useEffect(() => {
+    if (onColumnsChange && columns.length > 0) {
+      onColumnsChange(columns);
+    }
+  }, [columns, onColumnsChange]);
+
   // Load data
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -135,14 +158,48 @@ export function SystemTable({
     setColumns(cols => cols.map(c => c.field === field ? { ...c, visible: !c.visible } : c));
   }, []);
 
+  // Expose column selector functionality via ref
+  useImperativeHandle(ref, () => ({
+    columns,
+    toggleColumnVisibility,
+    columnSelectorOpen,
+    setColumnSelectorOpen,
+  }), [columns, toggleColumnVisibility, columnSelectorOpen]);
+
+  const ActionCellRenderer = useCallback((params: ICellRendererParams) => {
+    if (!onRowAction) return null;
+    return (
+      <button
+        onClick={() => onRowAction(params.data)}
+        className="p-1 hover:bg-gray-600 rounded"
+        title="View Details"
+      >
+        <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
+      </button>
+    );
+  }, [onRowAction]);
+
   const columnDefs: ColDef[] = useMemo(() => {
     const visibleCols = columns.filter(c => c.visible);
+    const defs: ColDef[] = [];
 
-    return visibleCols.map((col) => {
+    // Add action column if enabled
+    if (showActionColumn && onRowAction) {
+      defs.push({
+        headerName: '',
+        field: '_action',
+        width: 40,
+        sortable: false,
+        cellRenderer: ActionCellRenderer,
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
+      });
+    }
+
+    visibleCols.forEach((col) => {
       const def: ColDef = {
         headerName: col.headerName,
         field: col.field,
-        width: col.width,
+        width: columnWidthOverrides?.[col.field] ?? col.width,
         sortable: col.sortable,
         resizable: true,
         headerTooltip: col.comment || col.headerName,
@@ -152,16 +209,21 @@ export function SystemTable({
         def.cellRenderer = (params: ICellRendererParams) => <ArrayCellRenderer value={params.value} />;
       }
 
-      // Format bytes fields
-      if (col.field.includes('bytes') || col.field.includes('size') || col.field.includes('memory')) {
-        def.valueFormatter = (params) => params.value != null ? formatBytes(Number(params.value)) : '-';
-        def.cellStyle = { textAlign: 'right' };
+      // Table name styling - light blue
+      if (col.field === 'table') {
+        def.cellStyle = { color: '#60a5fa' };
       }
 
-      // Format number fields
+      // Format bytes fields - light green
+      if (col.field.includes('bytes') || col.field.includes('size') || col.field.includes('memory')) {
+        def.valueFormatter = (params) => params.value != null ? formatBytes(Number(params.value)) : '-';
+        def.cellStyle = { textAlign: 'right', color: '#86efac' };
+      }
+
+      // Format number fields - light green
       if (col.field.includes('rows') || col.field.includes('count') || col.field.includes('num_')) {
         def.valueFormatter = (params) => params.value != null ? formatNumber(Number(params.value)) : '-';
-        def.cellStyle = { textAlign: 'right' };
+        def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
       // Format time fields
@@ -170,14 +232,16 @@ export function SystemTable({
           if (!params.value) return '-';
           const date = new Date(params.value);
           return date.toLocaleString('en-US', {
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
           });
         };
       }
 
-      return def;
+      defs.push(def);
     });
-  }, [columns]);
+
+    return defs;
+  }, [columns, showActionColumn, onRowAction, ActionCellRenderer, columnWidthOverrides]);
 
   const onSortChanged = useCallback((event: SortChangedEvent) => {
     if (!onSortChange) return;
@@ -269,3 +333,5 @@ export function SystemTable({
     </div>
   );
 }
+
+export const SystemTable = forwardRef(SystemTableInner);

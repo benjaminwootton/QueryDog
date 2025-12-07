@@ -47,6 +47,7 @@ export function InstancePage() {
             fetchColumns={fetchSettingsColumns}
             getRowId={(data) => String(data.name)}
             hideHeader
+            columnWidthOverrides={{ name: 400 }}
           />
         )}
       </div>

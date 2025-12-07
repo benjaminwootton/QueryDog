@@ -51,7 +51,13 @@ export function FilterPanel() {
 
     setLoadingField(field);
     try {
-      const values = await fetchDistinctValues(field, timeRange);
+      // Use a wider time range for distinct values (last 24 hours from now)
+      // This ensures filter options aren't restricted by a narrow time range selection
+      const widerTimeRange = {
+        start: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        end: new Date(),
+      };
+      const values = await fetchDistinctValues(field, widerTimeRange);
       setFieldValues((prev) => ({ ...prev, [field]: values }));
     } catch (error) {
       console.error('Failed to load field values:', error);
@@ -78,10 +84,12 @@ export function FilterPanel() {
     }
   };
 
-  // Reload values when time range changes
+  // Clear cached values when panel opens to get fresh data
   useEffect(() => {
-    setFieldValues({});
-  }, [timeRange]);
+    if (isOpen) {
+      setFieldValues({});
+    }
+  }, [isOpen]);
 
   return (
     <div className="relative">

@@ -25,6 +25,15 @@ const client = createClient({
   database: process.env.CLICKHOUSE_DATABASE,
 });
 
+// Connection info endpoint
+app.get('/api/connection-info', (req, res) => {
+  res.json({
+    host: process.env.CLICKHOUSE_HOST,
+    port: process.env.CLICKHOUSE_PORT_HTTP,
+    secure: process.env.CLICKHOUSE_SECURE === '1',
+  });
+});
+
 // Define which fields are arrays for proper filtering
 const ARRAY_FIELDS = [
   'databases', 'tables', 'columns', 'partitions', 'projections', 'views',
@@ -69,6 +78,15 @@ function buildRangeFilterConditions(rangeFilters, whereConditions, params) {
   }
 }
 
+// Get effective end time - if start and end are the same, extend end to include the full minute
+function getEffectiveEndTime(start, end) {
+  if (!start || !end || start !== end) return end;
+  // Parse the date and add 59 seconds to include the full minute
+  const endDate = new Date(end);
+  endDate.setSeconds(59);
+  return endDate.toISOString().replace('T', ' ').slice(0, 19);
+}
+
 // Get query log entries
 app.get('/api/query-log', async (req, res) => {
   try {
@@ -83,7 +101,7 @@ app.get('/api/query-log', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
       whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
@@ -176,7 +194,7 @@ app.get('/api/query-log/timeseries', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
       whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
@@ -216,9 +234,24 @@ app.get('/api/query-log/timeseries', async (req, res) => {
         count() as count,
         avg(query_duration_ms) as avg_duration,
         max(query_duration_ms) as max_duration,
+        min(query_duration_ms) as min_duration,
+        sum(query_duration_ms) as sum_duration,
         avg(memory_usage) as avg_memory,
         max(memory_usage) as max_memory,
-        avg(result_rows) as avg_result_rows
+        min(memory_usage) as min_memory,
+        sum(memory_usage) as sum_memory,
+        avg(read_rows) as avg_read_rows,
+        max(read_rows) as max_read_rows,
+        min(read_rows) as min_read_rows,
+        sum(read_rows) as sum_read_rows,
+        avg(written_rows) as avg_written_rows,
+        max(written_rows) as max_written_rows,
+        min(written_rows) as min_written_rows,
+        sum(written_rows) as sum_written_rows,
+        avg(result_rows) as avg_result_rows,
+        max(result_rows) as max_result_rows,
+        min(result_rows) as min_result_rows,
+        sum(result_rows) as sum_result_rows
       FROM system.query_log
       ${whereClause}
       GROUP BY time
@@ -239,10 +272,85 @@ app.get('/api/query-log/timeseries', async (req, res) => {
   }
 });
 
+// Get stacked time series data for chart (grouped by query_kind)
+app.get('/api/query-log/timeseries-stacked', async (req, res) => {
+  try {
+    const { start, end, bucket = 'minute', search, filters, rangeFilters } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    if (start) {
+      whereConditions.push('event_time >= {start:DateTime}');
+      params.start = start;
+    }
+    if (end) {
+      whereConditions.push('event_time <= {end:DateTime}');
+      params.end = getEffectiveEndTime(start, end);
+    }
+    if (search) {
+      whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
+      params.search = `%${search}%`;
+    }
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
+        }
+      }
+    }
+
+    // Apply range filters
+    buildRangeFilterConditions(rangeFilters, whereConditions, params);
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    let truncFunc;
+    switch (bucket) {
+      case 'second':
+        truncFunc = 'toStartOfSecond(event_time_microseconds)';
+        break;
+      case 'hour':
+        truncFunc = 'toStartOfHour(event_time)';
+        break;
+      default:
+        truncFunc = 'toStartOfMinute(event_time)';
+    }
+
+    const query = `
+      SELECT
+        ${truncFunc} as time,
+        countIf(query_kind = 'Select') as Select,
+        countIf(query_kind = 'Insert') as Insert,
+        countIf(query_kind = 'Delete') as Delete,
+        countIf(query_kind NOT IN ('Select', 'Insert', 'Delete')) as Other
+      FROM system.query_log
+      ${whereClause}
+      GROUP BY time
+      ORDER BY time ASC
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching stacked time series:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get profile events from query_log
 app.get('/api/query-log/profile-events', async (req, res) => {
   try {
-    const { start, end, limit = 1000, filters, eventColumns } = req.query;
+    const { start, end, limit = 1000, filters, eventColumns, search } = req.query;
 
     let whereConditions = [];
     const params = { limit: parseInt(limit) };
@@ -253,7 +361,11 @@ app.get('/api/query-log/profile-events', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
+    }
+    if (search) {
+      whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
+      params.search = `%${search}%`;
     }
 
     // Apply field filters
@@ -324,7 +436,7 @@ app.get('/api/query-log/histogram/:field', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
       whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
@@ -406,7 +518,7 @@ app.get('/api/query-log/distinct/:field', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -452,10 +564,10 @@ app.get('/api/query-log/distinct/:field', async (req, res) => {
 // Get system.parts data
 app.get('/api/parts', async (req, res) => {
   try {
-    const { limit = 2500, sortField = 'modification_time', sortOrder = 'DESC', filters } = req.query;
+    const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters } = req.query;
 
     let whereConditions = [];
-    const params = { limit: parseInt(limit) };
+    const params = { limit: parseInt(limit), offset: parseInt(offset) };
 
     // Apply field filters
     if (filters) {
@@ -480,7 +592,7 @@ app.get('/api/parts', async (req, res) => {
       FROM system.parts
       ${whereClause}
       ORDER BY ${safeSortField} ${safeSortOrder}
-      LIMIT {limit:UInt32}
+      LIMIT {limit:UInt32} OFFSET {offset:UInt32}
     `;
 
     const result = await client.query({
@@ -516,13 +628,108 @@ app.get('/api/parts/columns', async (req, res) => {
   }
 });
 
+// Get system.parts count
+app.get('/api/parts/count', async (req, res) => {
+  try {
+    const { filters } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    // Apply field filters
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT count() as count
+      FROM system.parts
+      ${whereClause}
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json({ count: data[0]?.count || 0 });
+  } catch (error) {
+    console.error('Error fetching parts count:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get grouped parts by table
+app.get('/api/parts/grouped', async (req, res) => {
+  try {
+    const { filters } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    // Apply field filters
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT
+        database,
+        table,
+        count(DISTINCT partition_id) as partition_count,
+        count() as part_count,
+        sum(rows) as total_rows,
+        sum(bytes_on_disk) as total_bytes,
+        max(modification_time) as last_modification_time
+      FROM system.parts
+      ${whereClause}
+      GROUP BY database, table
+      ORDER BY total_bytes DESC
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching grouped parts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get system.partitions data
 app.get('/api/partitions', async (req, res) => {
   try {
-    const { limit = 2500, sortField = 'modification_time', sortOrder = 'DESC', filters } = req.query;
+    const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters } = req.query;
 
     let whereConditions = [];
-    const params = { limit: parseInt(limit) };
+    const params = { limit: parseInt(limit), offset: parseInt(offset) };
 
     // Apply field filters
     if (filters) {
@@ -547,7 +754,7 @@ app.get('/api/partitions', async (req, res) => {
       FROM system.parts
       ${whereClause}
       ORDER BY ${safeSortField} ${safeSortOrder}
-      LIMIT {limit:UInt32}
+      LIMIT {limit:UInt32} OFFSET {offset:UInt32}
     `;
 
     const result = await client.query({
@@ -560,6 +767,49 @@ app.get('/api/partitions', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching partitions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.partitions count
+app.get('/api/partitions/count', async (req, res) => {
+  try {
+    const { filters } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    // Apply field filters
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT count() as count
+      FROM system.parts
+      ${whereClause}
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json({ count: data[0]?.count || 0 });
+  } catch (error) {
+    console.error('Error fetching partitions count:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -579,6 +829,45 @@ app.get('/api/partitions/columns', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching partitions columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get partition details for a specific table
+app.get('/api/table-partitions/:database/:table', async (req, res) => {
+  try {
+    const { database, table } = req.params;
+    const { activeOnly = '1' } = req.query;
+
+    const params = { database, table };
+    const activeFilter = activeOnly === '1' ? 'AND active = 1' : '';
+
+    const query = `
+      SELECT
+        partition_id,
+        count() as parts_count,
+        sum(rows) as total_rows,
+        sum(bytes_on_disk) as total_bytes,
+        min(min_block_number) as min_block,
+        max(max_block_number) as max_block,
+        min(modification_time) as oldest_part,
+        max(modification_time) as newest_part
+      FROM system.parts
+      WHERE database = {database:String} AND table = {table:String} ${activeFilter}
+      GROUP BY partition_id
+      ORDER BY partition_id
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching table partitions:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -614,6 +903,60 @@ app.get('/api/parts/distinct/:field', async (req, res) => {
     res.json(data.map(row => row.value).filter(v => v !== ''));
   } catch (error) {
     console.error('Error fetching parts distinct values:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get histogram data for system.parts field
+app.get('/api/parts/histogram/:field', async (req, res) => {
+  try {
+    const { field } = req.params;
+    const { limit = 20, filters } = req.query;
+
+    const allowedFields = ['database', 'table', 'partition_id', 'part_type', 'disk_name', 'active'];
+    if (!allowedFields.includes(field)) {
+      return res.status(400).json({ error: 'Invalid field for histogram' });
+    }
+
+    let whereConditions = [];
+    const params = { limit: parseInt(limit) };
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [f, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex}`;
+          whereConditions.push(`toString(${f}) IN {${paramName}:Array(String)}`);
+          params[paramName] = values;
+          paramIndex++;
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT
+        toString(${field}) as name,
+        count() as count
+      FROM system.parts
+      ${whereClause}
+      GROUP BY name
+      ORDER BY count DESC
+      LIMIT {limit:UInt32}
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching parts histogram:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -805,6 +1148,72 @@ app.get('/api/mutations/distinct/:field', async (req, res) => {
     res.json(data.map(row => row.value).filter(v => v !== ''));
   } catch (error) {
     console.error('Error fetching mutations distinct:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== VIEW REFRESHES ENDPOINTS ====================
+
+// Get system.view_refreshes
+app.get('/api/view-refreshes', async (req, res) => {
+  try {
+    const { filters } = req.query;
+    let whereConditions = [];
+    let params = {};
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (Array.isArray(values) && values.length > 0) {
+          const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : null;
+          if (safeField) {
+            whereConditions.push(`toString(${safeField}) IN ({${safeField}_values:Array(String)})`);
+            params[`${safeField}_values`] = values;
+          }
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    const query = `SELECT * FROM system.view_refreshes ${whereClause} ORDER BY next_refresh_time ASC`;
+    const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching view_refreshes:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.view_refreshes columns
+app.get('/api/view-refreshes/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'view_refreshes'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching view_refreshes columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get distinct values for view_refreshes
+app.get('/api/view-refreshes/distinct/:field', async (req, res) => {
+  try {
+    const { field } = req.params;
+    const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
+    const query = `SELECT DISTINCT toString(${safeField}) as value FROM system.view_refreshes WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data.map(row => row.value).filter(v => v !== ''));
+  } catch (error) {
+    console.error('Error fetching view_refreshes distinct:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1149,12 +1558,15 @@ app.post('/api/query', async (req, res) => {
       return res.status(403).json({ error: 'Dangerous operations are not allowed through this interface' });
     }
 
+    // Check if query already has a FORMAT clause
+    const hasFormat = upperQuery.includes('FORMAT');
+
     // Add LIMIT only for SELECT queries that don't already have one
-    // Don't add LIMIT to EXPLAIN, SHOW, DESCRIBE, or queries with subqueries at the end
+    // Don't add LIMIT to EXPLAIN, SHOW, DESCRIBE, or queries with FORMAT or subqueries at the end
     let finalQuery = userQuery;
     const shouldAddLimit = upperQuery.startsWith('SELECT')
       && !upperQuery.includes('LIMIT')
-      && !upperQuery.includes('FORMAT')
+      && !hasFormat
       && !upperQuery.endsWith(')'); // Avoid adding LIMIT after closing parenthesis (subqueries)
 
     if (shouldAddLimit) {
@@ -1162,12 +1574,34 @@ app.post('/api/query', async (req, res) => {
     }
 
     const startTime = Date.now();
-    const result = await client.query({
-      query: finalQuery,
-      format: 'JSONEachRow',
-    });
 
-    const data = await result.json();
+    // If query already has FORMAT, don't specify format in client options
+    // Strip the FORMAT clause and let the query handle it, or use text mode
+    let data;
+    if (hasFormat) {
+      // Query has its own FORMAT - execute as-is and parse the result
+      // Remove the FORMAT clause to let us control the output
+      const formatMatch = userQuery.match(/\s+FORMAT\s+\w+\s*$/i);
+      if (formatMatch) {
+        // Remove FORMAT clause and add our own
+        finalQuery = userQuery.replace(/\s+FORMAT\s+\w+\s*$/i, '');
+        if (shouldAddLimit) {
+          finalQuery = `${finalQuery} LIMIT ${limit}`;
+        }
+      }
+      const result = await client.query({
+        query: finalQuery,
+        format: 'JSONEachRow',
+      });
+      data = await result.json();
+    } else {
+      const result = await client.query({
+        query: finalQuery,
+        format: 'JSONEachRow',
+      });
+      data = await result.json();
+    }
+
     const duration = Date.now() - startTime;
 
     res.json({
@@ -1223,7 +1657,7 @@ app.get('/api/part-log', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
 
     // Apply field filters
@@ -1285,7 +1719,7 @@ app.get('/api/part-log/count', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
 
     // Apply field filters
@@ -1337,7 +1771,7 @@ app.get('/api/part-log/timeseries', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
 
     if (filters) {
@@ -1373,7 +1807,10 @@ app.get('/api/part-log/timeseries', async (req, res) => {
         count() as count,
         sumIf(rows, event_type = 'NewPart') as new_rows,
         sumIf(rows, event_type = 'MergeParts') as merged_rows,
-        avg(duration_ms) as avg_duration
+        avg(duration_ms) as avg_duration,
+        min(duration_ms) as min_duration,
+        max(duration_ms) as max_duration,
+        sum(duration_ms) as sum_duration
       FROM system.part_log
       ${whereClause}
       GROUP BY time
@@ -1390,6 +1827,142 @@ app.get('/api/part-log/timeseries', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching part_log time series:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get stacked time series for part_log by event_type
+app.get('/api/part-log/timeseries-stacked', async (req, res) => {
+  try {
+    const { start, end, bucket = 'minute', filters } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    if (start) {
+      whereConditions.push('event_time >= {start:DateTime}');
+      params.start = start;
+    }
+    if (end) {
+      whereConditions.push('event_time <= {end:DateTime}');
+      params.end = getEffectiveEndTime(start, end);
+    }
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    let truncFunc;
+    switch (bucket) {
+      case 'second':
+        truncFunc = 'event_time';
+        break;
+      case 'hour':
+        truncFunc = 'toStartOfHour(event_time)';
+        break;
+      default:
+        truncFunc = 'toStartOfMinute(event_time)';
+    }
+
+    const query = `
+      SELECT
+        ${truncFunc} as time,
+        countIf(event_type = 'NewPart') as NewPart,
+        countIf(event_type = 'MergeParts') as MergeParts,
+        countIf(event_type = 'DownloadPart') as DownloadPart,
+        countIf(event_type = 'RemovePart') as RemovePart,
+        countIf(event_type = 'MutatePart') as MutatePart,
+        countIf(event_type NOT IN ('NewPart', 'MergeParts', 'DownloadPart', 'RemovePart', 'MutatePart')) as Other
+      FROM system.part_log
+      ${whereClause}
+      GROUP BY time
+      ORDER BY time ASC
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching part_log stacked time series:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get histogram data for part_log field
+app.get('/api/part-log/histogram/:field', async (req, res) => {
+  try {
+    const { field } = req.params;
+    const { start, end, limit = 20, filters } = req.query;
+
+    const allowedFields = ['table', 'event_type', 'merge_reason', 'database', 'merge_algorithm'];
+    if (!allowedFields.includes(field)) {
+      return res.status(400).json({ error: 'Invalid field for histogram' });
+    }
+
+    let whereConditions = [];
+    const params = {};
+
+    if (start) {
+      whereConditions.push('event_time >= {start:DateTime}');
+      params.start = start;
+    }
+    if (end) {
+      whereConditions.push('event_time <= {end:DateTime}');
+      params.end = getEffectiveEndTime(start, end);
+    }
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [f, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex}`;
+          whereConditions.push(`${f} IN {${paramName}:Array(String)}`);
+          params[paramName] = values;
+          paramIndex++;
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    params.limit = parseInt(limit);
+
+    const query = `
+      SELECT
+        toString(${field}) as name,
+        count() as count
+      FROM system.part_log
+      ${whereClause}
+      GROUP BY name
+      ORDER BY count DESC
+      LIMIT {limit:UInt32}
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching part_log histogram:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1415,7 +1988,7 @@ app.get('/api/part-log/distinct/:field', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -1477,7 +2050,7 @@ app.get('/api/text-log', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
       whereConditions.push('(message ILIKE {search:String} OR logger_name ILIKE {search:String})');
@@ -1542,7 +2115,7 @@ app.get('/api/text-log/count', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
       whereConditions.push('(message ILIKE {search:String} OR logger_name ILIKE {search:String})');
@@ -1597,7 +2170,7 @@ app.get('/api/text-log/timeseries', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
 
     if (filters) {
@@ -1673,7 +2246,7 @@ app.get('/api/text-log/distinct/:field', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -1717,7 +2290,7 @@ app.get('/api/query-log/grouped', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
       whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
@@ -1749,8 +2322,7 @@ app.get('/api/query-log/grouped', async (req, res) => {
 
     const query = `
       SELECT
-        normalized_query_hash,
-        any(query) as example_query,
+        query as example_query,
         any(user) as user,
         any(current_database) as current_database,
         count() as count,
@@ -1764,13 +2336,15 @@ app.get('/api/query-log/grouped', async (req, res) => {
         sum(read_rows) as total_read_rows,
         avg(read_rows) as avg_read_rows,
         sum(read_bytes) as total_read_bytes,
+        sum(written_rows) as total_written_rows,
+        avg(written_rows) as avg_written_rows,
         sum(result_rows) as total_result_rows,
         avg(result_rows) as avg_result_rows,
         min(event_time) as first_seen,
         max(event_time) as last_seen
       FROM system.query_log
       ${whereClause}
-      GROUP BY normalized_query_hash
+      GROUP BY query
       ORDER BY ${safeSortField} ${safeSortOrder}
       LIMIT {limit:UInt32}
     `;
@@ -1805,7 +2379,7 @@ app.get('/api/query-log/count', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = end;
+      params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
       whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
@@ -1856,7 +2430,7 @@ app.use((req, res, next) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8001;
 app.listen(PORT, () => {
   console.log(`QueryDog running on http://localhost:${PORT}`);
 });

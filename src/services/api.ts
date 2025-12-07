@@ -77,6 +77,45 @@ export async function fetchTimeSeries(
   return response.json();
 }
 
+export interface StackedTimeSeriesPoint {
+  time: string;
+  Select: number;
+  Insert: number;
+  Other: number;
+}
+
+export async function fetchStackedTimeSeries(
+  timeRange: TimeRange,
+  bucketSize: BucketSize,
+  search: string,
+  filters: Record<string, string[]>,
+  rangeFilters: Record<string, RangeFilter> = {}
+): Promise<StackedTimeSeriesPoint[]> {
+  const params = new URLSearchParams({
+    start: formatDateTime(timeRange.start),
+    end: formatDateTime(timeRange.end),
+    bucket: bucketSize,
+  });
+
+  if (search) {
+    params.set('search', search);
+  }
+
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+
+  if (Object.keys(rangeFilters).length > 0) {
+    params.set('rangeFilters', JSON.stringify(rangeFilters));
+  }
+
+  const response = await fetch(`${API_BASE}/query-log/timeseries-stacked?${params}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch stacked time series: ${response.statusText}`);
+  }
+  return response.json();
+}
+
 export async function fetchHistogram(
   field: string,
   timeRange: TimeRange,
@@ -163,7 +202,6 @@ export async function fetchColumnMetadata(): Promise<ColumnMetadata[]> {
 }
 
 export interface GroupedQueryEntry {
-  normalized_query_hash: string;
   example_query: string;
   user: string;
   current_database: string;
@@ -178,6 +216,8 @@ export interface GroupedQueryEntry {
   total_read_rows: number;
   avg_read_rows: number;
   total_read_bytes: number;
+  total_written_rows: number;
+  avg_written_rows: number;
   total_result_rows: number;
   avg_result_rows: number;
   first_seen: string;
@@ -227,7 +267,7 @@ export async function fetchPartLog(
   sortField: string,
   sortOrder: 'ASC' | 'DESC',
   filters: Record<string, string[]> = {},
-  limit = 2500,
+  limit = 1000,
   offset = 0
 ): Promise<PartLogEntry[]> {
   const params = new URLSearchParams({
@@ -305,6 +345,39 @@ export interface PartLogTimeSeriesPoint {
   avg_duration: number;
 }
 
+export interface PartLogStackedTimeSeriesPoint {
+  time: string;
+  NewPart: number;
+  MergeParts: number;
+  DownloadPart: number;
+  RemovePart: number;
+  MutatePart: number;
+  Other: number;
+}
+
+export async function fetchPartLogHistogram(
+  field: string,
+  timeRange: TimeRange,
+  filters: Record<string, string[]> = {},
+  limit = 20
+): Promise<HistogramData[]> {
+  const params = new URLSearchParams({
+    start: formatDateTime(timeRange.start),
+    end: formatDateTime(timeRange.end),
+    limit: limit.toString(),
+  });
+
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+
+  const response = await fetch(`${API_BASE}/part-log/histogram/${field}?${params}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch part_log histogram: ${response.statusText}`);
+  }
+  return response.json();
+}
+
 export async function fetchPartLogTimeSeries(
   timeRange: TimeRange,
   bucketSize: BucketSize,
@@ -327,21 +400,57 @@ export async function fetchPartLogTimeSeries(
   return response.json();
 }
 
+export async function fetchPartLogStackedTimeSeries(
+  timeRange: TimeRange,
+  bucketSize: BucketSize,
+  filters: Record<string, string[]> = {}
+): Promise<PartLogStackedTimeSeriesPoint[]> {
+  const params = new URLSearchParams({
+    start: formatDateTime(timeRange.start),
+    end: formatDateTime(timeRange.end),
+    bucket: bucketSize,
+  });
+
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+
+  const response = await fetch(`${API_BASE}/part-log/timeseries-stacked?${params}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch part_log stacked time series: ${response.statusText}`);
+  }
+  return response.json();
+}
+
 // ==================== SYSTEM PARTS API ====================
 
 export async function fetchParts(
   sortField = 'modification_time',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   filters: Record<string, string[]> = {},
-  limit = 2500
+  limit = 1000,
+  offset = 0
 ): Promise<Record<string, unknown>[]> {
-  const params = new URLSearchParams({ sortField, sortOrder, limit: limit.toString() });
+  const params = new URLSearchParams({ sortField, sortOrder, limit: limit.toString(), offset: offset.toString() });
   if (Object.keys(filters).length > 0) {
     params.set('filters', JSON.stringify(filters));
   }
   const response = await fetch(`${API_BASE}/parts?${params}`);
   if (!response.ok) throw new Error(`Failed to fetch parts: ${response.statusText}`);
   return response.json();
+}
+
+export async function fetchPartsCount(
+  filters: Record<string, string[]> = {}
+): Promise<number> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  const response = await fetch(`${API_BASE}/parts/count?${params}`);
+  if (!response.ok) throw new Error(`Failed to fetch parts count: ${response.statusText}`);
+  const data = await response.json();
+  return data.count;
 }
 
 export async function fetchPartsDistinctValues(
@@ -360,13 +469,34 @@ export async function fetchPartsColumns(): Promise<ColumnMetadata[]> {
   return response.json();
 }
 
+export async function fetchPartsHistogram(
+  field: string,
+  filters: Record<string, string[]> = {},
+  limit = 20
+): Promise<HistogramData[]> {
+  const params = new URLSearchParams({
+    limit: limit.toString(),
+  });
+
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+
+  const response = await fetch(`${API_BASE}/parts/histogram/${field}?${params}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch parts histogram: ${response.statusText}`);
+  }
+  return response.json();
+}
+
 export async function fetchPartitions(
   sortField = 'modification_time',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   filters: Record<string, string[]> = {},
-  limit = 2500
+  limit = 1000,
+  offset = 0
 ): Promise<Record<string, unknown>[]> {
-  const params = new URLSearchParams({ sortField, sortOrder, limit: limit.toString() });
+  const params = new URLSearchParams({ sortField, sortOrder, limit: limit.toString(), offset: offset.toString() });
   if (Object.keys(filters).length > 0) {
     params.set('filters', JSON.stringify(filters));
   }
@@ -375,9 +505,67 @@ export async function fetchPartitions(
   return response.json();
 }
 
+export async function fetchPartitionsCount(
+  filters: Record<string, string[]> = {}
+): Promise<number> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  const response = await fetch(`${API_BASE}/partitions/count?${params}`);
+  if (!response.ok) throw new Error(`Failed to fetch partitions count: ${response.statusText}`);
+  const data = await response.json();
+  return data.count;
+}
+
 export async function fetchPartitionsColumns(): Promise<ColumnMetadata[]> {
   const response = await fetch(`${API_BASE}/partitions/columns`);
   if (!response.ok) throw new Error(`Failed to fetch partitions columns: ${response.statusText}`);
+  return response.json();
+}
+
+export interface GroupedPartsEntry {
+  database: string;
+  table: string;
+  partition_count: number;
+  part_count: number;
+  total_rows: number;
+  total_bytes: number;
+  last_modification_time: string;
+}
+
+export interface TablePartitionEntry {
+  partition_id: string;
+  parts_count: number;
+  total_rows: number;
+  total_bytes: number;
+  min_block: number;
+  max_block: number;
+  oldest_part: string;
+  newest_part: string;
+}
+
+export async function fetchTablePartitions(
+  database: string,
+  table: string,
+  activeOnly = true
+): Promise<TablePartitionEntry[]> {
+  const params = new URLSearchParams({ activeOnly: activeOnly ? '1' : '0' });
+  const response = await fetch(`${API_BASE}/table-partitions/${encodeURIComponent(database)}/${encodeURIComponent(table)}?${params}`);
+  if (!response.ok) throw new Error(`Failed to fetch table partitions: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchGroupedParts(
+  filters: Record<string, string[]> = {}
+): Promise<GroupedPartsEntry[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  const url = Object.keys(filters).length > 0 ? `${API_BASE}/parts/grouped?${params}` : `${API_BASE}/parts/grouped`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch grouped parts: ${response.statusText}`);
   return response.json();
 }
 
@@ -449,6 +637,31 @@ export async function fetchMutationsColumns(): Promise<ColumnMetadata[]> {
 export async function fetchMutationsDistinct(field: string): Promise<string[]> {
   const response = await fetch(`${API_BASE}/mutations/distinct/${field}`);
   if (!response.ok) throw new Error(`Failed to fetch mutations distinct: ${response.statusText}`);
+  return response.json();
+}
+
+// ==================== VIEW REFRESHES API ====================
+
+export async function fetchViewRefreshes(filters: Record<string, string[]> = {}): Promise<Record<string, unknown>[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  const url = Object.keys(filters).length > 0 ? `${API_BASE}/view-refreshes?${params}` : `${API_BASE}/view-refreshes`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch view refreshes: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchViewRefreshesColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/view-refreshes/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch view refreshes columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchViewRefreshesDistinct(field: string): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/view-refreshes/distinct/${field}`);
+  if (!response.ok) throw new Error(`Failed to fetch view refreshes distinct: ${response.statusText}`);
   return response.json();
 }
 
@@ -756,6 +969,7 @@ export async function fetchProfileEvents(
   timeRange: TimeRange,
   filters: Record<string, string[]>,
   eventColumns: string[],
+  search?: string,
   limit = 1000
 ): Promise<Record<string, unknown>[]> {
   const params = new URLSearchParams({
@@ -767,6 +981,10 @@ export async function fetchProfileEvents(
 
   if (Object.keys(filters).length > 0) {
     params.set('filters', JSON.stringify(filters));
+  }
+
+  if (search) {
+    params.set('search', search);
   }
 
   const response = await fetch(`${API_BASE}/query-log/profile-events?${params}`);

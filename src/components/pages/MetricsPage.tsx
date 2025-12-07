@@ -7,20 +7,21 @@ import { fetchMetrics, fetchAsyncMetrics, fetchEvents } from '../../services/api
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+// Create dark theme with JetBrains Mono for cells, lighter weight
 const darkTheme = themeAlpine.withParams({
   backgroundColor: '#111827',
   headerBackgroundColor: '#1f2937',
   oddRowBackgroundColor: '#111827',
   rowHoverColor: '#1f2937',
   borderColor: '#374151',
-  foregroundColor: '#d1d5db',
+  foregroundColor: '#9ca3af',
   headerTextColor: '#f3f4f6',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
   fontSize: 9,
   headerFontSize: 11,
   headerFontWeight: 600,
-  cellTextColor: '#d1d5db',
-  rowHeight: 28,
+  cellTextColor: '#9ca3af',
+  rowHeight: 26,
   headerHeight: 30,
 });
 
@@ -128,7 +129,37 @@ export function MetricsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="border-b border-gray-700 px-4 flex items-center gap-1 shrink-0">
+      {/* Filter bar - consistent with other pages */}
+      <div className="bg-gray-900/50 border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="relative flex items-center">
+            <Search className="absolute left-2 w-3 h-3 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search metrics..."
+              className="bg-gray-800 border border-gray-600 rounded pl-6 pr-6 py-0.5 text-white text-xs w-64"
+            />
+          </div>
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        <div className="flex items-center gap-4 text-xs">
+          <span className="text-gray-400">
+            Total: <span className="text-white font-medium">{filteredData.length.toLocaleString()}</span> {activeTab === 'events' ? 'events' : 'metrics'}
+          </span>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-700 mx-4 flex items-center gap-1 shrink-0">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -143,43 +174,21 @@ export function MetricsPage() {
             {label}
           </button>
         ))}
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search metrics..."
-              className="pl-7 pr-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded text-white placeholder-gray-500 w-48"
-            />
-          </div>
-          <span className="text-xs text-gray-400">{filteredData.length} metrics</span>
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
       </div>
 
+      {/* Table */}
       <div className="flex-1 overflow-hidden p-4">
-        <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
-          <AgGridReact<MetricRow | EventRow>
-            theme={darkTheme}
-            rowData={filteredData}
-            columnDefs={columnDefs}
-            defaultColDef={defaultColDef}
-            loading={loading}
-            animateRows={false}
-            suppressCellFocus={true}
-            enableCellTextSelection={true}
-            getRowId={(params) => (params.data as MetricRow).metric || (params.data as EventRow).event}
-          />
-        </div>
+        <AgGridReact<MetricRow | EventRow>
+          theme={darkTheme}
+          rowData={filteredData}
+          columnDefs={columnDefs}
+          defaultColDef={defaultColDef}
+          loading={loading}
+          animateRows={false}
+          suppressCellFocus={true}
+          enableCellTextSelection={true}
+          getRowId={(params) => (params.data as MetricRow).metric || (params.data as EventRow).event}
+        />
       </div>
     </div>
   );

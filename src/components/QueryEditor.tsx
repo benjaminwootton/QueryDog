@@ -175,6 +175,12 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onBlur={() => {
+                  // Auto-compute the selected explain tab when tabbing out
+                  if (query.trim()) {
+                    loadExplain(activeExplainTab, true);
+                  }
+                }}
                 placeholder="Enter your SQL query here..."
                 className="w-full h-32 bg-gray-800 border border-gray-600 rounded p-3 text-sm font-mono text-gray-200 focus:outline-none focus:border-blue-500 resize-none"
                 spellCheck={false}

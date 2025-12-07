@@ -8,16 +8,33 @@ export interface RangeFilter {
   max?: number;
 }
 
-export type ChartMetric = 'count' | 'duration' | 'memory' | 'result_rows';
+export type ChartMetric = 'count' | 'duration' | 'memory' | 'read_rows' | 'written_rows' | 'result_rows';
+export type ChartType = 'bar' | 'stacked-bar' | 'line' | 'stacked-line' | 'scatter';
+export type ChartAggregation = 'avg' | 'sum' | 'min' | 'max';
 
 export interface TimeSeriesPoint {
   time: string;
   count: number;
   avg_duration?: number;
   max_duration?: number;
+  min_duration?: number;
+  sum_duration?: number;
   avg_memory?: number;
   max_memory?: number;
+  min_memory?: number;
+  sum_memory?: number;
+  avg_read_rows?: number;
+  max_read_rows?: number;
+  min_read_rows?: number;
+  sum_read_rows?: number;
+  avg_written_rows?: number;
+  max_written_rows?: number;
+  min_written_rows?: number;
+  sum_written_rows?: number;
   avg_result_rows?: number;
+  max_result_rows?: number;
+  min_result_rows?: number;
+  sum_result_rows?: number;
 }
 
 export interface PartLogTimeSeriesPoint {
@@ -26,12 +43,34 @@ export interface PartLogTimeSeriesPoint {
   new_rows: number;
   merged_rows: number;
   avg_duration: number;
+  min_duration: number;
+  max_duration: number;
+  sum_duration: number;
+}
+
+export interface StackedTimeSeriesPoint {
+  time: string;
+  Select: number;
+  Insert: number;
+  Delete: number;
+  Other: number;
+}
+
+export interface PartLogStackedTimeSeriesPoint {
+  time: string;
+  NewPart: number;
+  MergeParts: number;
+  DownloadPart: number;
+  RemovePart: number;
+  MutatePart: number;
+  Other: number;
 }
 
 interface QueryState {
   // Data
   entries: QueryLogEntry[];
   timeSeries: TimeSeriesPoint[];
+  stackedTimeSeries: StackedTimeSeriesPoint[];
   totalCount: number;
   loading: boolean;
   error: string | null;
@@ -45,11 +84,15 @@ interface QueryState {
   // Part Log Data
   partLogEntries: PartLogEntry[];
   partLogTimeSeries: PartLogTimeSeriesPoint[];
+  partLogStackedTimeSeries: PartLogStackedTimeSeriesPoint[];
   partLogTotalCount: number;
   partLogLoading: boolean;
 
   // Chart
   chartMetric: ChartMetric;
+  chartType: ChartType;
+  chartAggregation: ChartAggregation;
+  partLogChartMetric: 'count' | 'duration';
 
   // Filters
   timeRange: TimeRange;
@@ -77,6 +120,16 @@ interface QueryState {
   partLogPageSize: number;
   partLogCurrentPage: number;
 
+  // Parts Table config
+  partsTotalCount: number;
+  partsPageSize: number;
+  partsCurrentPage: number;
+
+  // Partitions Table config
+  partitionsTotalCount: number;
+  partitionsPageSize: number;
+  partitionsCurrentPage: number;
+
   // UI state
   selectedEntry: QueryLogEntry | null;
   activeTab: 'queries' | 'grouped' | 'histograms' | 'profileEvents';
@@ -84,7 +137,11 @@ interface QueryState {
   // Actions
   setEntries: (entries: QueryLogEntry[]) => void;
   setTimeSeries: (data: TimeSeriesPoint[]) => void;
+  setStackedTimeSeries: (data: StackedTimeSeriesPoint[]) => void;
   setChartMetric: (metric: ChartMetric) => void;
+  setChartType: (type: ChartType) => void;
+  setChartAggregation: (aggregation: ChartAggregation) => void;
+  setPartLogChartMetric: (metric: 'count' | 'duration') => void;
   setTotalCount: (count: number) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -111,6 +168,7 @@ interface QueryState {
   // Part Log Actions
   setPartLogEntries: (entries: PartLogEntry[]) => void;
   setPartLogTimeSeries: (data: PartLogTimeSeriesPoint[]) => void;
+  setPartLogStackedTimeSeries: (data: PartLogStackedTimeSeriesPoint[]) => void;
   setPartLogTotalCount: (count: number) => void;
   setPartLogLoading: (loading: boolean) => void;
   setPartLogColumns: (columns: ColumnConfig[]) => void;
@@ -121,6 +179,12 @@ interface QueryState {
   clearPartLogFieldFilter: (field: string) => void;
   clearAllPartLogFilters: () => void;
   setPartLogCurrentPage: (page: number) => void;
+  // Parts Actions
+  setPartsTotalCount: (count: number) => void;
+  setPartsCurrentPage: (page: number) => void;
+  // Partitions Actions
+  setPartitionsTotalCount: (count: number) => void;
+  setPartitionsCurrentPage: (page: number) => void;
 }
 
 const now = new Date();
@@ -129,6 +193,7 @@ const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 export const useQueryStore = create<QueryState>((set) => ({
   entries: [],
   timeSeries: [],
+  stackedTimeSeries: [],
   totalCount: 0,
   loading: false,
   error: null,
@@ -142,10 +207,14 @@ export const useQueryStore = create<QueryState>((set) => ({
   // Part Log Data
   partLogEntries: [],
   partLogTimeSeries: [],
+  partLogStackedTimeSeries: [],
   partLogTotalCount: 0,
   partLogLoading: false,
 
   chartMetric: 'count',
+  chartType: 'bar',
+  chartAggregation: 'avg',
+  partLogChartMetric: 'count',
 
   timeRange: { start: oneHourAgo, end: now },
   bucketSize: 'minute',
@@ -158,7 +227,7 @@ export const useQueryStore = create<QueryState>((set) => ({
   sortField: 'event_time',
   sortOrder: 'DESC',
 
-  pageSize: 2500,
+  pageSize: 1000,
   currentPage: 0,
 
   // Part Log Table config
@@ -166,16 +235,30 @@ export const useQueryStore = create<QueryState>((set) => ({
   partLogColumnsLoaded: false,
   partLogSortField: 'event_time',
   partLogSortOrder: 'DESC',
-  partLogFieldFilters: {},
-  partLogPageSize: 2500,
+  partLogFieldFilters: { event_type: ['NewPart', 'MergeParts', 'DownloadPart', 'RemovePart', 'MutatePart'] },
+  partLogPageSize: 1000,
   partLogCurrentPage: 0,
+
+  // Parts Table config
+  partsTotalCount: 0,
+  partsPageSize: 1000,
+  partsCurrentPage: 0,
+
+  // Partitions Table config
+  partitionsTotalCount: 0,
+  partitionsPageSize: 1000,
+  partitionsCurrentPage: 0,
 
   selectedEntry: null,
   activeTab: 'queries',
 
   setEntries: (entries) => set({ entries }),
   setTimeSeries: (timeSeries) => set({ timeSeries }),
+  setStackedTimeSeries: (stackedTimeSeries) => set({ stackedTimeSeries }),
   setChartMetric: (chartMetric) => set({ chartMetric }),
+  setChartType: (chartType) => set({ chartType }),
+  setChartAggregation: (chartAggregation) => set({ chartAggregation }),
+  setPartLogChartMetric: (partLogChartMetric) => set({ partLogChartMetric }),
   setTotalCount: (totalCount) => set({ totalCount }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
@@ -226,6 +309,7 @@ export const useQueryStore = create<QueryState>((set) => ({
   // Part Log Actions
   setPartLogEntries: (partLogEntries) => set({ partLogEntries }),
   setPartLogTimeSeries: (partLogTimeSeries) => set({ partLogTimeSeries }),
+  setPartLogStackedTimeSeries: (partLogStackedTimeSeries) => set({ partLogStackedTimeSeries }),
   setPartLogTotalCount: (partLogTotalCount) => set({ partLogTotalCount }),
   setPartLogLoading: (partLogLoading) => set({ partLogLoading }),
   setPartLogColumns: (partLogColumns) => set({ partLogColumns, partLogColumnsLoaded: true }),
@@ -247,6 +331,12 @@ export const useQueryStore = create<QueryState>((set) => ({
       const { [field]: _, ...rest } = state.partLogFieldFilters;
       return { partLogFieldFilters: rest, partLogCurrentPage: 0 };
     }),
-  clearAllPartLogFilters: () => set({ partLogFieldFilters: {}, partLogCurrentPage: 0 }),
+  clearAllPartLogFilters: () => set({ partLogFieldFilters: { event_type: ['NewPart', 'MergeParts', 'DownloadPart', 'RemovePart', 'MutatePart'] }, partLogCurrentPage: 0 }),
   setPartLogCurrentPage: (partLogCurrentPage) => set({ partLogCurrentPage }),
+  // Parts Actions
+  setPartsTotalCount: (partsTotalCount) => set({ partsTotalCount }),
+  setPartsCurrentPage: (partsCurrentPage) => set({ partsCurrentPage }),
+  // Partitions Actions
+  setPartitionsTotalCount: (partitionsTotalCount) => set({ partitionsTotalCount }),
+  setPartitionsCurrentPage: (partitionsCurrentPage) => set({ partitionsCurrentPage }),
 }));
