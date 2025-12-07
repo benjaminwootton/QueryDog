@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS ecommerce.page_views
     -- Product context (if product page)
     product_id Nullable(String),
     product_name Nullable(String),
-    product_category Nullable(LowCardinality(String)),
+    product_category LowCardinality(Nullable(String)),
     product_price Nullable(Decimal(10, 2)),
 
     -- Search context (if search page)
@@ -143,8 +143,8 @@ CREATE TABLE IF NOT EXISTS ecommerce.page_views
     -- Traffic source
     referrer_url Nullable(String),
     referrer_domain Nullable(String),
-    utm_source Nullable(LowCardinality(String)),
-    utm_medium Nullable(LowCardinality(String)),
+    utm_source LowCardinality(Nullable(String)),
+    utm_medium LowCardinality(Nullable(String)),
     utm_campaign Nullable(String),
 
     -- Device info
@@ -224,8 +224,8 @@ CREATE TABLE IF NOT EXISTS ecommerce.shopping_cart
     -- Attribution
     source_channel LowCardinality(String),
     landing_page_url String,
-    utm_source Nullable(LowCardinality(String)),
-    utm_medium Nullable(LowCardinality(String)),
+    utm_source LowCardinality(Nullable(String)),
+    utm_medium LowCardinality(Nullable(String)),
     utm_campaign Nullable(String),
 
     -- Device info
@@ -241,7 +241,7 @@ CREATE TABLE IF NOT EXISTS ecommerce.shopping_cart
 )
 ENGINE = MergeTree()
 PARTITION BY toYYYYMMDD(cart_created_at)
-ORDER BY (cart_created_at, customer_id, cart_id)
+ORDER BY (cart_created_at, cart_id)
 TTL created_at + INTERVAL 1 DAY;
 
 -- ============================================================================

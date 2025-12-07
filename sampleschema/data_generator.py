@@ -107,7 +107,7 @@ def generate_customer() -> dict:
         'first_name': fake.first_name(),
         'last_name': fake.last_name(),
         'phone_number': fake.phone_number() if random.random() > 0.2 else None,
-        'date_of_birth': fake.date_of_birth(minimum_age=18, maximum_age=80) if random.random() > 0.3 else None,
+        'date_of_birth': str(fake.date_of_birth(minimum_age=18, maximum_age=80)) if random.random() > 0.3 else None,
         'gender': random.choice(GENDERS),
         'registration_date': registration_date,
         'last_login_date': last_login,
