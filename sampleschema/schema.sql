@@ -317,8 +317,8 @@ AS SELECT
     countIf(cart_status = 'abandoned') AS abandoned_carts,
     countIf(cart_status = 'converted') AS converted_carts,
     sumIf(estimated_total, cart_status = 'abandoned') AS total_abandoned_value,
-    avgIf(estimated_total, cart_status = 'abandoned') AS avg_abandoned_cart_value,
-    avgIf(items_count, cart_status = 'abandoned') AS avg_items_in_abandoned_cart
+    ifNotFinite(avgIf(estimated_total, cart_status = 'abandoned'), 0) AS avg_abandoned_cart_value,
+    ifNotFinite(avgIf(items_count, cart_status = 'abandoned'), 0) AS avg_items_in_abandoned_cart
 FROM ecommerce.shopping_cart
 GROUP BY
     date,
