@@ -160,6 +160,14 @@ export function PartLogTimelineChart() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        <div className="flex gap-4 mt-2 justify-center text-xs">
+          {eventTypes.map((eventType) => (
+            <div key={eventType} className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: EVENT_TYPE_COLORS[eventType] }} />
+              <span className="text-gray-400">{eventType}</span>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -219,6 +227,14 @@ export function PartLogTimelineChart() {
               ))}
             </AreaChart>
           </ResponsiveContainer>
+        </div>
+        <div className="flex gap-4 mt-2 justify-center text-xs">
+          {eventTypes.map((eventType) => (
+            <div key={eventType} className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: EVENT_TYPE_COLORS[eventType] }} />
+              <span className="text-gray-400">{eventType}</span>
+            </div>
+          ))}
         </div>
       </div>
     );

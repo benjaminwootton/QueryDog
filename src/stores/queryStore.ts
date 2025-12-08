@@ -212,7 +212,7 @@ export const useQueryStore = create<QueryState>((set) => ({
   partLogLoading: false,
 
   chartMetric: 'count',
-  chartType: 'bar',
+  chartType: 'stacked-bar',
   chartAggregation: 'avg',
   partLogChartMetric: 'count',
 

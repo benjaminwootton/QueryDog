@@ -186,17 +186,18 @@ export function PartsPage() {
     {
       headerName: '',
       field: 'action',
-      width: 40,
+      width: 50,
       sortable: false,
+      cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
       cellRenderer: (params: ICellRendererParams<GroupedPartsEntry>) => {
         if (!params.data) return null;
         return (
           <button
             onClick={() => handleViewPartitions(params.data!.database, params.data!.table)}
-            className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-blue-400 transition-colors"
+            className="p-1.5 hover:bg-gray-700 rounded text-gray-300 hover:text-blue-400 transition-colors"
             title="View partition details"
           >
-            <Eye className="w-3.5 h-3.5" />
+            <Eye className="w-4 h-4" />
           </button>
         );
       },
@@ -210,7 +211,7 @@ export function PartsPage() {
     {
       headerName: 'Table',
       field: 'table',
-      width: 200,
+      width: 400,
       sortable: true,
       cellStyle: { color: '#60a5fa' },
     },
