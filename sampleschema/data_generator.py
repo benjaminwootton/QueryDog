@@ -2,9 +2,12 @@
 """
 Ecommerce Data Generator for ClickHouse
 
-Generates realistic ecommerce data at approximately 50 records per minute
+Generates realistic ecommerce data at approximately 100 records per minute
 across customers, orders, page_views, and shopping_cart tables.
-Uses Faker for realistic data and introduces randomness in update frequencies.
+Uses Faker for realistic data with continuous, spiky traffic patterns:
+- Burst mode: Random bursts of 5-15 rapid inserts (8% trigger chance)
+- Exponential timing variance for realistic traffic spikes
+- Occasional quiet periods for natural patterns
 """
 
 import os
@@ -404,12 +407,14 @@ def run_generator():
     """
     Main generator loop.
 
-    Target: ~50 records per minute across all tables
-    Distribution (with randomness):
-    - Page views: ~25-30 per minute (most frequent)
-    - Shopping carts: ~10-15 per minute
-    - Orders: ~5-8 per minute
-    - Customers: ~2-5 per minute (least frequent)
+    Target: ~100 records per minute across all tables with spiky, realistic patterns
+    Uses continuous generation similar to query patterns with randomized bursts.
+
+    Distribution (probabilistic per insert):
+    - Page views: 50% chance (most frequent)
+    - Shopping carts: 25% chance
+    - Orders: 18% chance
+    - Customers: 7% chance (least frequent)
     """
     print("Starting ecommerce data generator...")
     print(f"Connecting to ClickHouse at {CLICKHOUSE_CONFIG['host']}...")
@@ -424,62 +429,94 @@ def run_generator():
     print("Pre-populating initial page views (for sessions)...")
     insert_page_views(client, 20)
 
-    print("\nStarting continuous data generation (~50 records/minute)...")
+    print("\nStarting continuous data generation (~100 records/minute, spiky pattern)...")
     print("Press Ctrl+C to stop\n")
 
-    iteration = 0
+    # Target ~100 inserts per minute = ~1.67 per second
+    # Base interval ~0.6 seconds, but with high variance for spiky behavior
+    BASE_INTERVAL = 0.6
+
+    total_inserted = 0
+    start_time = time.time()
+
+    # Burst mode tracking
+    in_burst = False
+    burst_remaining = 0
 
     try:
         while True:
-            iteration += 1
+            # Determine if we should enter/continue burst mode (creates spiky patterns)
+            if not in_burst and random.random() < 0.08:  # 8% chance to start a burst
+                in_burst = True
+                burst_remaining = random.randint(5, 15)  # Burst of 5-15 rapid inserts
+                print(f"  [BURST MODE: {burst_remaining} rapid inserts]")
 
-            # Randomize the number of records for each table
-            # This creates natural variation in data flow
+            if in_burst:
+                burst_remaining -= 1
+                if burst_remaining <= 0:
+                    in_burst = False
 
-            # Page views: Most frequent (5-8 per batch, ~25-30/min)
-            page_view_count = random.randint(5, 8)
+            # Choose which table to insert into based on weighted probability
+            roll = random.random()
 
-            # Shopping carts: Medium frequency (2-4 per batch, ~10-15/min)
-            cart_count = random.randint(2, 4)
+            if roll < 0.50:
+                # Page views: 50% - most frequent
+                # Sometimes insert multiple at once for spikiness
+                count = random.choices([1, 2, 3], weights=[0.6, 0.3, 0.1])[0]
+                if in_burst:
+                    count = random.randint(2, 4)
+                insert_page_views(client, count)
+                table_name = 'page_views'
+            elif roll < 0.75:
+                # Shopping carts: 25%
+                count = random.choices([1, 2], weights=[0.8, 0.2])[0]
+                if in_burst:
+                    count = random.randint(1, 3)
+                insert_shopping_carts(client, count)
+                table_name = 'shopping_cart'
+            elif roll < 0.93:
+                # Orders: 18%
+                count = random.choices([1, 2], weights=[0.85, 0.15])[0]
+                if in_burst:
+                    count = random.randint(1, 2)
+                insert_orders(client, count)
+                table_name = 'orders'
+            else:
+                # Customers: 7% - least frequent
+                count = 1
+                insert_customers(client, count)
+                table_name = 'customers'
 
-            # Orders: Lower frequency (1-2 per batch, ~5-8/min)
-            order_count = random.randint(1, 2)
+            total_inserted += count
 
-            # Customers: Least frequent (0-1 per batch, ~2-5/min)
-            customer_count = random.randint(0, 1)
+            # Calculate sleep time with high variance for spiky behavior
+            if in_burst:
+                # Very short sleep during bursts
+                sleep_time = random.uniform(0.05, 0.2)
+            else:
+                # Normal operation with high variance
+                # Use exponential-like distribution for more realistic traffic
+                variance_factor = random.expovariate(1.5)  # Exponential distribution
+                variance_factor = min(variance_factor, 3.0)  # Cap at 3x
+                sleep_time = BASE_INTERVAL * variance_factor
 
-            # Insert records with some randomness in order
-            operations = []
-            if customer_count > 0:
-                operations.append(('customers', customer_count))
-            operations.append(('page_views', page_view_count))
-            operations.append(('shopping_cart', cart_count))
-            operations.append(('orders', order_count))
+                # Occasionally add longer pauses (quiet periods)
+                if random.random() < 0.05:  # 5% chance of quiet period
+                    sleep_time += random.uniform(2, 5)
 
-            # Shuffle to add variety
-            random.shuffle(operations)
+            # Print periodic stats
+            elapsed = time.time() - start_time
+            if total_inserted % 50 == 0:
+                rate = total_inserted / (elapsed / 60) if elapsed > 0 else 0
+                print(f"\n--- Stats: {total_inserted} records in {elapsed:.1f}s ({rate:.1f}/min) ---\n")
 
-            total_inserted = 0
-            for table, count in operations:
-                if table == 'customers':
-                    insert_customers(client, count)
-                elif table == 'page_views':
-                    insert_page_views(client, count)
-                elif table == 'shopping_cart':
-                    insert_shopping_carts(client, count)
-                elif table == 'orders':
-                    insert_orders(client, count)
-                total_inserted += count
-
-            print(f"[Iteration {iteration}] Total: {total_inserted} records inserted")
-
-            # Sleep to achieve ~50 records/minute
-            # With average of ~12 records per iteration, sleep ~15 seconds
-            sleep_time = random.uniform(12, 18)
             time.sleep(sleep_time)
 
     except KeyboardInterrupt:
-        print("\n\nData generation stopped by user.")
+        elapsed = time.time() - start_time
+        rate = total_inserted / (elapsed / 60) if elapsed > 0 else 0
+        print(f"\n\nData generation stopped by user.")
+        print(f"Total: {total_inserted} records in {elapsed:.1f}s ({rate:.1f}/min)")
     except Exception as e:
         print(f"\nError: {e}")
         raise
