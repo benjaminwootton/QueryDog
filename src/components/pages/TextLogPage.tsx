@@ -161,12 +161,6 @@ export function TextLogPage() {
     setCurrentPage(0);
   };
 
-  const clearFilters = () => {
-    setFilters({});
-    setSearch('');
-    setSearchInput('');
-    setCurrentPage(0);
-  };
 
   // AG Grid column definitions
   const columnDefs: ColDef<TextLogEntry>[] = useMemo(() => [

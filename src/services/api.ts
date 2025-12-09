@@ -81,6 +81,7 @@ export interface StackedTimeSeriesPoint {
   time: string;
   Select: number;
   Insert: number;
+  Delete: number;
   Other: number;
 }
 
@@ -343,6 +344,9 @@ export interface PartLogTimeSeriesPoint {
   new_rows: number;
   merged_rows: number;
   avg_duration: number;
+  min_duration: number;
+  max_duration: number;
+  sum_duration: number;
 }
 
 export interface PartLogStackedTimeSeriesPoint {

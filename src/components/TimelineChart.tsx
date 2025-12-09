@@ -1,7 +1,7 @@
 import { AreaChart, Area, BarChart, Bar, ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useQueryStore } from '../stores/queryStore';
 import type { ChartMetric, ChartAggregation } from '../stores/queryStore';
-import { format, addSeconds, addMinutes, addHours } from 'date-fns';
+import { format } from 'date-fns';
 import { Activity, Clock, HardDrive, Rows3, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
@@ -110,10 +110,10 @@ export function TimelineChart() {
   const scatterData = useMemo(() => {
     if (effectiveChartType !== 'scatter') return [];
     return entries.map(entry => ({
-      time: new Date(entry.event_time).getTime(),
+      time: new Date(entry.event_time as string).getTime(),
       value: getScatterValue(entry),
       query_id: entry.query_id,
-      query: entry.query?.substring(0, 100),
+      query: (entry.query as string)?.substring(0, 100),
       query_kind: entry.query_kind,
     }));
   }, [entries, effectiveChartType, getScatterValue]);
@@ -214,8 +214,6 @@ export function TimelineChart() {
       </div>
     );
   }
-
-  const formatDuration = (v: number) => v >= 1000 ? (v / 1000).toFixed(2) + 's' : v.toFixed(0) + 'ms';
 
   const formatScatterTime = (timestamp: number) => {
     const date = new Date(timestamp);

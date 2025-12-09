@@ -140,7 +140,7 @@ export function GroupedQueriesTable() {
   const columnDefs: ColDef<GroupedQueryEntry>[] = useMemo(() => [
     {
       headerName: '',
-      field: 'normalized_query_hash',
+      field: 'example_query' as const,
       width: 44,
       sortable: false,
       cellRenderer: ActionCellRenderer,
@@ -164,7 +164,7 @@ export function GroupedQueriesTable() {
         const q = params.value as string;
         return q?.length > 100 ? q.substring(0, 100) + '...' : q;
       },
-      cellStyle: { color: '#60a5fa' },
+      cellStyle: { color: '#60a5fa' } as CellStyle,
     },
     {
       headerName: 'Count',
@@ -427,13 +427,6 @@ export function GroupedQueriesTable() {
                 </table>
               </div>
 
-              {/* Query Hash */}
-              <div className="bg-gray-800 p-2 rounded mb-4">
-                <div className="text-xs text-gray-400">Query Hash</div>
-                <div className="text-xs font-mono text-gray-300" title={String(selectedEntry.normalized_query_hash)}>
-                  {String(selectedEntry.normalized_query_hash)}
-                </div>
-              </div>
 
               {/* Note about profile events */}
               <div className="bg-gray-800/50 border border-gray-700 rounded p-3 text-xs text-gray-400">

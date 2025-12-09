@@ -41,7 +41,7 @@ export function FilterPanel() {
   const [expandedField, setExpandedField] = useState<string | null>(null);
   const [fieldValues, setFieldValues] = useState<Record<string, string[]>>({});
   const [loadingField, setLoadingField] = useState<string | null>(null);
-  const { timeRange, fieldFilters, rangeFilters, setFieldFilter, setRangeFilter, clearFieldFilter, clearRangeFilter, clearAllFilters } = useQueryStore();
+  const { fieldFilters, rangeFilters, setFieldFilter, setRangeFilter, clearFieldFilter, clearRangeFilter, clearAllFilters } = useQueryStore();
 
   const activeFilterCount = Object.values(fieldFilters).filter((v) => v.length > 0).length +
     Object.values(rangeFilters).filter((v) => v.min !== undefined || v.max !== undefined).length;

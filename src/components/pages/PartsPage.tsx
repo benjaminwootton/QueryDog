@@ -185,7 +185,7 @@ export function PartsPage() {
   const groupedColumnDefs = useMemo((): ColDef<GroupedPartsEntry>[] => [
     {
       headerName: '',
-      field: 'action',
+      field: 'database' as const,
       width: 50,
       sortable: false,
       cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
@@ -282,7 +282,7 @@ export function PartsPage() {
   const renderColumnSelector = (
     isOpen: boolean,
     setIsOpen: (open: boolean) => void,
-    tableRef: React.RefObject<SystemTableRef>
+    tableRef: React.RefObject<SystemTableRef | null>
   ) => {
     const columns = tableRef.current?.columns || [];
     const toggleVisibility = tableRef.current?.toggleColumnVisibility;
