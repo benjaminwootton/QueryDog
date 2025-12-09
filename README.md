@@ -1,15 +1,15 @@
-# QueryDog
+# Query Dog
 
-A query log viewer and analysis tool for ClickHouse databases.
+A powerful tool for ClickHouse performance optimisation.  Visualise query performance and background activity, identify bottlenecks and optimise cluster performance with a single container.
 
 ## Prerequisites
 
-- Node.js 22+
 - A ClickHouse database with query logs
+- Node.js 22+ if running from source
+-  
+## Running From Source
 
-## Environment Variables
-
-Create a `.env` file in the root directory with the following variables:
+Create a `.env` file in the root directory and populate the following variables:
 
 ```env
 CLICKHOUSE_HOST=your-clickhouse-host
@@ -63,30 +63,7 @@ CLICKHOUSE_PORT_HTTP=8443
 
 3. Access the application at http://localhost:3001
 
-## Running Locally (Development)
-
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-2. Start both the frontend and backend in development mode:
-   ```bash
-   npm run dev:all
-   ```
-
-   Or run them separately:
-   ```bash
-   # Terminal 1 - Frontend (Vite)
-   npm run dev
-
-   # Terminal 2 - Backend (Express)
-   npm run dev:server
-   ```
-
-3. Access the application at http://localhost:5173 (frontend dev server proxies API requests)
-
-## Production Build
+## Running Locally
 
 1. Build the application:
    ```bash
