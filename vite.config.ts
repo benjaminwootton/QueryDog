@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 8000,
+    allowedHosts: ['querydog.benjaminwootton.com'],
     proxy: {
       '/api': {
         target: 'http://localhost:8001',
