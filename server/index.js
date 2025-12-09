@@ -2432,6 +2432,29 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 8001;
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`QueryDog running on http://0.0.0.0:${PORT}`);
 });
+
+// Graceful shutdown handler
+function shutdown(signal) {
+  console.log(`\n${signal} received, shutting down gracefully...`);
+  server.close(() => {
+    console.log('HTTP server closed');
+    client.close().then(() => {
+      console.log('ClickHouse connection closed');
+      process.exit(0);
+    }).catch(() => {
+      process.exit(0);
+    });
+  });
+
+  // Force exit after 10 seconds if graceful shutdown fails
+  setTimeout(() => {
+    console.error('Forcing shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
