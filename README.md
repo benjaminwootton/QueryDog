@@ -2,6 +2,9 @@
 
 A powerful tool for ClickHouse performance optimisation.  Visualise query performance and background activity, identify bottlenecks and optimise cluster performance with a single container.
 
+<img width="2054" height="1101" alt="Screenshot 2025-12-09 at 11 31 53 pm" src="https://github.com/user-attachments/assets/e1b52d42-028a-4c46-8631-7fdcaba44747" />
+<img width="2055" height="1101" alt="Screenshot 2025-12-09 at 11 32 10 pm" src="https://github.com/user-attachments/assets/81150e55-b47b-4feb-89cd-02bee733ad4b" />
+
 ## Prerequisites
 
 - A ClickHouse database with query logs
@@ -9,7 +12,8 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
 
 ### Running From Docker
 
-Run the container from Docker Hub or GitHub Container Registry:
+Run the container fr
+om Docker Hub or GitHub Container Registry:
 
 ```bash
 # From GitHub Container Registry
