@@ -7,21 +7,35 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
 - A ClickHouse database with query logs
 - Node.js 22+ if running from source
 
-### Running From Docker 
+### Running From Docker
 
-1. Run the container from Docker hub:
-   ```bash
-   docker run -d \
-     -p 3001:3001 \
-     -e CLICKHOUSE_HOST=your-clickhouse-host \
-     -e CLICKHOUSE_USER=your-username \
-     -e CLICKHOUSE_PASSWORD=your-password \
-     -e CLICKHOUSE_DATABASE=your-database \
-     -e CLICKHOUSE_SECURE=1 \
-     -e CLICKHOUSE_PORT=9440 \
-     -e CLICKHOUSE_PORT_HTTP=8443 \
-     benjaminwootton/querydog
-   ```
+Run the container from Docker Hub or GitHub Container Registry:
+
+```bash
+# From Docker Hub
+docker run -d \
+  -p 3001:3001 \
+  -e CLICKHOUSE_HOST=your-clickhouse-host \
+  -e CLICKHOUSE_USER=your-username \
+  -e CLICKHOUSE_PASSWORD=your-password \
+  -e CLICKHOUSE_DATABASE=your-database \
+  -e CLICKHOUSE_SECURE=1 \
+  -e CLICKHOUSE_PORT=9440 \
+  -e CLICKHOUSE_PORT_HTTP=8443 \
+  benjaminwootton/querydog
+
+# Or from GitHub Container Registry
+docker run -d \
+  -p 3001:3001 \
+  -e CLICKHOUSE_HOST=your-clickhouse-host \
+  -e CLICKHOUSE_USER=your-username \
+  -e CLICKHOUSE_PASSWORD=your-password \
+  -e CLICKHOUSE_DATABASE=your-database \
+  -e CLICKHOUSE_SECURE=1 \
+  -e CLICKHOUSE_PORT=9440 \
+  -e CLICKHOUSE_PORT_HTTP=8443 \
+  ghcr.io/benjaminwootton/querydog:latest
+```
 
 3. Access the application at http://localhost:3001
 
