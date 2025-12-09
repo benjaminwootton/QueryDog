@@ -6,20 +6,8 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
 
 - A ClickHouse database with query logs
 - Node.js 22+ if running from source
--  
-## Running From Source
 
-Create a `.env` file in the root directory and populate the following variables:
 
-```env
-CLICKHOUSE_HOST=your-clickhouse-host
-CLICKHOUSE_USER=your-username
-CLICKHOUSE_PASSWORD=your-password
-CLICKHOUSE_DATABASE=your-database
-CLICKHOUSE_SECURE=1
-CLICKHOUSE_PORT=9440
-CLICKHOUSE_PORT_HTTP=8443
-```
 
 ## Running with Docker
 
@@ -57,23 +45,33 @@ CLICKHOUSE_PORT_HTTP=8443
      -e CLICKHOUSE_SECURE=1 \
      -e CLICKHOUSE_PORT=9440 \
      -e CLICKHOUSE_PORT_HTTP=8443 \
-     --name querydog \
-     querydog
+     benjaminwootton/querydog
    ```
 
 3. Access the application at http://localhost:3001
 
-## Running Locally
+## Running From Source
 
-1. Build the application:
+Create a `.env` file in the root directory and populate the following variables:
+
+```env
+CLICKHOUSE_HOST=your-clickhouse-host
+CLICKHOUSE_USER=your-username
+CLICKHOUSE_PASSWORD=your-password
+CLICKHOUSE_DATABASE=your-database
+CLICKHOUSE_SECURE=1
+CLICKHOUSE_PORT=9440
+CLICKHOUSE_PORT_HTTP=8443
+```
+
+2. Build the application:
    ```bash
    npm run build
    ```
 
-2. Start the production server:
+3. Start the production server:
    ```bash
    npm start
    ```
 
-3. Access the application at http://localhost:3001
->>>>>>> fcd1e74 (Progress on various screens)
+   
