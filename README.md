@@ -7,16 +7,9 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
 - A ClickHouse database with query logs
 - Node.js 22+ if running from source
 
-## Running with Docker
+### Running From Docker 
 
-### Using Docker Directly
-
-1. Build the image:
-   ```bash
-   docker build -t querydog .
-   ```
-
-2. Run the container:
+1. Run the container from Docker hub:
    ```bash
    docker run -d \
      -p 3001:3001 \
@@ -27,7 +20,7 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
      -e CLICKHOUSE_SECURE=1 \
      -e CLICKHOUSE_PORT=9440 \
      -e CLICKHOUSE_PORT_HTTP=8443 \
-     querydog
+     benjaminwootton/querydog
    ```
 
 3. Access the application at http://localhost:3001
