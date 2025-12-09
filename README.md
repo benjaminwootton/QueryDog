@@ -12,8 +12,7 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
 
 ### Running From Docker
 
-Run the container fr
-om Docker Hub or GitHub Container Registry:
+Run the container from GitHub Container Registry:
 
 ```bash
 # From GitHub Container Registry
