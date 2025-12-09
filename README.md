@@ -7,25 +7,7 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
 - A ClickHouse database with query logs
 - Node.js 22+ if running from source
 
-
-
 ## Running with Docker
-
-### Using Docker Compose (Recommended)
-
-1. Create a `.env` file with your ClickHouse credentials (see above)
-
-2. Build and start the container:
-   ```bash
-   docker-compose up -d
-   ```
-
-3. Access the application at http://localhost:3001
-
-4. To stop the container:
-   ```bash
-   docker-compose down
-   ```
 
 ### Using Docker Directly
 
@@ -45,7 +27,7 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
      -e CLICKHOUSE_SECURE=1 \
      -e CLICKHOUSE_PORT=9440 \
      -e CLICKHOUSE_PORT_HTTP=8443 \
-     benjaminwootton/querydog
+     querydog
    ```
 
 3. Access the application at http://localhost:3001
