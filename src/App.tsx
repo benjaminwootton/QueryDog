@@ -24,10 +24,30 @@ interface ConnectionInfo {
   user: string;
 }
 
+// Helper to get a cookie value by name
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? match[2] : null;
+}
+
+// Helper to set a cookie
+function setCookie(name: string, value: string, days: number = 365) {
+  const expires = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie = `${name}=${value}; expires=${expires}; path=/`;
+}
+
 function App() {
   const [navItem, setNavItem] = useState<NavItem>('queries');
   const [refreshInterval, setRefreshInterval] = useState<RefreshInterval>('off');
-  const [aboutOpen, setAboutOpen] = useState(false);
+  // Show about modal on first visit only (check cookie)
+  const [aboutOpen, setAboutOpen] = useState(() => {
+    const hasVisited = getCookie('querydog_visited');
+    if (!hasVisited) {
+      setCookie('querydog_visited', 'true');
+      return true;
+    }
+    return false;
+  });
   const [browserOpen, setBrowserOpen] = useState(false);
   const [queryEditorOpen, setQueryEditorOpen] = useState(false);
   const [queryEditorInitialQuery, setQueryEditorInitialQuery] = useState('');
