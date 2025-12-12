@@ -3,6 +3,7 @@ import cors from 'cors';
 import { createClient } from '@clickhouse/client';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -565,10 +566,16 @@ app.get('/api/query-log/distinct/:field', async (req, res) => {
 // Get system.parts data
 app.get('/api/parts', async (req, res) => {
   try {
-    const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters } = req.query;
+    const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters, search } = req.query;
 
     let whereConditions = [];
     const params = { limit: parseInt(limit), offset: parseInt(offset) };
+
+    // Apply search filter (searches table, database, partition_id, name)
+    if (search) {
+      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
+      params.search = `%${search}%`;
+    }
 
     // Apply field filters
     if (filters) {
@@ -632,10 +639,16 @@ app.get('/api/parts/columns', async (req, res) => {
 // Get system.parts count
 app.get('/api/parts/count', async (req, res) => {
   try {
-    const { filters } = req.query;
+    const { filters, search } = req.query;
 
     let whereConditions = [];
     const params = {};
+
+    // Apply search filter
+    if (search) {
+      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
+      params.search = `%${search}%`;
+    }
 
     // Apply field filters
     if (filters) {
@@ -675,10 +688,16 @@ app.get('/api/parts/count', async (req, res) => {
 // Get grouped parts by table
 app.get('/api/parts/grouped', async (req, res) => {
   try {
-    const { filters } = req.query;
+    const { filters, search } = req.query;
 
     let whereConditions = [];
     const params = {};
+
+    // Apply search filter
+    if (search) {
+      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String})');
+      params.search = `%${search}%`;
+    }
 
     // Apply field filters
     if (filters) {
@@ -703,6 +722,9 @@ app.get('/api/parts/grouped', async (req, res) => {
         count() as part_count,
         sum(rows) as total_rows,
         sum(bytes_on_disk) as total_bytes,
+        sum(data_compressed_bytes) as compressed_bytes,
+        sum(data_uncompressed_bytes) as uncompressed_bytes,
+        round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) as savings_pct,
         max(modification_time) as last_modification_time
       FROM system.parts
       ${whereClause}
@@ -724,13 +746,202 @@ app.get('/api/parts/grouped', async (req, res) => {
   }
 });
 
+// Get column compression details for a table
+app.get('/api/table-compression/:database/:table', async (req, res) => {
+  try {
+    const { database, table } = req.params;
+
+    const query = `
+      SELECT
+        name,
+        type,
+        sum(data_compressed_bytes) AS compressed_bytes,
+        sum(data_uncompressed_bytes) AS uncompressed_bytes,
+        round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) AS savings_pct
+      FROM system.columns
+      WHERE database = {database:String} AND table = {table:String}
+      GROUP BY name, type
+      ORDER BY compressed_bytes DESC
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: { database, table },
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching table compression:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get aggregated partitions data (grouped by partition)
+app.get('/api/partitions-summary', async (req, res) => {
+  try {
+    const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters, search } = req.query;
+
+    let whereConditions = ['active = 1'];
+    const params = { limit: parseInt(limit), offset: parseInt(offset) };
+
+    // Apply search filter
+    if (search) {
+      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String})');
+      params.search = `%${search}%`;
+    }
+
+    // Apply field filters
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Map sort field to aggregated field if needed
+    const sortFieldMap = {
+      'rows': 'total_rows',
+      'bytes_on_disk': 'total_bytes',
+      'modification_time': 'latest_modification'
+    };
+    const mappedSortField = sortFieldMap[sortField] || sortField;
+    const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(mappedSortField) ? mappedSortField : 'latest_modification';
+    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+    const query = `
+      SELECT
+        database,
+        table,
+        partition_id,
+        partition,
+        count() as parts_count,
+        sum(rows) as total_rows,
+        sum(bytes_on_disk) as total_bytes,
+        sum(data_compressed_bytes) as total_compressed,
+        sum(data_uncompressed_bytes) as total_uncompressed,
+        round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) AS savings_pct,
+        max(modification_time) as latest_modification,
+        min(min_block_number) as min_block,
+        max(max_block_number) as max_block
+      FROM system.parts
+      ${whereClause}
+      GROUP BY database, table, partition_id, partition
+      ORDER BY ${safeSortField} ${safeSortOrder}
+      LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching partitions summary:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get aggregated partitions count
+app.get('/api/partitions-summary/count', async (req, res) => {
+  try {
+    const { filters, search } = req.query;
+
+    let whereConditions = ['active = 1'];
+    const params = {};
+
+    if (search) {
+      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String})');
+      params.search = `%${search}%`;
+    }
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT count() as count FROM (
+        SELECT database, table, partition_id
+        FROM system.parts
+        ${whereClause}
+        GROUP BY database, table, partition_id
+      )
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json({ count: data[0]?.count || 0 });
+  } catch (error) {
+    console.error('Error fetching partitions summary count:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get partitions summary columns (virtual columns for the aggregated view)
+app.get('/api/partitions-summary/columns', async (req, res) => {
+  try {
+    // Return virtual column definitions for the aggregated view
+    const columns = [
+      { name: 'database', type: 'String', comment: 'Database name' },
+      { name: 'table', type: 'String', comment: 'Table name' },
+      { name: 'partition_id', type: 'String', comment: 'Partition ID' },
+      { name: 'partition', type: 'String', comment: 'Partition value' },
+      { name: 'parts_count', type: 'UInt64', comment: 'Number of parts in partition' },
+      { name: 'total_rows', type: 'UInt64', comment: 'Total rows in partition' },
+      { name: 'total_bytes', type: 'UInt64', comment: 'Total bytes on disk' },
+      { name: 'total_compressed', type: 'UInt64', comment: 'Total compressed bytes' },
+      { name: 'total_uncompressed', type: 'UInt64', comment: 'Total uncompressed bytes' },
+      { name: 'savings_pct', type: 'Float64', comment: 'Compression savings percentage' },
+      { name: 'latest_modification', type: 'DateTime', comment: 'Latest modification time' },
+      { name: 'min_block', type: 'UInt64', comment: 'Minimum block number' },
+      { name: 'max_block', type: 'UInt64', comment: 'Maximum block number' },
+    ];
+    res.json(columns);
+  } catch (error) {
+    console.error('Error fetching partitions summary columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get system.partitions data
 app.get('/api/partitions', async (req, res) => {
   try {
-    const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters } = req.query;
+    const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters, search } = req.query;
 
     let whereConditions = [];
     const params = { limit: parseInt(limit), offset: parseInt(offset) };
+
+    // Apply search filter (searches table, database, partition_id, name)
+    if (search) {
+      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
+      params.search = `%${search}%`;
+    }
 
     // Apply field filters
     if (filters) {
@@ -775,10 +986,16 @@ app.get('/api/partitions', async (req, res) => {
 // Get system.partitions count
 app.get('/api/partitions/count', async (req, res) => {
   try {
-    const { filters } = req.query;
+    const { filters, search } = req.query;
 
     let whereConditions = [];
     const params = {};
+
+    // Apply search filter
+    if (search) {
+      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
+      params.search = `%${search}%`;
+    }
 
     // Apply field filters
     if (filters) {
@@ -830,6 +1047,48 @@ app.get('/api/partitions/columns', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching partitions columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get parts for a specific partition
+app.get('/api/partition-parts/:database/:table/:partitionId', async (req, res) => {
+  try {
+    const { database, table, partitionId } = req.params;
+    const { activeOnly = '1' } = req.query;
+
+    const query = `
+      SELECT
+        name,
+        rows,
+        bytes_on_disk,
+        data_compressed_bytes,
+        data_uncompressed_bytes,
+        marks,
+        modification_time,
+        min_block_number,
+        max_block_number,
+        level,
+        primary_key_bytes_in_memory,
+        active
+      FROM system.parts
+      WHERE database = {database:String}
+        AND table = {table:String}
+        AND partition_id = {partitionId:String}
+        ${activeOnly === '1' ? 'AND active = 1' : ''}
+      ORDER BY modification_time DESC
+    `;
+
+    const result = await client.query({
+      query,
+      query_params: { database, table, partitionId },
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching partition parts:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1352,6 +1611,244 @@ app.get('/api/browser/parts/:database/:table/:partition', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching parts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== PROJECTIONS ENDPOINTS ====================
+
+// Get all projections (system-wide)
+app.get('/api/projections', async (req, res) => {
+  try {
+    const { filters, search } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    if (filters) {
+      const parsed = JSON.parse(filters);
+      Object.entries(parsed).forEach(([field, values], idx) => {
+        if (!values || !Array.isArray(values) || values.length === 0) return;
+        const condition = buildFilterCondition(field, values, params, idx);
+        whereConditions.push(condition);
+      });
+    }
+
+    if (search) {
+      params.search = `%${search}%`;
+      whereConditions.push(`(database ILIKE {search:String} OR table ILIKE {search:String} OR name ILIKE {search:String})`);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT
+        database,
+        table,
+        name,
+        type,
+        sorting_key,
+        query
+      FROM system.projections
+      ${whereClause}
+      ORDER BY database, table, name
+    `;
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching projections:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get projection parts (for a specific projection)
+app.get('/api/projection-parts/:database/:table/:projection', async (req, res) => {
+  try {
+    const { database, table, projection } = req.params;
+    const query = `
+      SELECT
+        name,
+        part_name,
+        partition_id,
+        rows,
+        bytes_on_disk,
+        data_compressed_bytes,
+        data_uncompressed_bytes,
+        marks,
+        modification_time,
+        parent_part_name,
+        is_broken
+      FROM system.projection_parts
+      WHERE database = {database:String} AND table = {table:String} AND name = {projection:String} AND active = 1
+      ORDER BY part_name
+    `;
+    const result = await client.query({
+      query,
+      query_params: { database, table, projection },
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching projection parts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get projections for a table (browser endpoint)
+app.get('/api/browser/projections/:database/:table', async (req, res) => {
+  try {
+    const { database, table } = req.params;
+    const query = `
+      SELECT
+        name,
+        type,
+        sorting_key,
+        query,
+        toString(storage_policy) as storage_policy,
+        toString(partition_key) as partition_key,
+        toString(primary_key) as primary_key
+      FROM system.projections
+      WHERE database = {database:String} AND table = {table:String}
+      ORDER BY name
+    `;
+    const result = await client.query({
+      query,
+      query_params: { database, table },
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching projections:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get projection parts for a projection
+app.get('/api/browser/projection-parts/:database/:table/:projection', async (req, res) => {
+  try {
+    const { database, table, projection } = req.params;
+    const query = `
+      SELECT
+        name,
+        part_name,
+        partition_id,
+        rows,
+        bytes_on_disk,
+        data_compressed_bytes,
+        data_uncompressed_bytes,
+        marks,
+        modification_time,
+        parent_part_name,
+        is_broken
+      FROM system.projection_parts
+      WHERE database = {database:String} AND table = {table:String} AND name = {projection:String} AND active = 1
+      ORDER BY part_name
+    `;
+    const result = await client.query({
+      query,
+      query_params: { database, table, projection },
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching projection parts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== DATA SKIPPING INDEXES ENDPOINTS ====================
+
+// Get all data skipping indexes (system-wide)
+app.get('/api/indexes', async (req, res) => {
+  try {
+    const { filters, search } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    // Parse and apply filters
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
+        }
+      }
+    }
+
+    // Apply search
+    if (search) {
+      whereConditions.push('(database ILIKE {search:String} OR table ILIKE {search:String} OR name ILIKE {search:String})');
+      params.search = `%${search}%`;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT
+        database,
+        table,
+        name,
+        type,
+        type_full,
+        expr,
+        granularity,
+        data_compressed_bytes,
+        data_uncompressed_bytes,
+        marks
+      FROM system.data_skipping_indices
+      ${whereClause}
+      ORDER BY database, table, name
+    `;
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching data skipping indexes:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get data skipping indexes for a table (browser endpoint)
+app.get('/api/browser/indexes/:database/:table', async (req, res) => {
+  try {
+    const { database, table } = req.params;
+    const query = `
+      SELECT
+        name,
+        type,
+        type_full,
+        expr,
+        granularity,
+        data_compressed_bytes,
+        data_uncompressed_bytes,
+        marks
+      FROM system.data_skipping_indices
+      WHERE database = {database:String} AND table = {table:String}
+      ORDER BY name
+    `;
+    const result = await client.query({
+      query,
+      query_params: { database, table },
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching data skipping indexes:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2277,10 +2774,11 @@ app.get('/api/text-log/distinct/:field', async (req, res) => {
 
 // ==================== QUERY LOG ENDPOINTS ====================
 
-// Get grouped query log (aggregated by normalized_query_hash)
+// Get grouped query log (aggregated by query or normalized_query_hash)
 app.get('/api/query-log/grouped', async (req, res) => {
   try {
-    const { start, end, search, limit = 1000, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters } = req.query;
+    const { start, end, search, limit = 1000, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters, normalize } = req.query;
+    const useNormalized = normalize === 'true';
 
     let whereConditions = [];
     const params = {};
@@ -2321,9 +2819,11 @@ app.get('/api/query-log/grouped', async (req, res) => {
     const safeSortField = validSortFields.includes(sortField) ? sortField : 'count';
     const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
 
+    const groupByField = useNormalized ? 'normalized_query_hash' : 'query';
     const query = `
       SELECT
-        query as example_query,
+        any(query) as example_query,
+        ${useNormalized ? 'normalized_query_hash,' : ''}
         any(user) as user,
         any(current_database) as current_database,
         count() as count,
@@ -2345,7 +2845,7 @@ app.get('/api/query-log/grouped', async (req, res) => {
         max(event_time) as last_seen
       FROM system.query_log
       ${whereClause}
-      GROUP BY query
+      GROUP BY ${groupByField}
       ORDER BY ${safeSortField} ${safeSortOrder}
       LIMIT {limit:UInt32}
     `;
@@ -2420,6 +2920,148 @@ app.get('/api/query-log/count', async (req, res) => {
     console.error('Error fetching count:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// ==================== MY QUERIES ENDPOINTS ====================
+
+// In-memory store for query run statistics
+const queryRunStats = new Map();
+
+// Check if queries folder exists
+app.get('/api/my-queries/exists', (req, res) => {
+  const queriesPath = path.join(process.cwd(), 'queries');
+  const exists = fs.existsSync(queriesPath) && fs.statSync(queriesPath).isDirectory();
+  res.json({ exists, path: queriesPath });
+});
+
+// Get all queries from the queries folder
+app.get('/api/my-queries', (req, res) => {
+  try {
+    const queriesPath = path.join(process.cwd(), 'queries');
+
+    if (!fs.existsSync(queriesPath)) {
+      return res.json([]);
+    }
+
+    const files = fs.readdirSync(queriesPath).filter(f => f.endsWith('.sql'));
+    const queries = files.map(filename => {
+      const filePath = path.join(queriesPath, filename);
+      const content = fs.readFileSync(filePath, 'utf-8').trim();
+      const stats = queryRunStats.get(filename) || { runs: [], lastRun: null, lastDuration: null, lastRowCount: null };
+
+      // Calculate statistics
+      const runTimes = stats.runs || [];
+      const avgRunTime = runTimes.length > 0
+        ? runTimes.reduce((a, b) => a + b, 0) / runTimes.length
+        : null;
+      const slowestRunTime = runTimes.length > 0
+        ? Math.max(...runTimes)
+        : null;
+      const fastestRunTime = runTimes.length > 0
+        ? Math.min(...runTimes)
+        : null;
+
+      return {
+        filename,
+        query: content,
+        lastRunTime: stats.lastRun,
+        lastDuration: stats.lastDuration,
+        lastRowCount: stats.lastRowCount,
+        avgRunTime,
+        slowestRunTime,
+        fastestRunTime,
+        runCount: runTimes.length,
+      };
+    });
+
+    res.json(queries);
+  } catch (error) {
+    console.error('Error reading queries folder:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Run a query from my-queries and track timing
+app.post('/api/my-queries/run', async (req, res) => {
+  try {
+    const { filename, query } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ error: 'Query is required' });
+    }
+
+    // Safety check - only allow SELECT queries
+    const upperQuery = query.trim().toUpperCase();
+    if (!upperQuery.startsWith('SELECT')) {
+      return res.status(403).json({ error: 'Only SELECT queries are allowed' });
+    }
+
+    const startTime = Date.now();
+
+    const result = await client.query({
+      query,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    const duration = Date.now() - startTime;
+
+    // Update run statistics
+    let updatedStats = null;
+    if (filename) {
+      const stats = queryRunStats.get(filename) || { runs: [], lastRun: null, lastDuration: null, lastRowCount: null };
+      stats.runs.push(duration);
+      // Keep only last 100 runs
+      if (stats.runs.length > 100) {
+        stats.runs = stats.runs.slice(-100);
+      }
+      stats.lastRun = new Date().toISOString();
+      stats.lastDuration = duration;
+      stats.lastRowCount = data.length;
+      queryRunStats.set(filename, stats);
+
+      // Calculate statistics for response
+      const runTimes = stats.runs || [];
+      updatedStats = {
+        lastRunTime: stats.lastRun,
+        lastDuration: stats.lastDuration,
+        lastRowCount: stats.lastRowCount,
+        avgRunTime: runTimes.length > 0
+          ? runTimes.reduce((a, b) => a + b, 0) / runTimes.length
+          : null,
+        slowestRunTime: runTimes.length > 0
+          ? Math.max(...runTimes)
+          : null,
+        fastestRunTime: runTimes.length > 0
+          ? Math.min(...runTimes)
+          : null,
+        runCount: runTimes.length,
+      };
+    }
+
+    res.json({
+      data,
+      rowCount: data.length,
+      duration,
+      stats: updatedStats,
+    });
+  } catch (error) {
+    console.error('Error running my-query:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reset all run statistics (must be before parameterized route)
+app.delete('/api/my-queries/stats', (req, res) => {
+  queryRunStats.clear();
+  res.json({ success: true });
+});
+
+// Clear run statistics for a specific query
+app.delete('/api/my-queries/stats/:filename', (req, res) => {
+  const { filename } = req.params;
+  queryRunStats.delete(filename);
+  res.json({ success: true });
 });
 
 // Serve the React app for any other routes (Express v5 compatible)

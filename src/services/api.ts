@@ -232,7 +232,8 @@ export async function fetchGroupedQueryLog(
   sortOrder: 'ASC' | 'DESC',
   filters: Record<string, string[]>,
   rangeFilters: Record<string, RangeFilter> = {},
-  limit = 1000
+  limit = 1000,
+  normalize = false
 ): Promise<GroupedQueryEntry[]> {
   const params = new URLSearchParams({
     start: formatDateTime(timeRange.start),
@@ -252,6 +253,10 @@ export async function fetchGroupedQueryLog(
 
   if (Object.keys(rangeFilters).length > 0) {
     params.set('rangeFilters', JSON.stringify(rangeFilters));
+  }
+
+  if (normalize) {
+    params.set('normalize', 'true');
   }
 
   const response = await fetch(`${API_BASE}/query-log/grouped?${params}`);
@@ -433,11 +438,15 @@ export async function fetchParts(
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   filters: Record<string, string[]> = {},
   limit = 1000,
-  offset = 0
+  offset = 0,
+  search = ''
 ): Promise<Record<string, unknown>[]> {
   const params = new URLSearchParams({ sortField, sortOrder, limit: limit.toString(), offset: offset.toString() });
   if (Object.keys(filters).length > 0) {
     params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
   }
   const response = await fetch(`${API_BASE}/parts?${params}`);
   if (!response.ok) throw new Error(`Failed to fetch parts: ${response.statusText}`);
@@ -445,11 +454,15 @@ export async function fetchParts(
 }
 
 export async function fetchPartsCount(
-  filters: Record<string, string[]> = {}
+  filters: Record<string, string[]> = {},
+  search = ''
 ): Promise<number> {
   const params = new URLSearchParams();
   if (Object.keys(filters).length > 0) {
     params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
   }
   const response = await fetch(`${API_BASE}/parts/count?${params}`);
   if (!response.ok) throw new Error(`Failed to fetch parts count: ${response.statusText}`);
@@ -498,11 +511,15 @@ export async function fetchPartitions(
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   filters: Record<string, string[]> = {},
   limit = 1000,
-  offset = 0
+  offset = 0,
+  search = ''
 ): Promise<Record<string, unknown>[]> {
   const params = new URLSearchParams({ sortField, sortOrder, limit: limit.toString(), offset: offset.toString() });
   if (Object.keys(filters).length > 0) {
     params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
   }
   const response = await fetch(`${API_BASE}/partitions?${params}`);
   if (!response.ok) throw new Error(`Failed to fetch partitions: ${response.statusText}`);
@@ -510,11 +527,15 @@ export async function fetchPartitions(
 }
 
 export async function fetchPartitionsCount(
-  filters: Record<string, string[]> = {}
+  filters: Record<string, string[]> = {},
+  search = ''
 ): Promise<number> {
   const params = new URLSearchParams();
   if (Object.keys(filters).length > 0) {
     params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
   }
   const response = await fetch(`${API_BASE}/partitions/count?${params}`);
   if (!response.ok) throw new Error(`Failed to fetch partitions count: ${response.statusText}`);
@@ -528,6 +549,50 @@ export async function fetchPartitionsColumns(): Promise<ColumnMetadata[]> {
   return response.json();
 }
 
+// Aggregated partitions (grouped by partition_id)
+export async function fetchPartitionsSummary(
+  sortField = 'latest_modification',
+  sortOrder: 'ASC' | 'DESC' = 'DESC',
+  filters: Record<string, string[]> = {},
+  limit = 1000,
+  offset = 0,
+  search = ''
+): Promise<Record<string, unknown>[]> {
+  const params = new URLSearchParams({ sortField, sortOrder, limit: limit.toString(), offset: offset.toString() });
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
+  }
+  const response = await fetch(`${API_BASE}/partitions-summary?${params}`);
+  if (!response.ok) throw new Error(`Failed to fetch partitions summary: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchPartitionsSummaryCount(
+  filters: Record<string, string[]> = {},
+  search = ''
+): Promise<number> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
+  }
+  const response = await fetch(`${API_BASE}/partitions-summary/count?${params}`);
+  if (!response.ok) throw new Error(`Failed to fetch partitions summary count: ${response.statusText}`);
+  const data = await response.json();
+  return data.count;
+}
+
+export async function fetchPartitionsSummaryColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/partitions-summary/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch partitions summary columns: ${response.statusText}`);
+  return response.json();
+}
+
 export interface GroupedPartsEntry {
   database: string;
   table: string;
@@ -535,7 +600,27 @@ export interface GroupedPartsEntry {
   part_count: number;
   total_rows: number;
   total_bytes: number;
+  compressed_bytes: number;
+  uncompressed_bytes: number;
+  savings_pct: number;
   last_modification_time: string;
+}
+
+export interface ColumnCompressionEntry {
+  name: string;
+  type: string;
+  compressed_bytes: number;
+  uncompressed_bytes: number;
+  savings_pct: number;
+}
+
+export async function fetchTableCompression(
+  database: string,
+  table: string
+): Promise<ColumnCompressionEntry[]> {
+  const response = await fetch(`${API_BASE}/table-compression/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
+  if (!response.ok) throw new Error(`Failed to fetch table compression: ${response.statusText}`);
+  return response.json();
 }
 
 export interface TablePartitionEntry {
@@ -560,14 +645,45 @@ export async function fetchTablePartitions(
   return response.json();
 }
 
+export interface PartitionPartEntry {
+  name: string;
+  rows: number;
+  bytes_on_disk: number;
+  data_compressed_bytes: number;
+  data_uncompressed_bytes: number;
+  marks: number;
+  modification_time: string;
+  min_block_number: number;
+  max_block_number: number;
+  level: number;
+  primary_key_bytes_in_memory: number;
+  active: number;
+}
+
+export async function fetchPartitionParts(
+  database: string,
+  table: string,
+  partitionId: string,
+  activeOnly = true
+): Promise<PartitionPartEntry[]> {
+  const params = new URLSearchParams({ activeOnly: activeOnly ? '1' : '0' });
+  const response = await fetch(`${API_BASE}/partition-parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(partitionId)}?${params}`);
+  if (!response.ok) throw new Error(`Failed to fetch partition parts: ${response.statusText}`);
+  return response.json();
+}
+
 export async function fetchGroupedParts(
-  filters: Record<string, string[]> = {}
+  filters: Record<string, string[]> = {},
+  search = ''
 ): Promise<GroupedPartsEntry[]> {
   const params = new URLSearchParams();
   if (Object.keys(filters).length > 0) {
     params.set('filters', JSON.stringify(filters));
   }
-  const url = Object.keys(filters).length > 0 ? `${API_BASE}/parts/grouped?${params}` : `${API_BASE}/parts/grouped`;
+  if (search) {
+    params.set('search', search);
+  }
+  const url = params.toString() ? `${API_BASE}/parts/grouped?${params}` : `${API_BASE}/parts/grouped`;
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Failed to fetch grouped parts: ${response.statusText}`);
   return response.json();
@@ -771,6 +887,128 @@ export interface BrowserColumn {
 export async function fetchBrowserColumns(database: string, table: string): Promise<BrowserColumn[]> {
   const response = await fetch(`${API_BASE}/browser/columns/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
   if (!response.ok) throw new Error(`Failed to fetch columns: ${response.statusText}`);
+  return response.json();
+}
+
+export interface BrowserProjection {
+  name: string;
+  type: string;
+  sorting_key: string;
+  query: string;
+  storage_policy: string;
+  partition_key: string;
+  primary_key: string;
+}
+
+export interface BrowserProjectionPart {
+  name: string;
+  part_name: string;
+  partition_id: string;
+  rows: number;
+  bytes_on_disk: number;
+  data_compressed_bytes: number;
+  data_uncompressed_bytes: number;
+  marks: number;
+  modification_time: string;
+  parent_part_name: string;
+  is_broken: number;
+}
+
+export async function fetchBrowserProjections(database: string, table: string): Promise<BrowserProjection[]> {
+  const response = await fetch(`${API_BASE}/browser/projections/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
+  if (!response.ok) throw new Error(`Failed to fetch projections: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchBrowserProjectionParts(database: string, table: string, projection: string): Promise<BrowserProjectionPart[]> {
+  const response = await fetch(`${API_BASE}/browser/projection-parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(projection)}`);
+  if (!response.ok) throw new Error(`Failed to fetch projection parts: ${response.statusText}`);
+  return response.json();
+}
+
+// System-wide projections API
+export interface SystemProjection {
+  database: string;
+  table: string;
+  name: string;
+  type: string;
+  sorting_key: string;
+  query: string;
+}
+
+export async function fetchSystemProjections(
+  filters: Record<string, string[]> = {},
+  search = ''
+): Promise<SystemProjection[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
+  }
+  const url = params.toString() ? `${API_BASE}/projections?${params}` : `${API_BASE}/projections`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch projections: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchProjectionParts(
+  database: string,
+  table: string,
+  projection: string
+): Promise<BrowserProjectionPart[]> {
+  const response = await fetch(`${API_BASE}/projection-parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(projection)}`);
+  if (!response.ok) throw new Error(`Failed to fetch projection parts: ${response.statusText}`);
+  return response.json();
+}
+
+// System-wide data skipping indexes API
+export interface SystemIndex {
+  database: string;
+  table: string;
+  name: string;
+  type: string;
+  type_full: string;
+  expr: string;
+  granularity: number;
+  data_compressed_bytes: number;
+  data_uncompressed_bytes: number;
+  marks: number;
+}
+
+export async function fetchSystemIndexes(
+  filters: Record<string, string[]> = {},
+  search = ''
+): Promise<SystemIndex[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
+  }
+  const url = params.toString() ? `${API_BASE}/indexes?${params}` : `${API_BASE}/indexes`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch indexes: ${response.statusText}`);
+  return response.json();
+}
+
+// Browser endpoint for indexes per table
+export interface BrowserIndex {
+  name: string;
+  type: string;
+  type_full: string;
+  expr: string;
+  granularity: number;
+  data_compressed_bytes: number;
+  data_uncompressed_bytes: number;
+  marks: number;
+}
+
+export async function fetchBrowserIndexes(database: string, table: string): Promise<BrowserIndex[]> {
+  const response = await fetch(`${API_BASE}/browser/indexes/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
+  if (!response.ok) throw new Error(`Failed to fetch indexes: ${response.statusText}`);
   return response.json();
 }
 

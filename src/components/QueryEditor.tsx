@@ -68,9 +68,12 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
 
   // Auto-run explain when query changes and is valid
   useEffect(() => {
-    if (initialQuery) {
-      // Auto-load the plan tab
-      loadExplain('plan');
+    if (initialQuery && initialQuery.trim()) {
+      // Auto-load the plan tab with a small delay to ensure state is ready
+      const timer = setTimeout(() => {
+        loadExplain('plan', true);
+      }, 100);
+      return () => clearTimeout(timer);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuery]);
@@ -169,40 +172,35 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
 
         {/* Query Input */}
         <div className="p-4 border-b border-gray-700 shrink-0">
-          <div className="flex items-start gap-3">
-            <div className="flex-1">
-              <textarea
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={() => {
-                  // Auto-compute the selected explain tab when tabbing out
-                  if (query.trim()) {
-                    loadExplain(activeExplainTab, true);
-                  }
-                }}
-                placeholder="Enter your SQL query here..."
-                className="w-full h-32 bg-gray-800 border border-gray-600 rounded p-3 text-sm font-mono text-gray-200 focus:outline-none focus:border-blue-500 resize-none"
-                spellCheck={false}
-              />
-              <div className="flex items-center justify-between mt-2">
-                <span className="text-[10px] text-gray-500">Press Ctrl+Enter to execute</span>
-                <button
-                  onClick={handleCopyQuery}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded"
-                >
-                  {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            </div>
+          <textarea
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={() => {
+              // Auto-compute the selected explain tab when tabbing out
+              if (query.trim()) {
+                loadExplain(activeExplainTab, true);
+              }
+            }}
+            placeholder="Enter your SQL query here..."
+            className="w-full h-48 bg-gray-800 border border-gray-600 rounded p-3 text-sm font-mono text-gray-200 focus:outline-none focus:border-blue-500 resize-none"
+            spellCheck={false}
+          />
+          <div className="flex items-center justify-between mt-2">
             <button
               onClick={handleExecute}
               disabled={executing || !query.trim()}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-white text-sm font-medium"
             >
               {executing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-              Run
+              Run Query
+            </button>
+            <button
+              onClick={handleCopyQuery}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            >
+              {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+              {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
         </div>

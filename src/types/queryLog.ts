@@ -64,6 +64,7 @@ function getColumnWidth(name: string, type: string): number {
   if (name === 'query') return 700;
   if (name === 'query_id' || name === 'initial_query_id') return 200;
   if (name === 'event_type') return 240;
+  if (name === 'name') return 280;
   if (name.includes('time') && !name.includes('_ms')) return 150;
   if (name === 'exception' || name === 'stack_trace') return 250;
   if (ARRAY_TYPE_PATTERN.test(type) || MAP_TYPE_PATTERN.test(type)) return 180;

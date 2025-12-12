@@ -100,6 +100,7 @@ export function QueryTable() {
       // Custom formatters for specific fields
       switch (col.field) {
         case 'event_time':
+        case 'query_start_time':
           def.valueFormatter = (params) => {
             if (!params.value) return '';
             const date = new Date(params.value);
@@ -111,17 +112,32 @@ export function QueryTable() {
               hour12: false,
             });
           };
+          def.cellStyle = { color: '#fca5a5' };
           break;
         case 'query':
-          def.tooltipField = 'query';
+          def.tooltipValueGetter = (params) => {
+            const q = params.value as string;
+            if (!q) return '';
+            // Format SQL with newlines after keywords and limit to 1000 chars
+            const formatted = q
+              .replace(/\s+/g, ' ')
+              .replace(/(SELECT|FROM|WHERE|AND|OR|JOIN|LEFT|RIGHT|INNER|OUTER|GROUP BY|ORDER BY|LIMIT|HAVING|UNION|INSERT|UPDATE|DELETE|SET|INTO|VALUES)/gi, '\n$1')
+              .trim();
+            const maxLen = 1000;
+            return formatted.length > maxLen ? formatted.substring(0, maxLen) + '\n...(truncated)' : formatted;
+          };
           def.valueFormatter = (params) => {
             const q = params.value as string;
             return q?.length > 80 ? q.substring(0, 80) + '...' : q;
           };
-          def.cellStyle = { color: '#60a5fa' };
+          def.cellStyle = { color: '#93c5fd' };
           break;
         case 'tables':
-          def.cellStyle = { color: '#60a5fa' };
+          def.cellStyle = { color: '#93c5fd' };
+          break;
+        case 'user':
+        case 'client_hostname':
+          def.cellStyle = { color: '#93c5fd' };
           break;
         case 'memory_usage':
         case 'read_bytes':

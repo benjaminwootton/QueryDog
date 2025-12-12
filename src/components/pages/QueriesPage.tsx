@@ -1,17 +1,19 @@
-import { Database, BarChart3, ChevronLeft, ChevronRight, Activity, Layers } from 'lucide-react';
+import { useRef } from 'react';
+import { Database, BarChart3, ChevronLeft, ChevronRight, Activity, Layers, Settings, BarChart2 } from 'lucide-react';
 import { TimeRangeSelector } from '../TimeRangeSelector';
 import { SearchBar } from '../SearchBar';
 import { TimelineChart } from '../TimelineChart';
 import { QueryTable } from '../QueryTable';
 import { GroupedQueriesTable } from '../GroupedQueriesTable';
 import { HistogramsTab } from '../HistogramsTab';
-import { ProfileEventsTable } from '../ProfileEventsTable';
+import { ProfileEventsTable, type ProfileEventsTableRef } from '../ProfileEventsTable';
 import { ColumnSelector } from '../ColumnSelector';
 import { FilterPanel } from '../FilterPanel';
 import { useQueryStore } from '../../stores/queryStore';
 
 export function QueriesPage() {
-  const { activeTab, setActiveTab, totalCount, fieldFilters, pageSize, currentPage, setCurrentPage } = useQueryStore();
+  const { activeTab, setActiveTab, totalCount, fieldFilters, pageSize, currentPage, setCurrentPage, normalizeQueries, setNormalizeQueries } = useQueryStore();
+  const profileEventsRef = useRef<ProfileEventsTableRef>(null);
 
   const totalPages = Math.ceil(totalCount / pageSize);
   const startRow = currentPage * pageSize + 1;
@@ -124,13 +126,44 @@ export function QueriesPage() {
             <ColumnSelector />
           </div>
         )}
+        {activeTab === 'grouped' && (
+          <div className="ml-auto flex items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={normalizeQueries}
+                onChange={(e) => setNormalizeQueries(e.target.checked)}
+                className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+              />
+              <span className="text-xs text-gray-300">Normalise queries</span>
+            </label>
+          </div>
+        )}
+        {activeTab === 'profileEvents' && (
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => profileEventsRef.current?.openChart()}
+              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+              title="Chart profile events"
+            >
+              <BarChart2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => profileEventsRef.current?.openColumnSelector()}
+              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+              title="Select columns"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden p-4">
         {activeTab === 'queries' && <QueryTable />}
         {activeTab === 'grouped' && <GroupedQueriesTable />}
-        {activeTab === 'profileEvents' && <ProfileEventsTable />}
+        {activeTab === 'profileEvents' && <ProfileEventsTable ref={profileEventsRef} />}
         {activeTab === 'histograms' && <HistogramsTab />}
       </div>
     </div>

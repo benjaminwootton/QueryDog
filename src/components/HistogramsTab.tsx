@@ -45,7 +45,11 @@ function HistogramCard({ field, label, data, loading, onFilterClick }: Histogram
       <div className="space-y-1">
         {displayData.map((item, index) => {
           const widthPercent = (item.count / maxCount) * 100;
-          const displayName = String(item.name || '(empty)');
+          const fullName = String(item.name || '(empty)');
+          // For tables field, strip the database prefix (e.g., "ecommerce.orders" -> "orders")
+          const displayName = field === 'tables' && fullName.includes('.')
+            ? fullName.split('.').pop() || fullName
+            : fullName;
           const truncatedName = displayName.length > 14 ? displayName.substring(0, 14) + '...' : displayName;
 
           return (
@@ -53,7 +57,7 @@ function HistogramCard({ field, label, data, loading, onFilterClick }: Histogram
               key={index}
               className="flex items-center gap-2 cursor-pointer hover:bg-gray-800/50 rounded px-1 py-0.5"
               onClick={() => onFilterClick(field, item.name)}
-              title={displayName}
+              title={fullName}
             >
               <span className="text-[10px] text-gray-300 w-20 truncate text-right flex-shrink-0">
                 {truncatedName}

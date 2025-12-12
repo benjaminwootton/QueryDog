@@ -80,6 +80,7 @@ interface QueryState {
   groupedLoading: boolean;
   groupedSortField: string;
   groupedSortOrder: 'ASC' | 'DESC';
+  normalizeQueries: boolean;
 
   // Part Log Data
   partLogEntries: PartLogEntry[];
@@ -165,6 +166,7 @@ interface QueryState {
   setGroupedLoading: (loading: boolean) => void;
   setGroupedSortField: (field: string) => void;
   setGroupedSortOrder: (order: 'ASC' | 'DESC') => void;
+  setNormalizeQueries: (normalize: boolean) => void;
   // Part Log Actions
   setPartLogEntries: (entries: PartLogEntry[]) => void;
   setPartLogTimeSeries: (data: PartLogTimeSeriesPoint[]) => void;
@@ -203,6 +205,7 @@ export const useQueryStore = create<QueryState>((set) => ({
   groupedLoading: false,
   groupedSortField: 'count',
   groupedSortOrder: 'DESC',
+  normalizeQueries: false,
 
   // Part Log Data
   partLogEntries: [],
@@ -306,6 +309,7 @@ export const useQueryStore = create<QueryState>((set) => ({
   setGroupedLoading: (groupedLoading) => set({ groupedLoading }),
   setGroupedSortField: (groupedSortField) => set({ groupedSortField }),
   setGroupedSortOrder: (groupedSortOrder) => set({ groupedSortOrder }),
+  setNormalizeQueries: (normalizeQueries) => set({ normalizeQueries }),
   // Part Log Actions
   setPartLogEntries: (partLogEntries) => set({ partLogEntries }),
   setPartLogTimeSeries: (partLogTimeSeries) => set({ partLogTimeSeries }),

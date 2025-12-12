@@ -94,6 +94,7 @@ export function GroupedQueriesTable() {
     groupedLoading,
     groupedSortField,
     groupedSortOrder,
+    normalizeQueries,
     setGroupedEntries,
     setGroupedLoading,
     setGroupedSortField,
@@ -103,6 +104,17 @@ export function GroupedQueriesTable() {
   } = useQueryStore();
 
   const [selectedEntry, setSelectedEntry] = useState<GroupedQueryEntry | null>(null);
+
+  // Close modal on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedEntry) {
+        setSelectedEntry(null);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [selectedEntry]);
 
   const ActionCellRenderer = useCallback((params: ICellRendererParams<GroupedQueryEntry>) => {
     return (
@@ -129,12 +141,13 @@ export function GroupedQueriesTable() {
       groupedSortOrder,
       fieldFilters,
       rangeFilters,
-      1000
+      1000,
+      normalizeQueries
     )
       .then(setGroupedEntries)
       .catch(console.error)
       .finally(() => setGroupedLoading(false));
-  }, [timeRange, search, fieldFilters, rangeFilters, groupedSortField, groupedSortOrder, setGroupedEntries, setGroupedLoading]);
+  }, [timeRange, search, fieldFilters, rangeFilters, groupedSortField, groupedSortOrder, normalizeQueries, setGroupedEntries, setGroupedLoading]);
 
   // Column definitions for AG Grid
   const columnDefs: ColDef<GroupedQueryEntry>[] = useMemo(() => [
@@ -159,12 +172,22 @@ export function GroupedQueriesTable() {
       minWidth: 300,
       flex: 1,
       sortable: false,
-      tooltipField: 'example_query',
+      tooltipValueGetter: (params) => {
+        const q = params.value as string;
+        if (!q) return '';
+        // Format SQL with newlines after keywords and limit to 1000 chars
+        const formatted = q
+          .replace(/\s+/g, ' ')
+          .replace(/(SELECT|FROM|WHERE|AND|OR|JOIN|LEFT|RIGHT|INNER|OUTER|GROUP BY|ORDER BY|LIMIT|HAVING|UNION|INSERT|UPDATE|DELETE|SET|INTO|VALUES)/gi, '\n$1')
+          .trim();
+        const maxLen = 1000;
+        return formatted.length > maxLen ? formatted.substring(0, maxLen) + '\n...(truncated)' : formatted;
+      },
       valueFormatter: (params) => {
         const q = params.value as string;
         return q?.length > 100 ? q.substring(0, 100) + '...' : q;
       },
-      cellStyle: { color: '#60a5fa' } as CellStyle,
+      cellStyle: { color: '#93c5fd' } as CellStyle,
     },
     {
       headerName: 'Count',
@@ -243,6 +266,7 @@ export function GroupedQueriesTable() {
       field: 'user',
       width: 100,
       sortable: false,
+      cellStyle: { color: '#93c5fd' },
     },
     {
       headerName: 'First Seen',
@@ -250,6 +274,7 @@ export function GroupedQueriesTable() {
       width: 130,
       sortable: true,
       valueFormatter: (params) => formatDateTime(params.value),
+      cellStyle: { color: '#fca5a5' },
     },
   ], [ActionCellRenderer]);
 

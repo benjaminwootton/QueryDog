@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Copy, Check, ExternalLink } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 
@@ -39,6 +39,19 @@ export function ProfileEventsModal() {
   const { selectedEntry, setSelectedEntry } = useQueryStore();
   const [copied, setCopied] = useState(false);
   const [queryCopied, setQueryCopied] = useState(false);
+
+  // Close modal on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedEntry) {
+        setSelectedEntry(null);
+        setCopied(false);
+        setQueryCopied(false);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [selectedEntry, setSelectedEntry]);
 
   if (!selectedEntry) return null;
 
@@ -194,8 +207,8 @@ export function ProfileEventsModal() {
                   <tbody>
                     {sortedEvents.map(([key, value]) => (
                       <tr key={key} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                        <td className="p-1.5 text-gray-300 font-mono">{key}</td>
-                        <td className="p-1.5 text-right text-white">
+                        <td className="p-1.5 text-blue-300 font-mono">{key}</td>
+                        <td className="p-1.5 text-right text-green-300 font-mono">
                           {key.toLowerCase().includes('bytes')
                             ? formatBytes(value)
                             : formatNumber(value)}
@@ -223,8 +236,8 @@ export function ProfileEventsModal() {
                   <tbody>
                     {sortedSettings.map(([key, value]) => (
                       <tr key={key} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                        <td className="p-1.5 text-gray-300 font-mono">{key}</td>
-                        <td className="p-1.5 text-right text-white font-mono truncate max-w-[200px]" title={value}>
+                        <td className="p-1.5 text-blue-300 font-mono">{key}</td>
+                        <td className="p-1.5 text-right text-green-300 font-mono truncate max-w-[200px]" title={value}>
                           {value}
                         </td>
                       </tr>

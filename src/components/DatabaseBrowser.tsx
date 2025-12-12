@@ -12,19 +12,25 @@ import {
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { X, Database, Table, Layers, Box, ChevronRight, Loader2, Users, User, Columns, FileText } from 'lucide-react';
+import { X, Database, Table, Layers, Box, ChevronRight, Loader2, Users, User, Columns, FileText, Sparkles, Zap } from 'lucide-react';
 import {
   fetchBrowserDatabases,
   fetchBrowserTables,
   fetchBrowserPartitions,
   fetchBrowserParts,
   fetchBrowserColumns,
+  fetchBrowserProjections,
+  fetchBrowserProjectionParts,
+  fetchBrowserIndexes,
   fetchUsers,
   type BrowserDatabase,
   type BrowserTable,
   type BrowserPartition,
   type BrowserPart,
   type BrowserColumn,
+  type BrowserProjection,
+  type BrowserProjectionPart,
+  type BrowserIndex,
 } from '../services/api';
 
 interface BrowserUser {
@@ -189,30 +195,87 @@ function PartNode({ data }: { data: { label: string; rows: number; bytes: number
   );
 }
 
-// Category node (Partitions, Columns under a table)
-function CategoryNode({ data }: { data: { label: string; category: 'partitions' | 'columns'; count: number; selected: boolean; onClick: () => void } }) {
-  const Icon = data.category === 'partitions' ? Layers : Columns;
-  const isPartitions = data.category === 'partitions';
+// Category node (Partitions, Columns, Projections, Indexes under a table)
+function CategoryNode({ data }: { data: { label: string; category: 'partitions' | 'columns' | 'projections' | 'indexes'; count: number; selected: boolean; onClick: () => void } }) {
+  const Icon = data.category === 'partitions' ? Layers : data.category === 'projections' ? Sparkles : data.category === 'indexes' ? Zap : Columns;
+  const colorClass = data.category === 'partitions' ? 'purple' : data.category === 'projections' ? 'pink' : data.category === 'indexes' ? 'amber' : 'cyan';
   return (
     <div
       onClick={data.onClick}
       title={`${data.count} ${data.label.toLowerCase()}`}
       className={`${nodeWidth} px-2 py-1 rounded border cursor-pointer transition-all ${
         data.selected
-          ? isPartitions
-            ? 'bg-purple-600 border-purple-400 text-white'
-            : 'bg-cyan-600 border-cyan-400 text-white'
-          : isPartitions
-            ? 'bg-gray-800 border-gray-600 text-gray-200 hover:border-purple-500'
-            : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-cyan-500'
+          ? `bg-${colorClass}-600 border-${colorClass}-400 text-white`
+          : `bg-gray-800 border-gray-600 text-gray-200 hover:border-${colorClass}-500`
       }`}
+      style={{
+        backgroundColor: data.selected ? (colorClass === 'purple' ? '#9333ea' : colorClass === 'pink' ? '#db2777' : colorClass === 'amber' ? '#d97706' : '#0891b2') : undefined,
+        borderColor: data.selected ? (colorClass === 'purple' ? '#a855f7' : colorClass === 'pink' ? '#ec4899' : colorClass === 'amber' ? '#f59e0b' : '#22d3ee') : undefined,
+      }}
     >
       <Handle type="target" position={Position.Left} className="!bg-green-500" />
-      <Handle type="source" position={Position.Right} className={isPartitions ? '!bg-purple-500' : '!bg-cyan-500'} />
+      <Handle type="source" position={Position.Right} style={{ backgroundColor: colorClass === 'purple' ? '#a855f7' : colorClass === 'pink' ? '#ec4899' : colorClass === 'amber' ? '#f59e0b' : '#22d3ee' }} />
       <div className="flex items-center gap-1">
-        <Icon className={`w-2.5 h-2.5 shrink-0 ${isPartitions ? 'text-purple-400' : 'text-cyan-400'}`} />
+        <Icon className={`w-2.5 h-2.5 shrink-0`} style={{ color: colorClass === 'purple' ? '#c084fc' : colorClass === 'pink' ? '#f472b6' : colorClass === 'amber' ? '#fbbf24' : '#67e8f9' }} />
         <span className="text-[8px] font-medium uppercase tracking-wide">{data.label}</span>
         <span className="text-[8px] text-gray-500">({data.count})</span>
+      </div>
+    </div>
+  );
+}
+
+// Projection node
+function ProjectionNode({ data }: { data: { label: string; type: string; sortingKey: string; selected: boolean; onClick: () => void } }) {
+  const tooltip = `Type: ${data.type} | Sort: ${data.sortingKey || 'none'}`;
+  return (
+    <div
+      onClick={data.onClick}
+      title={tooltip}
+      className={`${nodeWidth} px-2 py-1 rounded border cursor-pointer transition-all ${
+        data.selected
+          ? 'bg-pink-600 border-pink-400 text-white'
+          : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-pink-500'
+      }`}
+    >
+      <Handle type="target" position={Position.Left} className="!bg-pink-500" />
+      <Handle type="source" position={Position.Right} className="!bg-pink-500" />
+      <div className="flex items-center gap-1">
+        <Sparkles className="w-2.5 h-2.5 text-pink-400 shrink-0" />
+        <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
+      </div>
+    </div>
+  );
+}
+
+// Projection Part node
+function ProjectionPartNode({ data }: { data: { label: string; rows: number; bytes: number; parentPart: string } }) {
+  const tooltip = `${formatNumber(data.rows)} rows | ${formatBytes(data.bytes)} | Parent: ${data.parentPart}`;
+  return (
+    <div
+      title={tooltip}
+      className={`${nodeWidth} px-2 py-1 rounded border bg-gray-800 border-gray-600 text-gray-200`}
+    >
+      <Handle type="target" position={Position.Left} className="!bg-pink-500" />
+      <div className="flex items-center gap-1">
+        <Box className="w-2.5 h-2.5 text-pink-400 shrink-0" />
+        <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
+      </div>
+    </div>
+  );
+}
+
+// Index node
+function IndexNode({ data }: { data: { label: string; type: string; expr: string; granularity: number } }) {
+  const tooltip = `Type: ${data.type} | Expr: ${data.expr} | Granularity: ${data.granularity}`;
+  return (
+    <div
+      title={tooltip}
+      className={`${nodeWidth} px-2 py-1 rounded border bg-gray-800 border-gray-600 text-gray-200`}
+    >
+      <Handle type="target" position={Position.Left} className="!bg-amber-500" />
+      <div className="flex items-center gap-1">
+        <Zap className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+        <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
       </div>
     </div>
   );
@@ -251,6 +314,9 @@ const nodeTypes = {
   part: PartNode,
   column: ColumnNode,
   user: UserNode,
+  projection: ProjectionNode,
+  projectionPart: ProjectionPartNode,
+  index: IndexNode,
 };
 
 interface DatabaseBrowserProps {
@@ -264,18 +330,25 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
   const [partitions, setPartitions] = useState<BrowserPartition[]>([]);
   const [parts, setParts] = useState<BrowserPart[]>([]);
   const [columns, setColumns] = useState<BrowserColumn[]>([]);
+  const [projections, setProjections] = useState<BrowserProjection[]>([]);
+  const [projectionParts, setProjectionParts] = useState<BrowserProjectionPart[]>([]);
+  const [indexes, setIndexes] = useState<BrowserIndex[]>([]);
 
   const [selectedRoot, setSelectedRoot] = useState<'databases' | 'users' | null>(null);
   const [selectedDatabase, setSelectedDatabase] = useState<string | null>(null);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [selectedTableCategory, setSelectedTableCategory] = useState<'partitions' | 'columns' | null>(null);
+  const [selectedTableCategory, setSelectedTableCategory] = useState<'partitions' | 'columns' | 'projections' | 'indexes' | null>(null);
   const [selectedPartition, setSelectedPartition] = useState<string | null>(null);
+  const [selectedProjection, setSelectedProjection] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [loadingTables, setLoadingTables] = useState(false);
   const [loadingPartitions, setLoadingPartitions] = useState(false);
   const [loadingParts, setLoadingParts] = useState(false);
   const [loadingColumns, setLoadingColumns] = useState(false);
+  const [loadingProjections, setLoadingProjections] = useState(false);
+  const [loadingProjectionParts, setLoadingProjectionParts] = useState(false);
+  const [loadingIndexes, setLoadingIndexes] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -336,34 +409,49 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
       .finally(() => setLoadingTables(false));
   }, [selectedDatabase]);
 
-  // Load partitions and columns when table selected
+  // Load partitions, columns, projections, and indexes when table selected
   useEffect(() => {
     if (!selectedDatabase || !selectedTable) {
       setPartitions([]);
       setColumns([]);
+      setProjections([]);
+      setIndexes([]);
       setSelectedTableCategory(null);
       setSelectedPartition(null);
+      setSelectedProjection(null);
+      setParts([]);
+      setProjectionParts([]);
       return;
     }
-    // Load both partitions and columns when table is selected
+    // Load all four when table is selected
     setLoadingPartitions(true);
     setLoadingColumns(true);
+    setLoadingProjections(true);
+    setLoadingIndexes(true);
     setSelectedTableCategory(null);
     setSelectedPartition(null);
+    setSelectedProjection(null);
     setParts([]);
+    setProjectionParts([]);
 
     Promise.all([
       fetchBrowserPartitions(selectedDatabase, selectedTable),
       fetchBrowserColumns(selectedDatabase, selectedTable),
+      fetchBrowserProjections(selectedDatabase, selectedTable),
+      fetchBrowserIndexes(selectedDatabase, selectedTable),
     ])
-      .then(([partData, colData]) => {
+      .then(([partData, colData, projData, idxData]) => {
         setPartitions(partData);
         setColumns(colData);
+        setProjections(projData);
+        setIndexes(idxData);
       })
       .catch(console.error)
       .finally(() => {
         setLoadingPartitions(false);
         setLoadingColumns(false);
+        setLoadingProjections(false);
+        setLoadingIndexes(false);
       });
   }, [selectedDatabase, selectedTable]);
 
@@ -379,6 +467,19 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
       .catch(console.error)
       .finally(() => setLoadingParts(false));
   }, [selectedDatabase, selectedTable, selectedPartition]);
+
+  // Load projection parts when projection selected
+  useEffect(() => {
+    if (!selectedDatabase || !selectedTable || !selectedProjection) {
+      setProjectionParts([]);
+      return;
+    }
+    setLoadingProjectionParts(true);
+    fetchBrowserProjectionParts(selectedDatabase, selectedTable, selectedProjection)
+      .then(setProjectionParts)
+      .catch(console.error)
+      .finally(() => setLoadingProjectionParts(false));
+  }, [selectedDatabase, selectedTable, selectedProjection]);
 
   // Build nodes and edges
   useEffect(() => {
@@ -499,7 +600,11 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
           category: 'partitions',
           count: partitions.length,
           selected: selectedTableCategory === 'partitions',
-          onClick: () => setSelectedTableCategory(selectedTableCategory === 'partitions' ? null : 'partitions'),
+          onClick: () => {
+            setSelectedTableCategory(selectedTableCategory === 'partitions' ? null : 'partitions');
+            setSelectedPartition(null);
+            setSelectedProjection(null);
+          },
         },
       });
       newEdges.push({
@@ -520,7 +625,11 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
           category: 'columns',
           count: columns.length,
           selected: selectedTableCategory === 'columns',
-          onClick: () => setSelectedTableCategory(selectedTableCategory === 'columns' ? null : 'columns'),
+          onClick: () => {
+            setSelectedTableCategory(selectedTableCategory === 'columns' ? null : 'columns');
+            setSelectedPartition(null);
+            setSelectedProjection(null);
+          },
         },
       });
       newEdges.push({
@@ -530,6 +639,62 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
         animated: false,
         style: { stroke: '#4b5563' },
       });
+
+      // Projections category (only show if there are projections)
+      if (projections.length > 0) {
+        newNodes.push({
+          id: 'cat-projections',
+          type: 'category',
+          position: { x: columnX[3], y: 50 + nodeSpacing * 2 },
+          data: {
+            label: 'Projections',
+            category: 'projections',
+            count: projections.length,
+            selected: selectedTableCategory === 'projections',
+            onClick: () => {
+              setSelectedTableCategory(selectedTableCategory === 'projections' ? null : 'projections');
+              setSelectedPartition(null);
+              setSelectedProjection(null);
+            },
+          },
+        });
+        newEdges.push({
+          id: `edge-tbl-${selectedTable}-projections`,
+          source: `tbl-${selectedTable}`,
+          target: 'cat-projections',
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+      }
+
+      // Indexes category (only show if there are indexes)
+      if (indexes.length > 0) {
+        // Calculate position based on whether projections exist
+        const indexesY = 50 + nodeSpacing * (2 + (projections.length > 0 ? 1 : 0));
+        newNodes.push({
+          id: 'cat-indexes',
+          type: 'category',
+          position: { x: columnX[3], y: indexesY },
+          data: {
+            label: 'Indexes',
+            category: 'indexes',
+            count: indexes.length,
+            selected: selectedTableCategory === 'indexes',
+            onClick: () => {
+              setSelectedTableCategory(selectedTableCategory === 'indexes' ? null : 'indexes');
+              setSelectedPartition(null);
+              setSelectedProjection(null);
+            },
+          },
+        });
+        newEdges.push({
+          id: `edge-tbl-${selectedTable}-indexes`,
+          source: `tbl-${selectedTable}`,
+          target: 'cat-indexes',
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+      }
     }
 
     // Partition nodes (when Partitions category is selected)
@@ -585,6 +750,57 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
       });
     }
 
+    // Projection nodes (when Projections category is selected)
+    if (selectedTableCategory === 'projections' && projections.length > 0) {
+      projections.forEach((proj, i) => {
+        const nodeId = `proj-${proj.name}`;
+        newNodes.push({
+          id: nodeId,
+          type: 'projection',
+          position: { x: columnX[4], y: 50 + i * nodeSpacing },
+          data: {
+            label: proj.name,
+            type: proj.type,
+            sortingKey: proj.sorting_key,
+            selected: selectedProjection === proj.name,
+            onClick: () => setSelectedProjection(proj.name === selectedProjection ? null : proj.name),
+          },
+        });
+        newEdges.push({
+          id: `edge-cat-projections-${proj.name}`,
+          source: 'cat-projections',
+          target: nodeId,
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+      });
+    }
+
+    // Index nodes (when Indexes category is selected)
+    if (selectedTableCategory === 'indexes' && indexes.length > 0) {
+      indexes.forEach((idx, i) => {
+        const nodeId = `idx-${idx.name}`;
+        newNodes.push({
+          id: nodeId,
+          type: 'index',
+          position: { x: columnX[4], y: 50 + i * nodeSpacing },
+          data: {
+            label: idx.name,
+            type: idx.type,
+            expr: idx.expr,
+            granularity: idx.granularity,
+          },
+        });
+        newEdges.push({
+          id: `edge-cat-indexes-${idx.name}`,
+          source: 'cat-indexes',
+          target: nodeId,
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+      });
+    }
+
     // Part nodes (when partition is selected)
     if (selectedPartition && parts.length > 0) {
       parts.forEach((p, i) => {
@@ -610,11 +826,36 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
       });
     }
 
+    // Projection part nodes (when projection is selected)
+    if (selectedProjection && projectionParts.length > 0) {
+      projectionParts.forEach((pp, i) => {
+        const nodeId = `projpart-${pp.part_name}`;
+        newNodes.push({
+          id: nodeId,
+          type: 'projectionPart',
+          position: { x: columnX[5], y: 50 + i * nodeSpacing },
+          data: {
+            label: pp.part_name,
+            rows: pp.rows || 0,
+            bytes: pp.bytes_on_disk || 0,
+            parentPart: pp.parent_part_name || '',
+          },
+        });
+        newEdges.push({
+          id: `edge-projection-${selectedProjection}-${pp.part_name}`,
+          source: `proj-${selectedProjection}`,
+          target: nodeId,
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+      });
+    }
+
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [databases, users, tables, partitions, parts, columns, selectedRoot, selectedDatabase, selectedTable, selectedTableCategory, selectedPartition, setNodes, setEdges]);
+  }, [databases, users, tables, partitions, parts, columns, projections, projectionParts, indexes, selectedRoot, selectedDatabase, selectedTable, selectedTableCategory, selectedPartition, selectedProjection, setNodes, setEdges]);
 
-  const isLoading = loading || loadingTables || loadingPartitions || loadingParts || loadingColumns;
+  const isLoading = loading || loadingTables || loadingPartitions || loadingParts || loadingColumns || loadingProjections || loadingProjectionParts || loadingIndexes;
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={onClose}>
@@ -689,6 +930,14 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
           <div className="flex items-center gap-1">
             <Columns className="w-3 h-3 text-cyan-400" />
             <span className="text-gray-400">Column</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-pink-400" />
+            <span className="text-gray-400">Projection</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Zap className="w-3 h-3 text-amber-400" />
+            <span className="text-gray-400">Index</span>
           </div>
           <div className="flex items-center gap-1">
             <User className="w-3 h-3 text-amber-400" />

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText, Layers } from 'lucide-react';
+import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText, Layers, FileCode } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
 import { PartsPage } from './components/pages/PartsPage';
@@ -8,13 +8,14 @@ import { ActivityPage } from './components/pages/ActivityPage';
 import { MetricsPage } from './components/pages/MetricsPage';
 import { InstancePage } from './components/pages/InstancePage';
 import { TextLogPage } from './components/pages/TextLogPage';
+import { MyQueriesPage } from './components/pages/MyQueriesPage';
 import { ProfileEventsModal } from './components/ProfileEventsModal';
 import { DatabaseBrowser } from './components/DatabaseBrowser';
 import { QueryEditor } from './components/QueryEditor';
 import { useQueryStore } from './stores/queryStore';
 import { useQueryData } from './hooks/useQueryData';
 
-type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'metrics' | 'instance';
+type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'metrics' | 'instance' | 'myqueries';
 type RefreshInterval = 'off' | 10 | 30 | 60;
 
 interface ConnectionInfo {
@@ -53,6 +54,7 @@ function App() {
   const [queryEditorInitialQuery, setQueryEditorInitialQuery] = useState('');
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
+  const [hasQueriesFolder, setHasQueriesFolder] = useState(false);
   const { loading, error, setActiveTab, setChartMetric, setTimeRange } = useQueryStore();
   const { refresh } = useQueryData();
 
@@ -68,6 +70,14 @@ function App() {
         setBackendError(null);
       })
       .catch(() => setBackendError('Backend server not running. Please start the server.'));
+  }, []);
+
+  // Check if queries folder exists
+  useEffect(() => {
+    fetch('/api/my-queries/exists')
+      .then(res => res.json())
+      .then(data => setHasQueriesFolder(data.exists))
+      .catch(() => setHasQueriesFolder(false));
   }, []);
 
   // Expose function to open query editor with a query (for use by ProfileEventsModal)
@@ -108,6 +118,7 @@ function App() {
     { id: 'metrics', label: 'Metrics', icon: BarChart2 },
     { id: 'textlog', label: 'Text Log', icon: FileText },
     { id: 'instance', label: 'Instance', icon: Server },
+    ...(hasQueriesFolder ? [{ id: 'myqueries' as const, label: 'My Queries', icon: FileCode }] : []),
   ];
 
   return (
@@ -230,6 +241,7 @@ function App() {
         {navItem === 'activity' && <ActivityPage />}
         {navItem === 'metrics' && <MetricsPage />}
         {navItem === 'instance' && <InstancePage />}
+        {navItem === 'myqueries' && <MyQueriesPage />}
       </main>
 
       {/* Profile Events Modal */}

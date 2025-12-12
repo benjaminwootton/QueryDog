@@ -1,7 +1,7 @@
 import { useMemo, useCallback, useEffect, useState, useRef, useImperativeHandle, forwardRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
-import type { ColDef, SortChangedEvent, ICellRendererParams } from 'ag-grid-community';
+import type { ColDef, SortChangedEvent, ICellRendererParams, FirstDataRenderedEvent } from 'ag-grid-community';
 import { Settings, X, Eye, RefreshCw } from 'lucide-react';
 import type { ColumnMetadata } from '../types/queryLog';
 import { createColumnsFromMetadata, type ColumnConfig } from '../types/queryLog';
@@ -226,6 +226,15 @@ function SystemTableInner({
         def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
+      // Format percentage fields - yellow
+      if (col.field.includes('pct') || col.field.includes('percent') || col.field.includes('ratio')) {
+        def.valueFormatter = (params) => {
+          if (params.value == null || Number(params.value) < 0) return '-';
+          return `${Number(params.value).toFixed(0)}%`;
+        };
+        def.cellStyle = { textAlign: 'right', color: '#fde047' };
+      }
+
       // Format time fields
       if (col.field.includes('time') && col.type.includes('DateTime')) {
         def.valueFormatter = (params) => {
@@ -250,6 +259,18 @@ function SystemTableInner({
       onSortChange(sortModel.colId, sortModel.sort === 'asc' ? 'ASC' : 'DESC');
     }
   }, [onSortChange]);
+
+  // Auto-size columns on first data render, excluding query columns
+  const onFirstDataRendered = useCallback((event: FirstDataRenderedEvent) => {
+    const columnsToSkip = ['query', 'example_query', 'normalized_query_hash'];
+    const allColumns = event.api.getColumns();
+    if (allColumns) {
+      const columnsToSize = allColumns
+        .filter(col => !columnsToSkip.includes(col.getColId()))
+        .map(col => col.getColId());
+      event.api.autoSizeColumns(columnsToSize);
+    }
+  }, []);
 
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
@@ -321,6 +342,7 @@ function SystemTableInner({
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}
           onSortChanged={onSortChanged}
+          onFirstDataRendered={onFirstDataRendered}
           loading={loading}
           animateRows={false}
           suppressCellFocus={true}
