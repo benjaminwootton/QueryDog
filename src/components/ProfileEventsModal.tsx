@@ -98,7 +98,7 @@ export function ProfileEventsModal() {
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={handleClose}>
       <div
-        className="bg-gray-900 border border-gray-700 rounded-lg w-[1100px] max-h-[85vh] overflow-hidden flex flex-col"
+        className="bg-gray-900 border border-gray-700 rounded-lg w-[1400px] max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-3 border-b border-gray-700">
@@ -237,7 +237,7 @@ export function ProfileEventsModal() {
                     {sortedSettings.map(([key, value]) => (
                       <tr key={key} className="border-b border-gray-700/50 hover:bg-gray-700/30">
                         <td className="p-1.5 text-blue-300 font-mono">{key}</td>
-                        <td className="p-1.5 text-right text-green-300 font-mono truncate max-w-[200px]" title={value}>
+                        <td className="p-1.5 text-right text-green-300 font-mono truncate max-w-[350px]" title={value}>
                           {value}
                         </td>
                       </tr>

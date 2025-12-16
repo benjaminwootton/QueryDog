@@ -26,6 +26,17 @@ const client = createClient({
   database: process.env.CLICKHOUSE_DATABASE,
 });
 
+// Cluster support - if CLICKHOUSE_CLUSTER is set, wrap system table queries with clusterAllReplicas()
+const CLICKHOUSE_CLUSTER = process.env.CLICKHOUSE_CLUSTER;
+
+// Helper to get system table reference - uses clusterAllReplicas() if cluster is configured
+function getSystemTable(tableName) {
+  if (CLICKHOUSE_CLUSTER) {
+    return `clusterAllReplicas('${CLICKHOUSE_CLUSTER}', system.${tableName})`;
+  }
+  return `system.${tableName}`;
+}
+
 // Connection info endpoint
 app.get('/api/connection-info', (req, res) => {
   res.json({
@@ -33,6 +44,7 @@ app.get('/api/connection-info', (req, res) => {
     port: process.env.CLICKHOUSE_PORT_HTTP,
     secure: process.env.CLICKHOUSE_SECURE === '1',
     user: process.env.CLICKHOUSE_USER,
+    cluster: CLICKHOUSE_CLUSTER || null,
   });
 });
 
@@ -132,7 +144,7 @@ app.get('/api/query-log', async (req, res) => {
 
     const query = `
       SELECT *
-      FROM system.query_log
+      FROM ${getSystemTable('query_log')}
       ${whereClause}
       ORDER BY ${safeSortField} ${safeSortOrder}
       LIMIT {limit:UInt32}
@@ -254,7 +266,7 @@ app.get('/api/query-log/timeseries', async (req, res) => {
         max(result_rows) as max_result_rows,
         min(result_rows) as min_result_rows,
         sum(result_rows) as sum_result_rows
-      FROM system.query_log
+      FROM ${getSystemTable('query_log')}
       ${whereClause}
       GROUP BY time
       ORDER BY time ASC
@@ -329,7 +341,7 @@ app.get('/api/query-log/timeseries-stacked', async (req, res) => {
         countIf(query_kind = 'Insert') as Insert,
         countIf(query_kind = 'Delete') as Delete,
         countIf(query_kind NOT IN ('Select', 'Insert', 'Delete')) as Other
-      FROM system.query_log
+      FROM ${getSystemTable('query_log')}
       ${whereClause}
       GROUP BY time
       ORDER BY time ASC
@@ -398,7 +410,7 @@ app.get('/api/query-log/profile-events', async (req, res) => {
         event_time,
         query_id,
         ${eventSelects}
-      FROM system.query_log
+      FROM ${getSystemTable('query_log')}
       ${whereClause}
       ORDER BY event_time DESC
       LIMIT {limit:UInt32}
@@ -464,7 +476,7 @@ app.get('/api/query-log/histogram/:field', async (req, res) => {
         SELECT
           arrayJoin(${field}) as name,
           count() as count
-        FROM system.query_log
+        FROM ${getSystemTable('query_log')}
         ${whereClause}
         GROUP BY name
         HAVING name != ''
@@ -476,7 +488,7 @@ app.get('/api/query-log/histogram/:field', async (req, res) => {
         SELECT
           toString(${field}) as name,
           count() as count
-        FROM system.query_log
+        FROM ${getSystemTable('query_log')}
         ${whereClause}
         GROUP BY name
         ORDER BY count DESC
@@ -530,7 +542,7 @@ app.get('/api/query-log/distinct/:field', async (req, res) => {
     if (ARRAY_FIELDS.includes(field)) {
       query = `
         SELECT DISTINCT arrayJoin(${field}) as value
-        FROM system.query_log
+        FROM ${getSystemTable('query_log')}
         ${whereClause}
         ORDER BY value
         LIMIT {limit:UInt32}
@@ -538,7 +550,7 @@ app.get('/api/query-log/distinct/:field', async (req, res) => {
     } else if (scalarFields.includes(field)) {
       query = `
         SELECT DISTINCT toString(${field}) as value
-        FROM system.query_log
+        FROM ${getSystemTable('query_log')}
         ${whereClause}
         ORDER BY value
         LIMIT {limit:UInt32}
@@ -597,7 +609,7 @@ app.get('/api/parts', async (req, res) => {
 
     const query = `
       SELECT *
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       ${whereClause}
       ORDER BY ${safeSortField} ${safeSortOrder}
       LIMIT {limit:UInt32} OFFSET {offset:UInt32}
@@ -667,7 +679,7 @@ app.get('/api/parts/count', async (req, res) => {
 
     const query = `
       SELECT count() as count
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       ${whereClause}
     `;
 
@@ -726,7 +738,7 @@ app.get('/api/parts/grouped', async (req, res) => {
         sum(data_uncompressed_bytes) as uncompressed_bytes,
         round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) as savings_pct,
         max(modification_time) as last_modification_time
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       ${whereClause}
       GROUP BY database, table
       ORDER BY total_bytes DESC
@@ -832,7 +844,7 @@ app.get('/api/partitions-summary', async (req, res) => {
         max(modification_time) as latest_modification,
         min(min_block_number) as min_block,
         max(max_block_number) as max_block
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       ${whereClause}
       GROUP BY database, table, partition_id, partition
       ORDER BY ${safeSortField} ${safeSortOrder}
@@ -883,7 +895,7 @@ app.get('/api/partitions-summary/count', async (req, res) => {
     const query = `
       SELECT count() as count FROM (
         SELECT database, table, partition_id
-        FROM system.parts
+        FROM ${getSystemTable('parts')}
         ${whereClause}
         GROUP BY database, table, partition_id
       )
@@ -963,7 +975,7 @@ app.get('/api/partitions', async (req, res) => {
 
     const query = `
       SELECT *
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       ${whereClause}
       ORDER BY ${safeSortField} ${safeSortOrder}
       LIMIT {limit:UInt32} OFFSET {offset:UInt32}
@@ -1014,7 +1026,7 @@ app.get('/api/partitions/count', async (req, res) => {
 
     const query = `
       SELECT count() as count
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       ${whereClause}
     `;
 
@@ -1071,7 +1083,7 @@ app.get('/api/partition-parts/:database/:table/:partitionId', async (req, res) =
         level,
         primary_key_bytes_in_memory,
         active
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       WHERE database = {database:String}
         AND table = {table:String}
         AND partition_id = {partitionId:String}
@@ -1112,7 +1124,7 @@ app.get('/api/table-partitions/:database/:table', async (req, res) => {
         max(max_block_number) as max_block,
         min(modification_time) as oldest_part,
         max(modification_time) as newest_part
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       WHERE database = {database:String} AND table = {table:String} ${activeFilter}
       GROUP BY partition_id
       ORDER BY partition_id
@@ -1148,7 +1160,7 @@ app.get('/api/parts/distinct/:field', async (req, res) => {
 
     const query = `
       SELECT DISTINCT toString(${field}) as value
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       ORDER BY value
       LIMIT {limit:UInt32}
     `;
@@ -1200,7 +1212,7 @@ app.get('/api/parts/histogram/:field', async (req, res) => {
       SELECT
         toString(${field}) as name,
         count() as count
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       ${whereClause}
       GROUP BY name
       ORDER BY count DESC
@@ -1243,7 +1255,7 @@ app.get('/api/processes', async (req, res) => {
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM system.processes ${whereClause} ORDER BY elapsed DESC`;
+    const query = `SELECT * FROM ${getSystemTable('processes')} ${whereClause} ORDER BY elapsed DESC`;
     const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
     const data = await result.json();
     res.json(data);
@@ -1276,7 +1288,7 @@ app.get('/api/processes/distinct/:field', async (req, res) => {
   try {
     const { field } = req.params;
     const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'user';
-    const query = `SELECT DISTINCT toString(${safeField}) as value FROM system.processes WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('processes')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
     const result = await client.query({ query, format: 'JSONEachRow' });
     const data = await result.json();
     res.json(data.map(row => row.value).filter(v => v !== ''));
@@ -1306,7 +1318,7 @@ app.get('/api/merges', async (req, res) => {
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM system.merges ${whereClause} ORDER BY progress DESC`;
+    const query = `SELECT * FROM ${getSystemTable('merges')} ${whereClause} ORDER BY progress DESC`;
     const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
     const data = await result.json();
     res.json(data);
@@ -1339,7 +1351,7 @@ app.get('/api/merges/distinct/:field', async (req, res) => {
   try {
     const { field } = req.params;
     const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
-    const query = `SELECT DISTINCT toString(${safeField}) as value FROM system.merges WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('merges')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
     const result = await client.query({ query, format: 'JSONEachRow' });
     const data = await result.json();
     res.json(data.map(row => row.value).filter(v => v !== ''));
@@ -1369,7 +1381,7 @@ app.get('/api/mutations', async (req, res) => {
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM system.mutations ${whereClause} ORDER BY create_time DESC`;
+    const query = `SELECT * FROM ${getSystemTable('mutations')} ${whereClause} ORDER BY create_time DESC`;
     const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
     const data = await result.json();
     res.json(data);
@@ -1402,7 +1414,7 @@ app.get('/api/mutations/distinct/:field', async (req, res) => {
   try {
     const { field } = req.params;
     const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
-    const query = `SELECT DISTINCT toString(${safeField}) as value FROM system.mutations WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('mutations')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
     const result = await client.query({ query, format: 'JSONEachRow' });
     const data = await result.json();
     res.json(data.map(row => row.value).filter(v => v !== ''));
@@ -1435,7 +1447,7 @@ app.get('/api/view-refreshes', async (req, res) => {
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM system.view_refreshes ${whereClause} ORDER BY next_refresh_time ASC`;
+    const query = `SELECT * FROM ${getSystemTable('view_refreshes')} ${whereClause} ORDER BY next_refresh_time ASC`;
     const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
     const data = await result.json();
     res.json(data);
@@ -1468,7 +1480,7 @@ app.get('/api/view-refreshes/distinct/:field', async (req, res) => {
   try {
     const { field } = req.params;
     const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
-    const query = `SELECT DISTINCT toString(${safeField}) as value FROM system.view_refreshes WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('view_refreshes')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
     const result = await client.query({ query, format: 'JSONEachRow' });
     const data = await result.json();
     res.json(data.map(row => row.value).filter(v => v !== ''));
@@ -1530,7 +1542,7 @@ app.get('/api/browser/partitions/:database/:table', async (req, res) => {
         sum(bytes_on_disk) as total_bytes,
         min(min_time) as min_time,
         max(max_time) as max_time
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       WHERE database = {database:String} AND table = {table:String} AND active = 1
       GROUP BY partition_id, partition
       ORDER BY partition_id
@@ -1598,7 +1610,7 @@ app.get('/api/browser/parts/:database/:table/:partition', async (req, res) => {
         max_time,
         level,
         primary_key_bytes_in_memory
-      FROM system.parts
+      FROM ${getSystemTable('parts')}
       WHERE database = {database:String} AND table = {table:String} AND partition_id = {partition:String} AND active = 1
       ORDER BY name
     `;
@@ -1649,7 +1661,7 @@ app.get('/api/projections', async (req, res) => {
         type,
         sorting_key,
         query
-      FROM system.projections
+      FROM ${getSystemTable('projections')}
       ${whereClause}
       ORDER BY database, table, name
     `;
@@ -1683,7 +1695,7 @@ app.get('/api/projection-parts/:database/:table/:projection', async (req, res) =
         modification_time,
         parent_part_name,
         is_broken
-      FROM system.projection_parts
+      FROM ${getSystemTable('projection_parts')}
       WHERE database = {database:String} AND table = {table:String} AND name = {projection:String} AND active = 1
       ORDER BY part_name
     `;
@@ -1713,7 +1725,7 @@ app.get('/api/browser/projections/:database/:table', async (req, res) => {
         toString(storage_policy) as storage_policy,
         toString(partition_key) as partition_key,
         toString(primary_key) as primary_key
-      FROM system.projections
+      FROM ${getSystemTable('projections')}
       WHERE database = {database:String} AND table = {table:String}
       ORDER BY name
     `;
@@ -1747,7 +1759,7 @@ app.get('/api/browser/projection-parts/:database/:table/:projection', async (req
         modification_time,
         parent_part_name,
         is_broken
-      FROM system.projection_parts
+      FROM ${getSystemTable('projection_parts')}
       WHERE database = {database:String} AND table = {table:String} AND name = {projection:String} AND active = 1
       ORDER BY part_name
     `;
@@ -1805,7 +1817,7 @@ app.get('/api/indexes', async (req, res) => {
         data_compressed_bytes,
         data_uncompressed_bytes,
         marks
-      FROM system.data_skipping_indices
+      FROM ${getSystemTable('data_skipping_indices')}
       ${whereClause}
       ORDER BY database, table, name
     `;
@@ -1836,7 +1848,7 @@ app.get('/api/browser/indexes/:database/:table', async (req, res) => {
         data_compressed_bytes,
         data_uncompressed_bytes,
         marks
-      FROM system.data_skipping_indices
+      FROM ${getSystemTable('data_skipping_indices')}
       WHERE database = {database:String} AND table = {table:String}
       ORDER BY name
     `;
@@ -2179,7 +2191,7 @@ app.get('/api/part-log', async (req, res) => {
 
     const query = `
       SELECT *
-      FROM system.part_log
+      FROM ${getSystemTable('part_log')}
       ${whereClause}
       ORDER BY ${safeSortField} ${safeSortOrder}
       LIMIT {limit:UInt32}
@@ -2237,7 +2249,7 @@ app.get('/api/part-log/count', async (req, res) => {
 
     const query = `
       SELECT count() as total
-      FROM system.part_log
+      FROM ${getSystemTable('part_log')}
       ${whereClause}
     `;
 
@@ -2309,7 +2321,7 @@ app.get('/api/part-log/timeseries', async (req, res) => {
         min(duration_ms) as min_duration,
         max(duration_ms) as max_duration,
         sum(duration_ms) as sum_duration
-      FROM system.part_log
+      FROM ${getSystemTable('part_log')}
       ${whereClause}
       GROUP BY time
       ORDER BY time ASC
@@ -2381,7 +2393,7 @@ app.get('/api/part-log/timeseries-stacked', async (req, res) => {
         countIf(event_type = 'RemovePart') as RemovePart,
         countIf(event_type = 'MutatePart') as MutatePart,
         countIf(event_type NOT IN ('NewPart', 'MergeParts', 'DownloadPart', 'RemovePart', 'MutatePart')) as Other
-      FROM system.part_log
+      FROM ${getSystemTable('part_log')}
       ${whereClause}
       GROUP BY time
       ORDER BY time ASC
@@ -2444,7 +2456,7 @@ app.get('/api/part-log/histogram/:field', async (req, res) => {
       SELECT
         toString(${field}) as name,
         count() as count
-      FROM system.part_log
+      FROM ${getSystemTable('part_log')}
       ${whereClause}
       GROUP BY name
       ORDER BY count DESC
@@ -2494,7 +2506,7 @@ app.get('/api/part-log/distinct/:field', async (req, res) => {
 
     const query = `
       SELECT DISTINCT toString(${field}) as value
-      FROM system.part_log
+      FROM ${getSystemTable('part_log')}
       ${whereClause}
       ORDER BY value
       LIMIT {limit:UInt32}
@@ -2579,7 +2591,7 @@ app.get('/api/text-log', async (req, res) => {
 
     const query = `
       SELECT *
-      FROM system.text_log
+      FROM ${getSystemTable('text_log')}
       ${whereClause}
       ORDER BY ${safeSortField} ${safeSortOrder}
       LIMIT {limit:UInt32} OFFSET {offset:UInt32}
@@ -2636,7 +2648,7 @@ app.get('/api/text-log/count', async (req, res) => {
 
     const query = `
       SELECT count() as total
-      FROM system.text_log
+      FROM ${getSystemTable('text_log')}
       ${whereClause}
     `;
 
@@ -2703,7 +2715,7 @@ app.get('/api/text-log/timeseries', async (req, res) => {
         count() as count,
         countIf(level = 'Error' OR level = 'Fatal') as errors,
         countIf(level = 'Warning') as warnings
-      FROM system.text_log
+      FROM ${getSystemTable('text_log')}
       ${whereClause}
       GROUP BY time
       ORDER BY time ASC
@@ -2752,7 +2764,7 @@ app.get('/api/text-log/distinct/:field', async (req, res) => {
 
     const query = `
       SELECT DISTINCT toString(${field}) as value
-      FROM system.text_log
+      FROM ${getSystemTable('text_log')}
       ${whereClause}
       ORDER BY value
       LIMIT {limit:UInt32}
@@ -2843,7 +2855,7 @@ app.get('/api/query-log/grouped', async (req, res) => {
         avg(result_rows) as avg_result_rows,
         min(event_time) as first_seen,
         max(event_time) as last_seen
-      FROM system.query_log
+      FROM ${getSystemTable('query_log')}
       ${whereClause}
       GROUP BY ${groupByField}
       ORDER BY ${safeSortField} ${safeSortOrder}
@@ -2904,7 +2916,7 @@ app.get('/api/query-log/count', async (req, res) => {
 
     const query = `
       SELECT count() as total
-      FROM system.query_log
+      FROM ${getSystemTable('query_log')}
       ${whereClause}
     `;
 

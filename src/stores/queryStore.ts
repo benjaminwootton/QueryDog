@@ -135,6 +135,9 @@ interface QueryState {
   selectedEntry: QueryLogEntry | null;
   activeTab: 'queries' | 'grouped' | 'histograms' | 'profileEvents';
 
+  // Global refresh trigger - increment to trigger refresh on all pages
+  globalRefreshTrigger: number;
+
   // Actions
   setEntries: (entries: QueryLogEntry[]) => void;
   setTimeSeries: (data: TimeSeriesPoint[]) => void;
@@ -187,6 +190,8 @@ interface QueryState {
   // Partitions Actions
   setPartitionsTotalCount: (count: number) => void;
   setPartitionsCurrentPage: (page: number) => void;
+  // Global refresh
+  triggerGlobalRefresh: () => void;
 }
 
 const now = new Date();
@@ -254,6 +259,9 @@ export const useQueryStore = create<QueryState>((set) => ({
 
   selectedEntry: null,
   activeTab: 'queries',
+
+  // Global refresh trigger
+  globalRefreshTrigger: 0,
 
   setEntries: (entries) => set({ entries }),
   setTimeSeries: (timeSeries) => set({ timeSeries }),
@@ -343,4 +351,6 @@ export const useQueryStore = create<QueryState>((set) => ({
   // Partitions Actions
   setPartitionsTotalCount: (partitionsTotalCount) => set({ partitionsTotalCount }),
   setPartitionsCurrentPage: (partitionsCurrentPage) => set({ partitionsCurrentPage }),
+  // Global refresh
+  triggerGlobalRefresh: () => set((state) => ({ globalRefreshTrigger: state.globalRefreshTrigger + 1 })),
 }));

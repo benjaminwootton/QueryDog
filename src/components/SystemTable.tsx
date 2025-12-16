@@ -5,6 +5,7 @@ import type { ColDef, SortChangedEvent, ICellRendererParams, FirstDataRenderedEv
 import { Settings, X, Eye, RefreshCw } from 'lucide-react';
 import type { ColumnMetadata } from '../types/queryLog';
 import { createColumnsFromMetadata, type ColumnConfig } from '../types/queryLog';
+import { useQueryStore } from '../stores/queryStore';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -153,6 +154,18 @@ function SystemTableInner({
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Respond to global refresh trigger
+  const globalRefreshTrigger = useQueryStore((state) => state.globalRefreshTrigger);
+  const initialRenderRef = useRef(true);
+  useEffect(() => {
+    // Skip the initial render (data is already loaded above)
+    if (initialRenderRef.current) {
+      initialRenderRef.current = false;
+      return;
+    }
+    loadData();
+  }, [globalRefreshTrigger, loadData]);
 
   const toggleColumnVisibility = useCallback((field: string) => {
     setColumns(cols => cols.map(c => c.field === field ? { ...c, visible: !c.visible } : c));

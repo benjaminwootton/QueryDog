@@ -8,7 +8,7 @@ import { PartsFilterPanel } from '../PartsFilterPanel';
 import { PartsHistogramsTab } from '../PartsHistogramsTab';
 import { ProjectionsTab } from '../ProjectionsTab';
 import { IndexesTab } from '../IndexesTab';
-import { fetchParts, fetchPartsColumns, fetchPartsCount, fetchPartitionsSummary, fetchPartitionsSummaryColumns, fetchPartitionsSummaryCount, fetchGroupedParts, fetchTablePartitions, fetchPartitionParts, fetchTableCompression, type GroupedPartsEntry, type TablePartitionEntry, type PartitionPartEntry, type ColumnCompressionEntry } from '../../services/api';
+import { fetchParts, fetchPartsColumns, fetchPartsCount, fetchPartitionsSummary, fetchPartitionsSummaryColumns, fetchPartitionsSummaryCount, fetchGroupedParts, fetchTablePartitions, fetchPartitionParts, fetchTableCompression, fetchBrowserColumns, type GroupedPartsEntry, type TablePartitionEntry, type PartitionPartEntry, type ColumnCompressionEntry, type BrowserColumn } from '../../services/api';
 import { useQueryStore } from '../../stores/queryStore';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -89,6 +89,10 @@ export function PartsPage() {
   const [selectedTable, setSelectedTable] = useState<{ database: string; table: string } | null>(null);
   const [partitionDetails, setPartitionDetails] = useState<TablePartitionEntry[]>([]);
   const [partitionDetailsLoading, setPartitionDetailsLoading] = useState(false);
+
+  // Schema state for table details modal
+  const [schemaColumns, setSchemaColumns] = useState<BrowserColumn[]>([]);
+  const [schemaLoading, setSchemaLoading] = useState(false);
 
   // Modal state for partition parts (parts within a partition)
   const [selectedPartition, setSelectedPartition] = useState<{ database: string; table: string; partitionId: string } | null>(null);
@@ -224,20 +228,28 @@ export function PartsPage() {
   const handleViewPartitions = useCallback(async (database: string, table: string) => {
     setSelectedTable({ database, table });
     setPartitionDetailsLoading(true);
+    setSchemaLoading(true);
     try {
-      const data = await fetchTablePartitions(database, table);
-      setPartitionDetails(data);
+      const [partitionData, schemaData] = await Promise.all([
+        fetchTablePartitions(database, table),
+        fetchBrowserColumns(database, table),
+      ]);
+      setPartitionDetails(partitionData);
+      setSchemaColumns(schemaData);
     } catch (error) {
-      console.error('Error fetching partition details:', error);
+      console.error('Error fetching table details:', error);
       setPartitionDetails([]);
+      setSchemaColumns([]);
     } finally {
       setPartitionDetailsLoading(false);
+      setSchemaLoading(false);
     }
   }, []);
 
   const handleCloseModal = useCallback(() => {
     setSelectedTable(null);
     setPartitionDetails([]);
+    setSchemaColumns([]);
   }, []);
 
   // Handle viewing parts for a specific partition
@@ -448,7 +460,7 @@ export function PartsPage() {
   }, []);
 
   const tabs: { id: PartsTab; label: string; icon: typeof HardDrive }[] = [
-    { id: 'grouped', label: 'Objects', icon: Grid3X3 },
+    { id: 'grouped', label: 'Tables', icon: Grid3X3 },
     { id: 'partitions', label: 'Partitions', icon: Layers },
     { id: 'parts', label: 'Parts', icon: HardDrive },
     { id: 'projections', label: 'Projections', icon: Sparkles },
@@ -716,7 +728,7 @@ export function PartsPage() {
       {selectedTable && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={handleCloseModal}>
           <div
-            className="bg-gray-900 border border-gray-700 rounded-lg w-[900px] max-h-[80vh] overflow-hidden flex flex-col"
+            className="bg-gray-900 border border-gray-700 rounded-lg w-[1100px] max-h-[90vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-3 border-b border-gray-700">
@@ -737,6 +749,18 @@ export function PartsPage() {
               ) : (
                 <>
                   <div className="grid grid-cols-6 gap-2 mb-4">
+                    <div className="bg-gray-800 p-2 rounded">
+                      <div className="text-xs text-gray-400">Rows</div>
+                      <div className="text-sm font-semibold text-green-400">
+                        {partitionDetails.reduce((sum, p) => sum + Number(p.total_rows), 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="bg-gray-800 p-2 rounded">
+                      <div className="text-xs text-gray-400">Size on Disk</div>
+                      <div className="text-sm font-semibold text-green-400">
+                        {formatBytes(partitionDetails.reduce((sum, p) => sum + Number(p.total_bytes), 0))}
+                      </div>
+                    </div>
                     <div className="bg-gray-800 p-2 rounded">
                       <div className="flex items-center justify-between">
                         <div className="text-xs text-gray-400">Partitions</div>
@@ -774,18 +798,6 @@ export function PartsPage() {
                       </div>
                     </div>
                     <div className="bg-gray-800 p-2 rounded">
-                      <div className="text-xs text-gray-400">Rows</div>
-                      <div className="text-sm font-semibold text-green-400">
-                        {partitionDetails.reduce((sum, p) => sum + Number(p.total_rows), 0).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="bg-gray-800 p-2 rounded">
-                      <div className="text-xs text-gray-400">Size on Disk</div>
-                      <div className="text-sm font-semibold text-green-400">
-                        {formatBytes(partitionDetails.reduce((sum, p) => sum + Number(p.total_bytes), 0))}
-                      </div>
-                    </div>
-                    <div className="bg-gray-800 p-2 rounded">
                       <div className="text-xs text-gray-400">Block Range</div>
                       <div className="text-sm font-semibold text-white">
                         {Math.min(...partitionDetails.map(p => p.min_block))} - {Math.max(...partitionDetails.map(p => p.max_block))}
@@ -799,50 +811,93 @@ export function PartsPage() {
                     </div>
                   </div>
 
-                  <div className="bg-gray-800 rounded max-h-[calc(80vh-200px)] overflow-y-auto">
-                    <table className="w-full text-xs">
-                      <thead className="sticky top-0 bg-gray-800">
-                        <tr className="border-b border-gray-700">
-                          <th className="text-left p-2 text-gray-400">Partition ID</th>
-                          <th className="text-right p-2 text-gray-400">Parts</th>
-                          <th className="text-right p-2 text-gray-400">Rows</th>
-                          <th className="text-right p-2 text-gray-400">Size</th>
-                          <th className="text-right p-2 text-gray-400">Block Range</th>
-                          <th className="text-right p-2 text-gray-400">Newest Part</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {partitionDetails.map((partition) => (
-                          <tr key={partition.partition_id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                            <td className="p-2 font-mono">
-                              <button
-                                onClick={() => selectedTable && handlePartitionClick(selectedTable.database, selectedTable.table, partition.partition_id || '')}
-                                className="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
-                                title="View in Partitions tab"
-                              >
-                                {partition.partition_id || '(all)'}
-                              </button>
-                            </td>
-                            <td className="p-2 text-right text-green-400">{partition.parts_count.toLocaleString()}</td>
-                            <td className="p-2 text-right text-green-400">{Number(partition.total_rows).toLocaleString()}</td>
-                            <td className="p-2 text-right text-green-400">{formatBytes(Number(partition.total_bytes))}</td>
-                            <td className="p-2 text-right text-gray-300">{partition.min_block} - {partition.max_block}</td>
-                            <td className="p-2 text-right text-red-300">
-                              {partition.newest_part
-                                ? new Date(partition.newest_part).toLocaleString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                    second: '2-digit',
-                                    hour12: false,
-                                  })
-                                : '-'}
-                            </td>
+                  {/* Schema Section */}
+                  <div className="mb-4">
+                    <h3 className="text-xs font-semibold text-gray-300 mb-2">Schema ({schemaColumns.length} columns)</h3>
+                    {schemaLoading ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">Loading schema...</div>
+                    ) : schemaColumns.length === 0 ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">No schema found</div>
+                    ) : (
+                      <div className="bg-gray-800 rounded max-h-[280px] overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-gray-800">
+                            <tr className="border-b border-gray-700">
+                              <th className="text-left p-2 text-gray-400">Column</th>
+                              <th className="text-left p-2 text-gray-400">Type</th>
+                              <th className="text-center p-2 text-gray-400">Keys</th>
+                              <th className="text-left p-2 text-gray-400">Codec</th>
+                              <th className="text-left p-2 text-gray-400">Comment</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {schemaColumns.map((col) => (
+                              <tr key={col.name} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                                <td className="p-2 font-mono text-blue-300">{col.name}</td>
+                                <td className="p-2 text-gray-300">{col.type}</td>
+                                <td className="p-2 text-center">
+                                  {col.is_in_primary_key === 1 && <span className="inline-block px-1 bg-yellow-600/30 text-yellow-400 rounded text-[10px] mr-1">PK</span>}
+                                  {col.is_in_partition_key === 1 && <span className="inline-block px-1 bg-purple-600/30 text-purple-400 rounded text-[10px] mr-1">PART</span>}
+                                  {col.is_in_sorting_key === 1 && <span className="inline-block px-1 bg-green-600/30 text-green-400 rounded text-[10px]">SORT</span>}
+                                </td>
+                                <td className="p-2 text-gray-400">{col.compression_codec || '-'}</td>
+                                <td className="p-2 text-gray-500 truncate max-w-[150px]" title={col.comment}>{col.comment || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Partitions Section */}
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-300 mb-2">Partitions ({partitionDetails.length})</h3>
+                    <div className="bg-gray-800 rounded max-h-[250px] overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-gray-800">
+                          <tr className="border-b border-gray-700">
+                            <th className="text-left p-2 text-gray-400">Partition ID</th>
+                            <th className="text-right p-2 text-gray-400">Parts</th>
+                            <th className="text-right p-2 text-gray-400">Rows</th>
+                            <th className="text-right p-2 text-gray-400">Size</th>
+                            <th className="text-right p-2 text-gray-400">Block Range</th>
+                            <th className="text-right p-2 text-gray-400">Newest Part</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {partitionDetails.map((partition) => (
+                            <tr key={partition.partition_id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                              <td className="p-2 font-mono">
+                                <button
+                                  onClick={() => selectedTable && handlePartitionClick(selectedTable.database, selectedTable.table, partition.partition_id || '')}
+                                  className="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
+                                  title="View in Partitions tab"
+                                >
+                                  {partition.partition_id || '(all)'}
+                                </button>
+                              </td>
+                              <td className="p-2 text-right text-green-400">{partition.parts_count.toLocaleString()}</td>
+                              <td className="p-2 text-right text-green-400">{Number(partition.total_rows).toLocaleString()}</td>
+                              <td className="p-2 text-right text-green-400">{formatBytes(Number(partition.total_bytes))}</td>
+                              <td className="p-2 text-right text-gray-300">{partition.min_block} - {partition.max_block}</td>
+                              <td className="p-2 text-right text-red-300">
+                                {partition.newest_part
+                                  ? new Date(partition.newest_part).toLocaleString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      second: '2-digit',
+                                      hour12: false,
+                                    })
+                                  : '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </>
               )}

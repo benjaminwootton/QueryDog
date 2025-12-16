@@ -113,7 +113,7 @@ function App() {
   const navItems: { id: NavItem; label: string; icon: typeof Database }[] = [
     { id: 'queries', label: 'Queries', icon: Database },
     { id: 'partlog', label: 'Parts Log', icon: Layers },
-    { id: 'parts', label: 'Tables', icon: HardDrive },
+    { id: 'parts', label: 'Objects', icon: HardDrive },
     { id: 'activity', label: 'Activity', icon: Activity },
     { id: 'metrics', label: 'Metrics', icon: BarChart2 },
     { id: 'textlog', label: 'Text Log', icon: FileText },

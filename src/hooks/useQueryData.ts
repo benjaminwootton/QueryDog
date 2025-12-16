@@ -176,10 +176,13 @@ export function useQueryData() {
     loadPartLogData();
   }, [loadPartLogData]);
 
+  const { triggerGlobalRefresh } = useQueryStore();
+
   const refresh = useCallback(() => {
     loadData();
     loadPartLogData();
-  }, [loadData, loadPartLogData]);
+    triggerGlobalRefresh();
+  }, [loadData, loadPartLogData, triggerGlobalRefresh]);
 
   return { refresh };
 }

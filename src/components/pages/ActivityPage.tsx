@@ -370,6 +370,7 @@ export function ActivityPage() {
             getRowId={(data) => String(data.query_id)}
             onColumnsChange={setProcessesColumns}
             hideTitle
+            hideHeader={false}
             showActionColumn
             onRowAction={handleProcessAction}
           />
@@ -383,6 +384,7 @@ export function ActivityPage() {
             getRowId={(data) => `${data.database}-${data.table}-${data.result_part_name}`}
             onColumnsChange={setMergesColumns}
             hideTitle
+            hideHeader={false}
           />
         )}
         {activeTab === 'mutations' && (
@@ -395,6 +397,7 @@ export function ActivityPage() {
             getRowId={(data) => `${data.database}-${data.table}-${data.mutation_id}`}
             onColumnsChange={setMutationsColumns}
             hideTitle
+            hideHeader={false}
           />
         )}
         {activeTab === 'refreshes' && (
@@ -407,6 +410,7 @@ export function ActivityPage() {
             getRowId={(data) => `${data.database}-${data.view}`}
             onColumnsChange={setRefreshesColumns}
             hideTitle
+            hideHeader={false}
           />
         )}
       </div>

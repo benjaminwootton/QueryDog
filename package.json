@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host",
     "dev:server": "node server/index.js",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
+    "dev:all": "concurrently --kill-others --kill-signal SIGTERM \"npm run dev\" \"npm run dev:server\"",
     "build": "tsc -b && vite build",
     "start": "node server/index.js",
     "lint": "eslint .",
