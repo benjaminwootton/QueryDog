@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams } from 'ag-grid-community';
-import { Play, RotateCcw, Loader2, Eye, X, Copy, Check, Search, PlayCircle, ExternalLink } from 'lucide-react';
+import { Play, RotateCcw, Loader2, Eye, X, Copy, Check, Search, PlayCircle, ExternalLink, BarChart2 } from 'lucide-react';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -35,6 +35,28 @@ interface MyQuery {
   runCount: number;
 }
 
+interface QueryLogInfo {
+  query_id: string;
+  type: string;
+  query_duration_ms: number;
+  read_rows: number;
+  read_bytes: number;
+  result_rows: number;
+  result_bytes: number;
+  memory_usage: number;
+  ProfileEvents: Record<string, number>;
+}
+
+interface RunLogEntry {
+  queryId: string;
+  runTime: string;
+  duration: number;
+  rowCount: number;
+  readRows: number | null;
+  readBytes: number | null;
+  queryLog: QueryLogInfo | null;
+}
+
 function formatDuration(ms: number | null | undefined): string {
   if (ms === null || ms === undefined) return '-';
   if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
@@ -54,6 +76,14 @@ function formatDateTime(isoString: string | null): string {
   });
 }
 
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined) return '-';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
 export function MyQueriesPage() {
   const [queries, setQueries] = useState<MyQuery[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,6 +97,9 @@ export function MyQueriesPage() {
   const [loadMessage, setLoadMessage] = useState<string | null>(null);
   const [runningAll, setRunningAll] = useState(false);
   const [runAllProgress, setRunAllProgress] = useState<{ current: number; total: number } | null>(null);
+  const [runLog, setRunLog] = useState<RunLogEntry[]>([]);
+  const [runLogLoading, setRunLogLoading] = useState(false);
+  const [queryStatus, setQueryStatus] = useState<Record<string, { success: boolean; error?: string }>>({});
 
   // Close modal on Escape key
   useEffect(() => {
@@ -74,10 +107,25 @@ export function MyQueriesPage() {
       if (e.key === 'Escape' && selectedQuery) {
         setSelectedQuery(null);
         setQueryCopied(false);
+        setRunLog([]);
       }
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
+  }, [selectedQuery]);
+
+  // Fetch run log when modal opens
+  useEffect(() => {
+    if (!selectedQuery) {
+      setRunLog([]);
+      return;
+    }
+    setRunLogLoading(true);
+    fetch(`/api/my-queries/run-log/${encodeURIComponent(selectedQuery.filename)}`)
+      .then(res => res.json())
+      .then(data => setRunLog(data.runLog || []))
+      .catch(() => setRunLog([]))
+      .finally(() => setRunLogLoading(false));
   }, [selectedQuery]);
 
   const fetchQueries = useCallback(async (showLoadMessage = false) => {
@@ -86,10 +134,12 @@ export function MyQueriesPage() {
       const res = await fetch('/api/my-queries');
       if (!res.ok) throw new Error('Failed to fetch queries');
       const data = await res.json();
-      setQueries(data);
+      const queries = data.queries || [];
+      const queriesPath = data.path || './queries';
+      setQueries(queries);
       setError(null);
       if (showLoadMessage) {
-        setLoadMessage(`${data.length} ${data.length === 1 ? 'query' : 'queries'} loaded from ./queries folder`);
+        setLoadMessage(`${queries.length} ${queries.length === 1 ? 'query' : 'queries'} loaded from ${queriesPath}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -152,12 +202,17 @@ export function MyQueriesPage() {
           duration: data.duration,
         });
       }
+      // Track successful status
+      setQueryStatus(prev => ({ ...prev, [query.filename]: { success: true } }));
       return { success: true, duration: data.duration, rowCount: data.rowCount };
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       if (!skipRefresh) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        setError(errorMsg);
       }
-      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+      // Track failed status with error message
+      setQueryStatus(prev => ({ ...prev, [query.filename]: { success: false, error: errorMsg } }));
+      return { success: false, error: errorMsg };
     } finally {
       setRunningQuery(null);
     }
@@ -231,6 +286,28 @@ export function MyQueriesPage() {
     );
   }, []);
 
+  const StatusRenderer = useCallback((params: ICellRendererParams<MyQuery>) => {
+    const status = params.data ? queryStatus[params.data.filename] : null;
+    if (!status) return null;
+
+    if (status.success) {
+      return (
+        <span className="text-green-400 text-lg font-bold" title="Query executed successfully">
+          ✓
+        </span>
+      );
+    } else {
+      return (
+        <span
+          className="inline-flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full cursor-help"
+          title={status.error || 'Query failed'}
+        >
+          !
+        </span>
+      );
+    }
+  }, [queryStatus]);
+
   const handleCopyQuery = useCallback(async () => {
     if (!selectedQuery) return;
     await navigator.clipboard.writeText(selectedQuery.query);
@@ -241,6 +318,7 @@ export function MyQueriesPage() {
   const handleCloseModal = useCallback(() => {
     setSelectedQuery(null);
     setQueryCopied(false);
+    setRunLog([]);
   }, []);
 
   const handleAnalyseQuery = useCallback(() => {
@@ -356,9 +434,17 @@ export function MyQueriesPage() {
         sortable: true,
         cellStyle: { textAlign: 'right', color: '#86efac' },
       },
+      {
+        headerName: 'Status',
+        field: 'filename',
+        width: 60,
+        sortable: false,
+        cellRenderer: StatusRenderer,
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
+      },
     ];
     return defs;
-  }, [PlayButtonRenderer, EyeButtonRenderer]);
+  }, [PlayButtonRenderer, EyeButtonRenderer, StatusRenderer]);
 
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
@@ -478,7 +564,7 @@ export function MyQueriesPage() {
       {selectedQuery && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={handleCloseModal}>
           <div
-            className="bg-gray-900 border border-gray-700 rounded-lg w-[900px] max-h-[85vh] overflow-hidden flex flex-col"
+            className="bg-gray-900 border border-gray-700 rounded-lg w-[1350px] max-h-[85vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-3 border-b border-gray-700">
@@ -556,8 +642,93 @@ export function MyQueriesPage() {
                 </div>
               </div>
 
-              {/* Run button in modal */}
-              <div className="flex justify-end">
+              {/* Run Log */}
+              <div className="mb-4">
+                <h3 className="text-xs font-semibold text-gray-400 mb-2">Run Log</h3>
+                {runLogLoading ? (
+                  <div className="text-xs text-gray-500">Loading run log...</div>
+                ) : runLog.length === 0 ? (
+                  <div className="text-xs text-gray-500">No runs recorded yet. Run the query to see execution history.</div>
+                ) : (
+                  <div className="bg-gray-800 rounded overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-gray-700 text-gray-300">
+                          <th className="px-2 py-1.5 text-left font-medium">Query ID</th>
+                          <th className="px-2 py-1.5 text-left font-medium">Run Time</th>
+                          <th className="px-2 py-1.5 text-right font-medium">Duration</th>
+                          <th className="px-2 py-1.5 text-right font-medium">Rows</th>
+                          <th className="px-2 py-1.5 text-right font-medium">Read Rows</th>
+                          <th className="px-2 py-1.5 text-right font-medium">Read Bytes</th>
+                          <th className="px-2 py-1.5 text-right font-medium">Memory</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {runLog.map((entry, idx) => (
+                          <tr key={entry.queryId || idx} className="border-t border-gray-700 hover:bg-gray-750">
+                            <td className="px-2 py-1.5 font-mono text-[10px]" title={entry.queryId}>
+                              {entry.queryId ? (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => {
+                                      const navigateToQueryId = (window as unknown as { navigateToQueryId?: (queryId: string) => void }).navigateToQueryId;
+                                      if (navigateToQueryId) {
+                                        handleCloseModal();
+                                        navigateToQueryId(entry.queryId);
+                                      }
+                                    }}
+                                    className="text-blue-400 hover:text-blue-300 hover:underline"
+                                  >
+                                    {entry.queryId.substring(0, 16) + '...'}
+                                  </button>
+                                  <button
+                                    onClick={() => navigator.clipboard.writeText(entry.queryId)}
+                                    className="text-gray-500 hover:text-gray-300 p-0.5"
+                                    title="Copy query ID"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : '-'}
+                            </td>
+                            <td className="px-2 py-1.5 text-gray-300">{formatDateTime(entry.runTime)}</td>
+                            <td className="px-2 py-1.5 text-right text-green-400">{formatDuration(entry.duration)}</td>
+                            <td className="px-2 py-1.5 text-right text-gray-300">{entry.rowCount?.toLocaleString() ?? '-'}</td>
+                            <td className="px-2 py-1.5 text-right text-gray-300">
+                              {(entry.readRows ?? entry.queryLog?.read_rows)?.toLocaleString() ?? '-'}
+                            </td>
+                            <td className="px-2 py-1.5 text-right text-gray-300">
+                              {formatBytes(entry.readBytes ?? entry.queryLog?.read_bytes)}
+                            </td>
+                            <td className="px-2 py-1.5 text-right text-gray-300">
+                              {formatBytes(entry.queryLog?.memory_usage)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons in modal */}
+              <div className="flex justify-end gap-2">
+                {runLog.filter(e => e.queryId).length > 0 && (
+                  <button
+                    onClick={() => {
+                      const queryIds = runLog.filter(e => e.queryId).map(e => e.queryId);
+                      const navigateToQueryIds = (window as unknown as { navigateToQueryIds?: (queryIds: string[]) => void }).navigateToQueryIds;
+                      if (navigateToQueryIds) {
+                        handleCloseModal();
+                        navigateToQueryIds(queryIds);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-white text-xs"
+                  >
+                    <BarChart2 className="w-3.5 h-3.5" />
+                    Analyse Results ({runLog.filter(e => e.queryId).length})
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     runQuery(selectedQuery);
