@@ -511,14 +511,14 @@ export function MyQueriesPage() {
       </div>
 
       {/* Status Bar - always reserve space to prevent layout shift */}
-      <div className={`mx-4 mt-3 px-3 py-2 rounded text-xs h-8 ${
+      <div className={`mx-4 mt-3 px-3 py-2 rounded text-xs ${
         error ? 'bg-red-900/50 text-red-300' :
-        lastResult ? 'bg-green-900/50 text-green-300' :
-        loadMessage ? 'bg-green-900/50 text-green-300' :
-        'bg-transparent'
+        lastResult ? 'bg-green-900/50 text-green-300 h-8' :
+        loadMessage ? 'bg-green-900/50 text-green-300 h-8' :
+        'bg-transparent h-8'
       }`}>
         {error ? (
-          <span>Error: {error}</span>
+          <div className="break-words whitespace-pre-wrap">Error: {error}</div>
         ) : lastResult ? (
           <span>
             Ran <strong>{lastResult.filename}</strong>: {lastResult.rowCount} rows in {formatDuration(lastResult.duration)}

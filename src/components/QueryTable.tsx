@@ -1,8 +1,8 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
-import type { ColDef, SortChangedEvent, ICellRendererParams } from 'ag-grid-community';
-import { Eye } from 'lucide-react';
+import type { ColDef, SortChangedEvent, ICellRendererParams, SelectionChangedEvent, RowClassParams } from 'ag-grid-community';
+import { Eye, Pin } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import type { QueryLogEntry } from '../types/queryLog';
 
@@ -28,6 +28,7 @@ const darkTheme = themeAlpine.withParams({
 });
 
 function formatBytes(bytes: number): string {
+  if (bytes === null || bytes === undefined || isNaN(bytes)) return '-';
   if (bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -36,6 +37,7 @@ function formatBytes(bytes: number): string {
 }
 
 function formatNumber(num: number): string {
+  if (num === null || num === undefined || isNaN(num)) return '-';
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
   if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
   return num.toString();
@@ -54,7 +56,20 @@ function ArrayCellRenderer({ value }: { value: string[] }) {
 }
 
 export function QueryTable() {
-  const { entries, columns, setSortField, setSortOrder, setSelectedEntry, loading } = useQueryStore();
+  const { entries, columns, setSortField, setSortOrder, setSelectedEntry, setSelectedEntries, pinnedEntries, pinEntry, unpinEntry, loading } = useQueryStore();
+  const gridRef = useRef<AgGridReact<QueryLogEntry>>(null);
+
+  // Combine pinned entries with regular entries, pinned at top, no duplicates
+  const combinedEntries = useMemo(() => {
+    const pinnedIds = new Set(pinnedEntries.map(e => `${e.query_id}-${e.event_time}`));
+    const unpinnedEntries = entries.filter(e => !pinnedIds.has(`${e.query_id}-${e.event_time}`));
+    return [...pinnedEntries, ...unpinnedEntries];
+  }, [entries, pinnedEntries]);
+
+  // Check if an entry is pinned
+  const isPinned = useCallback((entry: QueryLogEntry) => {
+    return pinnedEntries.some(e => e.query_id === entry.query_id && e.event_time === entry.event_time);
+  }, [pinnedEntries]);
 
   const ActionCellRenderer = useCallback((params: ICellRendererParams<QueryLogEntry>) => {
     return (
@@ -68,6 +83,31 @@ export function QueryTable() {
     );
   }, [setSelectedEntry]);
 
+  const PinCellRenderer = useCallback((params: ICellRendererParams<QueryLogEntry>) => {
+    const entry = params.data!;
+    const pinned = isPinned(entry);
+    return (
+      <button
+        onClick={() => {
+          if (pinned) {
+            unpinEntry(String(entry.query_id), String(entry.event_time));
+          } else {
+            pinEntry(entry);
+          }
+        }}
+        className={`p-1 hover:bg-gray-600 rounded ${pinned ? 'text-blue-400' : 'text-gray-400 hover:text-white'}`}
+        title={pinned ? 'Unpin row' : 'Pin row'}
+      >
+        <Pin className={`w-3.5 h-3.5 ${pinned ? 'fill-current' : ''}`} />
+      </button>
+    );
+  }, [isPinned, pinEntry, unpinEntry]);
+
+  const onSelectionChanged = useCallback((event: SelectionChangedEvent<QueryLogEntry>) => {
+    const selectedRows = event.api.getSelectedRows();
+    setSelectedEntries(selectedRows.slice(0, 10)); // Limit to 10
+  }, [setSelectedEntries]);
+
   const columnDefs: ColDef<QueryLogEntry>[] = useMemo(() => {
     const visibleCols = columns.filter((c) => c.visible);
 
@@ -78,6 +118,14 @@ export function QueryTable() {
         width: 40,
         sortable: false,
         cellRenderer: ActionCellRenderer,
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
+      },
+      {
+        headerName: '',
+        field: 'event_time' as keyof QueryLogEntry,
+        width: 40,
+        sortable: false,
+        cellRenderer: PinCellRenderer,
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
       },
     ];
@@ -104,13 +152,16 @@ export function QueryTable() {
           def.valueFormatter = (params) => {
             if (!params.value) return '';
             const date = new Date(params.value);
-            return date.toLocaleString('en-US', {
+            const base = date.toLocaleString('en-US', {
               month: 'short',
               day: 'numeric',
               hour: '2-digit',
               minute: '2-digit',
+              second: '2-digit',
               hour12: false,
             });
+            const ms = date.getMilliseconds().toString().padStart(3, '0');
+            return `${base}.${ms}`;
           };
           def.cellStyle = { color: '#fca5a5' };
           break;
@@ -143,18 +194,19 @@ export function QueryTable() {
         case 'read_bytes':
         case 'written_bytes':
         case 'result_bytes':
-          def.valueFormatter = (params) => formatBytes(params.value as number);
+          def.valueFormatter = (params) => formatBytes(Number(params.value));
           def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
         case 'read_rows':
         case 'written_rows':
         case 'result_rows':
-          def.valueFormatter = (params) => formatNumber(params.value as number);
+          def.valueFormatter = (params) => formatNumber(Number(params.value));
           def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
         case 'query_duration_ms':
           def.valueFormatter = (params) => {
-            const ms = params.value as number;
+            const ms = Number(params.value);
+            if (isNaN(ms)) return '-';
             if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
             return ms + 'ms';
           };
@@ -164,13 +216,13 @@ export function QueryTable() {
 
       // Format bytes for any _bytes field
       if (col.field.endsWith('_bytes') && !def.valueFormatter) {
-        def.valueFormatter = (params) => formatBytes(params.value as number);
+        def.valueFormatter = (params) => formatBytes(Number(params.value));
         def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
       // Format rows for any _rows field
       if (col.field.endsWith('_rows') && !def.valueFormatter) {
-        def.valueFormatter = (params) => formatNumber(params.value as number);
+        def.valueFormatter = (params) => formatNumber(Number(params.value));
         def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
@@ -178,7 +230,7 @@ export function QueryTable() {
     });
 
     return defs;
-  }, [columns, ActionCellRenderer]);
+  }, [columns, ActionCellRenderer, PinCellRenderer]);
 
   const onSortChanged = useCallback(
     (event: SortChangedEvent) => {
@@ -196,14 +248,34 @@ export function QueryTable() {
     suppressMovable: true,
   }), []);
 
+  // Row class for pinned rows
+  const getRowClass = useCallback((params: RowClassParams<QueryLogEntry>) => {
+    if (params.data && isPinned(params.data)) {
+      return 'pinned-row';
+    }
+    return '';
+  }, [isPinned]);
+
   return (
     <div className="h-full w-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
+      <style>{`
+        .pinned-row {
+          background-color: rgba(59, 130, 246, 0.15) !important;
+        }
+        .pinned-row:hover {
+          background-color: rgba(59, 130, 246, 0.25) !important;
+        }
+      `}</style>
       <AgGridReact<QueryLogEntry>
+        ref={gridRef}
         theme={darkTheme}
-        rowData={entries}
+        rowData={combinedEntries}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
         onSortChanged={onSortChanged}
+        onSelectionChanged={onSelectionChanged}
+        rowSelection="multiple"
+        rowMultiSelectWithClick={true}
         loading={loading}
         animateRows={false}
         suppressCellFocus={true}
@@ -211,6 +283,7 @@ export function QueryTable() {
         tooltipShowDelay={300}
         tooltipInteraction={true}
         getRowId={(params) => String(params.data.query_id) + String(params.data.event_time)}
+        getRowClass={getRowClass}
       />
     </div>
   );

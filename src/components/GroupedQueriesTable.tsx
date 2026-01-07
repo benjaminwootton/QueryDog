@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent, ICellRendererParams, CellStyle } from 'ag-grid-community';
-import { Loader2, Copy, Check, X, Eye, ExternalLink, List } from 'lucide-react';
+import { Loader2, Copy, Check, X, Eye, ExternalLink, List, Pin } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import { fetchGroupedQueryLog, type GroupedQueryEntry } from '../services/api';
 
@@ -101,6 +101,7 @@ export function GroupedQueriesTable() {
     setGroupedSortOrder,
     setSearch,
     setActiveTab,
+    pinnedEntries,
   } = useQueryStore();
 
   const [selectedEntry, setSelectedEntry] = useState<GroupedQueryEntry | null>(null);
@@ -301,6 +302,21 @@ export function GroupedQueriesTable() {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Pinned queries notice */}
+      {pinnedEntries.length > 0 && (
+        <div className="bg-blue-900/30 border border-blue-700/50 rounded mx-0 mb-2 px-3 py-2 flex items-center gap-2 text-xs">
+          <Pin className="w-3.5 h-3.5 text-blue-400 fill-current" />
+          <span className="text-blue-300">
+            {pinnedEntries.length} pinned {pinnedEntries.length === 1 ? 'query' : 'queries'} not shown in grouped view.
+          </span>
+          <button
+            onClick={() => setActiveTab('queries')}
+            className="text-blue-400 hover:text-blue-300 underline"
+          >
+            View in Queries tab
+          </button>
+        </div>
+      )}
       <div className="flex-1 min-h-0">
         <AgGridReact
           theme={darkTheme}

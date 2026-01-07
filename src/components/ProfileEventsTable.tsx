@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
-import type { ColDef } from 'ag-grid-community';
+import type { ColDef, RowClassParams } from 'ag-grid-community';
 import { X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useQueryStore } from '../stores/queryStore';
@@ -170,12 +170,35 @@ export interface ProfileEventsTableRef {
 }
 
 export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(function ProfileEventsTable(_props, ref) {
-  const { timeRange, fieldFilters, search } = useQueryStore();
-  const [data, setData] = useState<ProfileEventRow[]>([]);
+  const { timeRange, fieldFilters, search, pinnedEntries } = useQueryStore();
+  const [apiData, setApiData] = useState<ProfileEventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleEvents, setVisibleEvents] = useState<Set<string>>(new Set(DEFAULT_VISIBLE_EVENTS));
   const [columnSelectorOpen, setColumnSelectorOpen] = useState(false);
   const [chartModalOpen, setChartModalOpen] = useState(false);
+
+  // Convert pinned entries to ProfileEventRow format
+  const pinnedData = useMemo((): ProfileEventRow[] => {
+    return pinnedEntries.map(entry => {
+      const row: ProfileEventRow = {
+        event_time: String(entry.event_time),
+        query_id: String(entry.query_id),
+      };
+      // Add ProfileEvents data
+      const profileEvents = (entry.ProfileEvents || {}) as Record<string, number>;
+      Object.entries(profileEvents).forEach(([key, value]) => {
+        row[key] = value;
+      });
+      return row;
+    });
+  }, [pinnedEntries]);
+
+  // Combine pinned data with API data, pinned at top, no duplicates
+  const data = useMemo(() => {
+    const pinnedIds = new Set(pinnedData.map(p => p.query_id));
+    const unpinnedApiData = apiData.filter(row => !pinnedIds.has(row.query_id));
+    return [...pinnedData, ...unpinnedApiData];
+  }, [pinnedData, apiData]);
 
   const toggleEventVisibility = useCallback((eventName: string) => {
     setVisibleEvents(prev => {
@@ -204,7 +227,7 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
     try {
       // Always fetch all columns so we have data for charting
       const result = await fetchProfileEvents(timeRange, fieldFilters, ALL_PROFILE_EVENTS, search);
-      setData(result as ProfileEventRow[]);
+      setApiData(result as ProfileEventRow[]);
     } catch (err) {
       console.error('Failed to load profile events:', err);
     } finally {
@@ -269,6 +292,16 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
     suppressMovable: true,
   }), []);
 
+  // Check if a row is from pinned entries
+  const pinnedQueryIds = useMemo(() => new Set(pinnedEntries.map(e => String(e.query_id))), [pinnedEntries]);
+
+  const getRowClass = useCallback((params: RowClassParams<ProfileEventRow>) => {
+    if (params.data && pinnedQueryIds.has(params.data.query_id)) {
+      return 'pinned-row';
+    }
+    return '';
+  }, [pinnedQueryIds]);
+
   // Prepare chart data - sorted by time
   const chartData = useMemo(() => {
     return [...data].sort((a, b) =>
@@ -291,6 +324,14 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
 
   return (
     <div className="h-full flex flex-col bg-gray-900 border border-gray-700 rounded overflow-hidden">
+      <style>{`
+        .pinned-row {
+          background-color: rgba(59, 130, 246, 0.15) !important;
+        }
+        .pinned-row:hover {
+          background-color: rgba(59, 130, 246, 0.25) !important;
+        }
+      `}</style>
       {/* AG Grid */}
       <div className="flex-1">
         <AgGridReact
@@ -299,6 +340,7 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}
           loading={loading}
+          getRowClass={getRowClass}
           animateRows={false}
           suppressCellFocus={true}
           enableCellTextSelection={true}

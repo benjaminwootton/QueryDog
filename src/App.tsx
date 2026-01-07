@@ -55,7 +55,7 @@ function App() {
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [hasQueriesFolder, setHasQueriesFolder] = useState(false);
-  const { loading, error, setActiveTab, setChartMetric, setTimeRange } = useQueryStore();
+  const { loading, error, setActiveTab, setChartMetric, setTimeRange, setFieldFilter, clearAllFilters } = useQueryStore();
   const { refresh } = useQueryData();
 
   // Fetch connection info on mount
@@ -89,6 +89,39 @@ function App() {
       setQueryEditorOpen(true);
     };
   }, []);
+
+  // Expose function to navigate to Queries page filtered by query_id
+  useEffect(() => {
+    (window as unknown as { navigateToQueryId: (queryId: string) => void }).navigateToQueryId = (queryId: string) => {
+      // Clear existing filters and set query_id filter
+      clearAllFilters();
+      setFieldFilter('query_id', [queryId]);
+      // Set time range to last 24 hours
+      const end = new Date();
+      const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+      setTimeRange({ start, end });
+      // Navigate to queries page
+      setNavItem('queries');
+      setActiveTab('queries');
+    };
+  }, [clearAllFilters, setFieldFilter, setTimeRange, setActiveTab]);
+
+  // Expose function to navigate to Queries page filtered by multiple query_ids
+  useEffect(() => {
+    (window as unknown as { navigateToQueryIds: (queryIds: string[]) => void }).navigateToQueryIds = (queryIds: string[]) => {
+      if (queryIds.length === 0) return;
+      // Clear existing filters and set query_id filter with all IDs
+      clearAllFilters();
+      setFieldFilter('query_id', queryIds);
+      // Set time range to last 24 hours
+      const end = new Date();
+      const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+      setTimeRange({ start, end });
+      // Navigate to queries page
+      setNavItem('queries');
+      setActiveTab('queries');
+    };
+  }, [clearAllFilters, setFieldFilter, setTimeRange, setActiveTab]);
 
   // Global auto-refresh
   useEffect(() => {

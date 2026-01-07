@@ -133,6 +133,8 @@ interface QueryState {
 
   // UI state
   selectedEntry: QueryLogEntry | null;
+  selectedEntries: QueryLogEntry[];
+  pinnedEntries: QueryLogEntry[];
   activeTab: 'queries' | 'grouped' | 'histograms' | 'profileEvents';
 
   // Global refresh trigger - increment to trigger refresh on all pages
@@ -163,6 +165,10 @@ interface QueryState {
   setSortOrder: (order: 'ASC' | 'DESC') => void;
   setCurrentPage: (page: number) => void;
   setSelectedEntry: (entry: QueryLogEntry | null) => void;
+  setSelectedEntries: (entries: QueryLogEntry[]) => void;
+  pinEntry: (entry: QueryLogEntry) => void;
+  unpinEntry: (queryId: string, eventTime: string) => void;
+  clearPinnedEntries: () => void;
   setActiveTab: (tab: 'queries' | 'grouped' | 'histograms' | 'profileEvents') => void;
   // Grouped Query Actions
   setGroupedEntries: (entries: GroupedQueryEntry[]) => void;
@@ -258,6 +264,8 @@ export const useQueryStore = create<QueryState>((set) => ({
   partitionsCurrentPage: 0,
 
   selectedEntry: null,
+  selectedEntries: [],
+  pinnedEntries: [],
   activeTab: 'queries',
 
   // Global refresh trigger
@@ -311,6 +319,23 @@ export const useQueryStore = create<QueryState>((set) => ({
   setSortOrder: (sortOrder) => set({ sortOrder, currentPage: 0 }),
   setCurrentPage: (currentPage) => set({ currentPage }),
   setSelectedEntry: (selectedEntry) => set({ selectedEntry }),
+  setSelectedEntries: (selectedEntries) => set({ selectedEntries }),
+  pinEntry: (entry) =>
+    set((state) => {
+      // Check if already pinned (by query_id + event_time)
+      const alreadyPinned = state.pinnedEntries.some(
+        (e) => e.query_id === entry.query_id && e.event_time === entry.event_time
+      );
+      if (alreadyPinned) return state;
+      return { pinnedEntries: [...state.pinnedEntries, entry] };
+    }),
+  unpinEntry: (queryId, eventTime) =>
+    set((state) => ({
+      pinnedEntries: state.pinnedEntries.filter(
+        (e) => !(e.query_id === queryId && e.event_time === eventTime)
+      ),
+    })),
+  clearPinnedEntries: () => set({ pinnedEntries: [] }),
   setActiveTab: (activeTab) => set({ activeTab }),
   // Grouped Query Actions
   setGroupedEntries: (groupedEntries) => set({ groupedEntries }),

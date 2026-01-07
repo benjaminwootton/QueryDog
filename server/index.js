@@ -29,6 +29,10 @@ const client = createClient({
 // Cluster support - if CLICKHOUSE_CLUSTER is set, wrap system table queries with clusterAllReplicas()
 const CLICKHOUSE_CLUSTER = process.env.CLICKHOUSE_CLUSTER;
 
+// Queries folder - can be overridden with QUERYDOG_QUERIES_FOLDER env var
+const QUERIES_FOLDER = process.env.QUERYDOG_QUERIES_FOLDER || 'queries';
+const getQueriesPath = () => path.isAbsolute(QUERIES_FOLDER) ? QUERIES_FOLDER : path.join(process.cwd(), QUERIES_FOLDER);
+
 // Helper to get system table reference - uses clusterAllReplicas() if cluster is configured
 function getSystemTable(tableName) {
   if (CLICKHOUSE_CLUSTER) {
@@ -118,8 +122,15 @@ app.get('/api/query-log', async (req, res) => {
       params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
-      whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-      params.search = `%${search}%`;
+      // If search looks like a query_id (UUID-like hex string), only search query_id
+      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
+      if (isQueryIdSearch) {
+        whereConditions.push('query_id ILIKE {search:String}');
+        params.search = `${search}%`;
+      } else {
+        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
+        params.search = `%${search}%`;
+      }
     }
 
     // Parse and apply field filters with array support
@@ -211,8 +222,15 @@ app.get('/api/query-log/timeseries', async (req, res) => {
       params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
-      whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-      params.search = `%${search}%`;
+      // If search looks like a query_id (UUID-like hex string), only search query_id
+      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
+      if (isQueryIdSearch) {
+        whereConditions.push('query_id ILIKE {search:String}');
+        params.search = `${search}%`;
+      } else {
+        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
+        params.search = `%${search}%`;
+      }
     }
 
     if (filters) {
@@ -303,8 +321,15 @@ app.get('/api/query-log/timeseries-stacked', async (req, res) => {
       params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
-      whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-      params.search = `%${search}%`;
+      // If search looks like a query_id (UUID-like hex string), only search query_id
+      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
+      if (isQueryIdSearch) {
+        whereConditions.push('query_id ILIKE {search:String}');
+        params.search = `${search}%`;
+      } else {
+        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
+        params.search = `%${search}%`;
+      }
     }
 
     if (filters) {
@@ -378,8 +403,15 @@ app.get('/api/query-log/profile-events', async (req, res) => {
       params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
-      whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-      params.search = `%${search}%`;
+      // If search looks like a query_id (UUID-like hex string), only search query_id
+      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
+      if (isQueryIdSearch) {
+        whereConditions.push('query_id ILIKE {search:String}');
+        params.search = `${search}%`;
+      } else {
+        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
+        params.search = `%${search}%`;
+      }
     }
 
     // Apply field filters
@@ -453,8 +485,15 @@ app.get('/api/query-log/histogram/:field', async (req, res) => {
       params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
-      whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-      params.search = `%${search}%`;
+      // If search looks like a query_id (UUID-like hex string), only search query_id
+      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
+      if (isQueryIdSearch) {
+        whereConditions.push('query_id ILIKE {search:String}');
+        params.search = `${search}%`;
+      } else {
+        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
+        params.search = `%${search}%`;
+      }
     }
 
     if (filters) {
@@ -1588,6 +1627,24 @@ app.get('/api/browser/columns/:database/:table', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get sample data from a table (first 100 rows)
+app.get('/api/browser/sample/:database/:table', async (req, res) => {
+  try {
+    const { database, table } = req.params;
+    // Use proper quoting for database and table names
+    const query = `SELECT * FROM "${database}"."${table}" LIMIT 100`;
+    const result = await client.query({
+      query,
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching sample data:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2895,8 +2952,15 @@ app.get('/api/query-log/count', async (req, res) => {
       params.end = getEffectiveEndTime(start, end);
     }
     if (search) {
-      whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-      params.search = `%${search}%`;
+      // If search looks like a query_id (UUID-like hex string), only search query_id
+      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
+      if (isQueryIdSearch) {
+        whereConditions.push('query_id ILIKE {search:String}');
+        params.search = `${search}%`;
+      } else {
+        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
+        params.search = `%${search}%`;
+      }
     }
 
     if (filters) {
@@ -2941,7 +3005,7 @@ const queryRunStats = new Map();
 
 // Check if queries folder exists
 app.get('/api/my-queries/exists', (req, res) => {
-  const queriesPath = path.join(process.cwd(), 'queries');
+  const queriesPath = getQueriesPath();
   const exists = fs.existsSync(queriesPath) && fs.statSync(queriesPath).isDirectory();
   res.json({ exists, path: queriesPath });
 });
@@ -2949,10 +3013,10 @@ app.get('/api/my-queries/exists', (req, res) => {
 // Get all queries from the queries folder
 app.get('/api/my-queries', (req, res) => {
   try {
-    const queriesPath = path.join(process.cwd(), 'queries');
+    const queriesPath = getQueriesPath();
 
     if (!fs.existsSync(queriesPath)) {
-      return res.json([]);
+      return res.json({ queries: [], path: queriesPath });
     }
 
     const files = fs.readdirSync(queriesPath).filter(f => f.endsWith('.sql'));
@@ -2986,7 +3050,7 @@ app.get('/api/my-queries', (req, res) => {
       };
     });
 
-    res.json(queries);
+    res.json({ queries, path: queriesPath });
   } catch (error) {
     console.error('Error reading queries folder:', error);
     res.status(500).json({ error: error.message });
@@ -3002,34 +3066,71 @@ app.post('/api/my-queries/run', async (req, res) => {
       return res.status(400).json({ error: 'Query is required' });
     }
 
-    // Safety check - only allow SELECT queries
+    // Safety check - only allow SELECT, INSERT, and WITH (CTE) queries
     const upperQuery = query.trim().toUpperCase();
-    if (!upperQuery.startsWith('SELECT')) {
-      return res.status(403).json({ error: 'Only SELECT queries are allowed' });
+    if (!upperQuery.startsWith('SELECT') && !upperQuery.startsWith('INSERT') && !upperQuery.startsWith('WITH')) {
+      return res.status(403).json({ error: 'Only SELECT, INSERT, and WITH (CTE) queries are allowed' });
     }
 
     const startTime = Date.now();
+    const isSelect = upperQuery.startsWith('SELECT') || upperQuery.startsWith('WITH');
 
     const result = await client.query({
       query,
-      format: 'JSONEachRow',
+      format: isSelect ? 'JSON' : undefined,
     });
 
-    const data = await result.json();
-    const duration = Date.now() - startTime;
+    // For SELECT queries, JSON format returns { meta, data, rows, statistics }
+    // statistics contains elapsed, rows_read, bytes_read
+    let data = [];
+    let rowCount = 0;
+    let duration = 0;
+    let readRows = null;
+    let readBytes = null;
+
+    if (isSelect) {
+      const jsonResponse = await result.json();
+      data = jsonResponse.data || [];
+      rowCount = jsonResponse.rows || data.length;
+      const stats = jsonResponse.statistics || {};
+      // Use ClickHouse's elapsed time (in seconds), convert to ms
+      duration = stats.elapsed
+        ? Math.round(stats.elapsed * 1000)
+        : Date.now() - startTime;
+      readRows = stats.rows_read || null;
+      readBytes = stats.bytes_read || null;
+    } else {
+      duration = Date.now() - startTime;
+    }
+
+    const queryId = result.query_id;
 
     // Update run statistics
     let updatedStats = null;
     if (filename) {
-      const stats = queryRunStats.get(filename) || { runs: [], lastRun: null, lastDuration: null, lastRowCount: null };
+      const stats = queryRunStats.get(filename) || { runs: [], runLog: [], lastRun: null, lastDuration: null, lastRowCount: null };
       stats.runs.push(duration);
       // Keep only last 100 runs
       if (stats.runs.length > 100) {
         stats.runs = stats.runs.slice(-100);
       }
+      // Store run log entry with query_id and stats
+      stats.runLog = stats.runLog || [];
+      stats.runLog.push({
+        queryId,
+        runTime: new Date().toISOString(),
+        duration,
+        rowCount,
+        readRows,
+        readBytes,
+      });
+      // Keep only last 50 run log entries
+      if (stats.runLog.length > 50) {
+        stats.runLog = stats.runLog.slice(-50);
+      }
       stats.lastRun = new Date().toISOString();
       stats.lastDuration = duration;
-      stats.lastRowCount = data.length;
+      stats.lastRowCount = rowCount;
       queryRunStats.set(filename, stats);
 
       // Calculate statistics for response
@@ -3053,8 +3154,9 @@ app.post('/api/my-queries/run', async (req, res) => {
 
     res.json({
       data,
-      rowCount: data.length,
+      rowCount,
       duration,
+      queryId,
       stats: updatedStats,
     });
   } catch (error) {
@@ -3074,6 +3176,69 @@ app.delete('/api/my-queries/stats/:filename', (req, res) => {
   const { filename } = req.params;
   queryRunStats.delete(filename);
   res.json({ success: true });
+});
+
+// Get run log for a specific query with query_log info
+app.get('/api/my-queries/run-log/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const stats = queryRunStats.get(filename);
+
+    if (!stats || !stats.runLog || stats.runLog.length === 0) {
+      return res.json({ runLog: [] });
+    }
+
+    // Get the query_ids from the run log
+    const queryIds = stats.runLog.map(r => r.queryId).filter(Boolean);
+
+    // Fetch query_log info for these query_ids (left join simulated)
+    let queryLogData = {};
+    if (queryIds.length > 0) {
+      try {
+        const queryLogTable = getSystemTable('query_log');
+        const queryLogQuery = `
+          SELECT
+            query_id,
+            type,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            result_rows,
+            result_bytes,
+            memory_usage,
+            ProfileEvents
+          FROM ${queryLogTable}
+          WHERE query_id IN (${queryIds.map(id => `'${id}'`).join(', ')})
+            AND type = 'QueryFinish'
+        `;
+        const result = await client.query({ query: queryLogQuery, format: 'JSONEachRow' });
+        const data = await result.json();
+        // Index by query_id for easy lookup
+        data.forEach(row => {
+          queryLogData[row.query_id] = row;
+        });
+      } catch (err) {
+        console.error('Error fetching query_log data:', err);
+        // Continue without query_log data
+      }
+    }
+
+    // Build the response with left join
+    const runLog = stats.runLog.map(entry => ({
+      queryId: entry.queryId,
+      runTime: entry.runTime,
+      duration: entry.duration,
+      rowCount: entry.rowCount,
+      readRows: entry.readRows,
+      readBytes: entry.readBytes,
+      queryLog: queryLogData[entry.queryId] || null,
+    })).reverse(); // Most recent first
+
+    res.json({ runLog });
+  } catch (error) {
+    console.error('Error fetching run log:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Serve the React app for any other routes (Express v5 compatible)

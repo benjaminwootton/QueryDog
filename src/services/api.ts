@@ -890,6 +890,12 @@ export async function fetchBrowserColumns(database: string, table: string): Prom
   return response.json();
 }
 
+export async function fetchBrowserSampleData(database: string, table: string): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/browser/sample/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
+  if (!response.ok) throw new Error(`Failed to fetch sample data: ${response.statusText}`);
+  return response.json();
+}
+
 export interface BrowserProjection {
   name: string;
   type: string;

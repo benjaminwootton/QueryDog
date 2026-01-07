@@ -1,5 +1,5 @@
-import { useRef } from 'react';
-import { Database, BarChart3, ChevronLeft, ChevronRight, Activity, Layers, Settings, BarChart2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Database, BarChart3, ChevronLeft, ChevronRight, Activity, Layers, Settings, BarChart2, GitCompare, Pin, X } from 'lucide-react';
 import { TimeRangeSelector } from '../TimeRangeSelector';
 import { SearchBar } from '../SearchBar';
 import { TimelineChart } from '../TimelineChart';
@@ -9,11 +9,13 @@ import { HistogramsTab } from '../HistogramsTab';
 import { ProfileEventsTable, type ProfileEventsTableRef } from '../ProfileEventsTable';
 import { ColumnSelector } from '../ColumnSelector';
 import { FilterPanel } from '../FilterPanel';
+import { QueryCompareModal } from '../QueryCompareModal';
 import { useQueryStore } from '../../stores/queryStore';
 
 export function QueriesPage() {
-  const { activeTab, setActiveTab, totalCount, fieldFilters, pageSize, currentPage, setCurrentPage, normalizeQueries, setNormalizeQueries } = useQueryStore();
+  const { activeTab, setActiveTab, totalCount, fieldFilters, pageSize, currentPage, setCurrentPage, normalizeQueries, setNormalizeQueries, selectedEntries, pinnedEntries, clearPinnedEntries } = useQueryStore();
   const profileEventsRef = useRef<ProfileEventsTableRef>(null);
+  const [compareModalOpen, setCompareModalOpen] = useState(false);
 
   const totalPages = Math.ceil(totalCount / pageSize);
   const startRow = currentPage * pageSize + 1;
@@ -37,6 +39,19 @@ export function QueriesPage() {
           {activeFilterCount > 0 && (
             <span className="text-blue-400">
               {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active
+            </span>
+          )}
+          {pinnedEntries.length > 0 && (
+            <span className="flex items-center gap-1.5 text-blue-400">
+              <Pin className="w-3 h-3 fill-current" />
+              {pinnedEntries.length} pinned
+              <button
+                onClick={clearPinnedEntries}
+                className="ml-1 p-0.5 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                title="Clear all pinned"
+              >
+                <X className="w-3 h-3" />
+              </button>
             </span>
           )}
         </div>
@@ -95,6 +110,18 @@ export function QueriesPage() {
         </button>
         {activeTab === 'queries' && (
           <div className="ml-auto flex items-center gap-4">
+            {selectedEntries.length >= 2 && (
+              <button
+                onClick={() => setCompareModalOpen(true)}
+                className="flex items-center gap-1.5 px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-xs"
+              >
+                <GitCompare className="w-3.5 h-3.5" />
+                Compare ({selectedEntries.length})
+              </button>
+            )}
+            {selectedEntries.length === 1 && (
+              <span className="text-xs text-gray-400">Select 1 more to compare</span>
+            )}
             {totalPages > 1 && (
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-gray-400">
@@ -166,6 +193,14 @@ export function QueriesPage() {
         {activeTab === 'profileEvents' && <ProfileEventsTable ref={profileEventsRef} />}
         {activeTab === 'histograms' && <HistogramsTab />}
       </div>
+
+      {/* Compare Modal */}
+      {compareModalOpen && (
+        <QueryCompareModal
+          entries={selectedEntries}
+          onClose={() => setCompareModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

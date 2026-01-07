@@ -434,19 +434,40 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
     setParts([]);
     setProjectionParts([]);
 
-    Promise.all([
+    // Use Promise.allSettled so one failing endpoint doesn't break others
+    // (e.g., system.projections may not exist in older ClickHouse versions)
+    Promise.allSettled([
       fetchBrowserPartitions(selectedDatabase, selectedTable),
       fetchBrowserColumns(selectedDatabase, selectedTable),
       fetchBrowserProjections(selectedDatabase, selectedTable),
       fetchBrowserIndexes(selectedDatabase, selectedTable),
     ])
-      .then(([partData, colData, projData, idxData]) => {
-        setPartitions(partData);
-        setColumns(colData);
-        setProjections(projData);
-        setIndexes(idxData);
+      .then(([partResult, colResult, projResult, idxResult]) => {
+        if (partResult.status === 'fulfilled') {
+          setPartitions(partResult.value);
+        } else {
+          console.error('Failed to fetch partitions:', partResult.reason);
+          setPartitions([]);
+        }
+        if (colResult.status === 'fulfilled') {
+          setColumns(colResult.value);
+        } else {
+          console.error('Failed to fetch columns:', colResult.reason);
+          setColumns([]);
+        }
+        if (projResult.status === 'fulfilled') {
+          setProjections(projResult.value);
+        } else {
+          console.error('Failed to fetch projections:', projResult.reason);
+          setProjections([]);
+        }
+        if (idxResult.status === 'fulfilled') {
+          setIndexes(idxResult.value);
+        } else {
+          console.error('Failed to fetch indexes:', idxResult.reason);
+          setIndexes([]);
+        }
       })
-      .catch(console.error)
       .finally(() => {
         setLoadingPartitions(false);
         setLoadingColumns(false);

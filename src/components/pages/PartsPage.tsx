@@ -8,7 +8,7 @@ import { PartsFilterPanel } from '../PartsFilterPanel';
 import { PartsHistogramsTab } from '../PartsHistogramsTab';
 import { ProjectionsTab } from '../ProjectionsTab';
 import { IndexesTab } from '../IndexesTab';
-import { fetchParts, fetchPartsColumns, fetchPartsCount, fetchPartitionsSummary, fetchPartitionsSummaryColumns, fetchPartitionsSummaryCount, fetchGroupedParts, fetchTablePartitions, fetchPartitionParts, fetchTableCompression, fetchBrowserColumns, type GroupedPartsEntry, type TablePartitionEntry, type PartitionPartEntry, type ColumnCompressionEntry, type BrowserColumn } from '../../services/api';
+import { fetchParts, fetchPartsColumns, fetchPartsCount, fetchPartitionsSummary, fetchPartitionsSummaryColumns, fetchPartitionsSummaryCount, fetchGroupedParts, fetchTablePartitions, fetchPartitionParts, fetchTableCompression, fetchBrowserColumns, fetchBrowserSampleData, type GroupedPartsEntry, type TablePartitionEntry, type PartitionPartEntry, type ColumnCompressionEntry, type BrowserColumn } from '../../services/api';
 import { useQueryStore } from '../../stores/queryStore';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -93,6 +93,10 @@ export function PartsPage() {
   // Schema state for table details modal
   const [schemaColumns, setSchemaColumns] = useState<BrowserColumn[]>([]);
   const [schemaLoading, setSchemaLoading] = useState(false);
+
+  // Sample data state for table details modal
+  const [sampleData, setSampleData] = useState<Record<string, unknown>[]>([]);
+  const [sampleDataLoading, setSampleDataLoading] = useState(false);
 
   // Modal state for partition parts (parts within a partition)
   const [selectedPartition, setSelectedPartition] = useState<{ database: string; table: string; partitionId: string } | null>(null);
@@ -229,20 +233,25 @@ export function PartsPage() {
     setSelectedTable({ database, table });
     setPartitionDetailsLoading(true);
     setSchemaLoading(true);
+    setSampleDataLoading(true);
     try {
-      const [partitionData, schemaData] = await Promise.all([
+      const [partitionData, schemaData, sampleDataResult] = await Promise.allSettled([
         fetchTablePartitions(database, table),
         fetchBrowserColumns(database, table),
+        fetchBrowserSampleData(database, table),
       ]);
-      setPartitionDetails(partitionData);
-      setSchemaColumns(schemaData);
+      setPartitionDetails(partitionData.status === 'fulfilled' ? partitionData.value : []);
+      setSchemaColumns(schemaData.status === 'fulfilled' ? schemaData.value : []);
+      setSampleData(sampleDataResult.status === 'fulfilled' ? sampleDataResult.value : []);
     } catch (error) {
       console.error('Error fetching table details:', error);
       setPartitionDetails([]);
       setSchemaColumns([]);
+      setSampleData([]);
     } finally {
       setPartitionDetailsLoading(false);
       setSchemaLoading(false);
+      setSampleDataLoading(false);
     }
   }, []);
 
@@ -250,6 +259,7 @@ export function PartsPage() {
     setSelectedTable(null);
     setPartitionDetails([]);
     setSchemaColumns([]);
+    setSampleData([]);
   }, []);
 
   // Handle viewing parts for a specific partition
@@ -728,7 +738,7 @@ export function PartsPage() {
       {selectedTable && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={handleCloseModal}>
           <div
-            className="bg-gray-900 border border-gray-700 rounded-lg w-[1100px] max-h-[90vh] overflow-hidden flex flex-col"
+            className="bg-gray-900 border border-gray-700 rounded-lg w-[1650px] max-h-[90vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-3 border-b border-gray-700">
@@ -819,7 +829,7 @@ export function PartsPage() {
                     ) : schemaColumns.length === 0 ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">No schema found</div>
                     ) : (
-                      <div className="bg-gray-800 rounded max-h-[280px] overflow-y-auto">
+                      <div className="bg-gray-800 rounded max-h-[200px] overflow-y-auto">
                         <table className="w-full text-xs">
                           <thead className="sticky top-0 bg-gray-800">
                             <tr className="border-b border-gray-700">
@@ -842,6 +852,43 @@ export function PartsPage() {
                                 </td>
                                 <td className="p-2 text-gray-400">{col.compression_codec || '-'}</td>
                                 <td className="p-2 text-gray-500 truncate max-w-[150px]" title={col.comment}>{col.comment || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sample Data Section */}
+                  <div className="mb-4">
+                    <h3 className="text-xs font-semibold text-gray-300 mb-2">Sample Data ({sampleData.length} rows)</h3>
+                    {sampleDataLoading ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">Loading sample data...</div>
+                    ) : sampleData.length === 0 ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">No data available</div>
+                    ) : (
+                      <div className="bg-gray-800 rounded max-h-[250px] overflow-auto">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-gray-800">
+                            <tr className="border-b border-gray-700">
+                              {Object.keys(sampleData[0]).map((key) => (
+                                <th key={key} className="text-left p-2 text-gray-400 whitespace-nowrap">{key}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sampleData.map((row, idx) => (
+                              <tr key={idx} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                                {Object.values(row).map((value, colIdx) => {
+                                  const strValue = value === null ? 'NULL' : String(value);
+                                  const truncated = strValue.length > 50 ? strValue.substring(0, 50) + '...' : strValue;
+                                  return (
+                                    <td key={colIdx} className="p-2 text-gray-300 font-mono whitespace-nowrap" title={strValue}>
+                                      {value === null ? <span className="text-gray-500 italic">NULL</span> : truncated}
+                                    </td>
+                                  );
+                                })}
                               </tr>
                             ))}
                           </tbody>
