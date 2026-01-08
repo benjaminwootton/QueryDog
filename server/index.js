@@ -24,7 +24,13 @@ const client = createClient({
   username: process.env.CLICKHOUSE_USER,
   password: process.env.CLICKHOUSE_PASSWORD,
   database: process.env.CLICKHOUSE_DATABASE,
+  request_timeout: 3600000, // 1 hour HTTP timeout
+  clickhouse_settings: {
+    max_execution_time: 0, // No query execution timeout
+  },
 });
+
+console.log(`Connecting to ClickHouse: ${protocol}://${process.env.CLICKHOUSE_HOST}:${process.env.CLICKHOUSE_PORT_HTTP} as user '${process.env.CLICKHOUSE_USER}' on database '${process.env.CLICKHOUSE_DATABASE}'`);
 
 // Cluster support - if CLICKHOUSE_CLUSTER is set, wrap system table queries with clusterAllReplicas()
 const CLICKHOUSE_CLUSTER = process.env.CLICKHOUSE_CLUSTER;
@@ -3078,6 +3084,10 @@ app.post('/api/my-queries/run', async (req, res) => {
     const result = await client.query({
       query,
       format: isSelect ? 'JSON' : undefined,
+      clickhouse_settings: {
+        max_execution_time: 0, // No timeout limit for user queries
+      },
+      request_timeout: 3600000, // 1 hour HTTP timeout
     });
 
     // For SELECT queries, JSON format returns { meta, data, rows, statistics }
