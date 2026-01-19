@@ -196,7 +196,7 @@ export function GroupedQueriesTable() {
       width: 80,
       sortable: true,
       valueFormatter: (params) => formatNumber(params.value),
-      cellStyle: { textAlign: 'right', color: '#86efac' },
+      cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
       headerName: 'Avg Duration',
@@ -204,7 +204,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatDuration(params.value),
-      cellStyle: { textAlign: 'right', color: '#86efac' },
+      cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
       headerName: 'Max Duration',
@@ -212,7 +212,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatDuration(params.value),
-      cellStyle: { textAlign: 'right', color: '#86efac' },
+      cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
       headerName: 'Total Duration',
@@ -220,7 +220,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatDuration(params.value),
-      cellStyle: { textAlign: 'right', color: '#86efac' },
+      cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
       headerName: 'Avg Memory',
@@ -228,7 +228,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatBytes(params.value),
-      cellStyle: { textAlign: 'right', color: '#86efac' },
+      cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
       headerName: 'Max Memory',
@@ -236,7 +236,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatBytes(params.value),
-      cellStyle: { textAlign: 'right', color: '#86efac' },
+      cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
       headerName: 'Avg Rows Read',
@@ -244,7 +244,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatNumber(params.value),
-      cellStyle: { textAlign: 'right', color: '#86efac' },
+      cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
       headerName: 'Avg Rows Written',
@@ -252,7 +252,7 @@ export function GroupedQueriesTable() {
       width: 110,
       sortable: true,
       valueFormatter: (params) => formatNumber(params.value),
-      cellStyle: { textAlign: 'right', color: '#86efac' },
+      cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
       headerName: 'Total Read',
@@ -260,14 +260,14 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatBytes(params.value),
-      cellStyle: { textAlign: 'right', color: '#86efac' },
+      cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
       headerName: 'User',
       field: 'user',
       width: 100,
       sortable: false,
-      cellStyle: { color: '#93c5fd' },
+      cellStyle: { color: '#93c5fd' } as CellStyle,
     },
     {
       headerName: 'First Seen',
@@ -275,7 +275,7 @@ export function GroupedQueriesTable() {
       width: 130,
       sortable: true,
       valueFormatter: (params) => formatDateTime(params.value),
-      cellStyle: { color: '#fca5a5' },
+      cellStyle: { color: '#fca5a5' } as CellStyle,
     },
   ], [ActionCellRenderer]);
 
