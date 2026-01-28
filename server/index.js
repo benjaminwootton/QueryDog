@@ -2246,7 +2246,40 @@ app.get('/api/part-log/columns', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching part_log column metadata:', error);
-    res.status(500).json({ error: error.message });
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('password is incorrect') ||
+        errorMessage.includes('no user with such name') ||
+        error.code === 'AUTHENTICATION_ERROR' ||
+        error.code === 516) {
+      return res.status(401).json({
+        error: 'Authentication failed: Invalid username or password',
+        details: errorMessage,
+        type: 'authentication'
+      });
+    }
+    if (errorMessage.includes('Not enough privileges') ||
+        errorMessage.includes('ACCESS_DENIED') ||
+        error.code === 497) {
+      return res.status(403).json({
+        error: 'Access denied: You do not have permission to access system.part_log',
+        details: errorMessage,
+        type: 'permission'
+      });
+    }
+    if (errorMessage.includes('Unknown table') ||
+        errorMessage.includes('doesn\'t exist') ||
+        errorMessage.includes('UNKNOWN_TABLE')) {
+      return res.status(404).json({
+        error: 'Table system.part_log does not exist or is not accessible',
+        details: errorMessage,
+        type: 'not_found'
+      });
+    }
+    res.status(500).json({
+      error: errorMessage,
+      type: 'server_error'
+    });
   }
 });
 
@@ -2308,7 +2341,43 @@ app.get('/api/part-log', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching part log:', error);
-    res.status(500).json({ error: error.message });
+    // Check if it's an authentication error
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('password is incorrect') ||
+        errorMessage.includes('no user with such name') ||
+        error.code === 'AUTHENTICATION_ERROR' ||
+        error.code === 516) { // ClickHouse auth error code
+      return res.status(401).json({
+        error: 'Authentication failed: Invalid username or password',
+        details: errorMessage,
+        type: 'authentication'
+      });
+    }
+    // Check if it's a permission error
+    if (errorMessage.includes('Not enough privileges') ||
+        errorMessage.includes('ACCESS_DENIED') ||
+        error.code === 497) { // ClickHouse access denied code
+      return res.status(403).json({
+        error: 'Access denied: You do not have permission to access system.part_log',
+        details: errorMessage,
+        type: 'permission'
+      });
+    }
+    // Check if table doesn't exist
+    if (errorMessage.includes('Unknown table') ||
+        errorMessage.includes('doesn\'t exist') ||
+        errorMessage.includes('UNKNOWN_TABLE')) {
+      return res.status(404).json({
+        error: 'Table system.part_log does not exist or is not accessible',
+        details: errorMessage,
+        type: 'not_found'
+      });
+    }
+    res.status(500).json({
+      error: errorMessage,
+      type: 'server_error'
+    });
   }
 });
 
@@ -2360,7 +2429,40 @@ app.get('/api/part-log/count', async (req, res) => {
     res.json({ total: data[0]?.total || 0 });
   } catch (error) {
     console.error('Error fetching part_log count:', error);
-    res.status(500).json({ error: error.message });
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('password is incorrect') ||
+        errorMessage.includes('no user with such name') ||
+        error.code === 'AUTHENTICATION_ERROR' ||
+        error.code === 516) {
+      return res.status(401).json({
+        error: 'Authentication failed: Invalid username or password',
+        details: errorMessage,
+        type: 'authentication'
+      });
+    }
+    if (errorMessage.includes('Not enough privileges') ||
+        errorMessage.includes('ACCESS_DENIED') ||
+        error.code === 497) {
+      return res.status(403).json({
+        error: 'Access denied: You do not have permission to access system.part_log',
+        details: errorMessage,
+        type: 'permission'
+      });
+    }
+    if (errorMessage.includes('Unknown table') ||
+        errorMessage.includes('doesn\'t exist') ||
+        errorMessage.includes('UNKNOWN_TABLE')) {
+      return res.status(404).json({
+        error: 'Table system.part_log does not exist or is not accessible',
+        details: errorMessage,
+        type: 'not_found'
+      });
+    }
+    res.status(500).json({
+      error: errorMessage,
+      type: 'server_error'
+    });
   }
 });
 
@@ -2434,7 +2536,40 @@ app.get('/api/part-log/timeseries', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching part_log time series:', error);
-    res.status(500).json({ error: error.message });
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('password is incorrect') ||
+        errorMessage.includes('no user with such name') ||
+        error.code === 'AUTHENTICATION_ERROR' ||
+        error.code === 516) {
+      return res.status(401).json({
+        error: 'Authentication failed: Invalid username or password',
+        details: errorMessage,
+        type: 'authentication'
+      });
+    }
+    if (errorMessage.includes('Not enough privileges') ||
+        errorMessage.includes('ACCESS_DENIED') ||
+        error.code === 497) {
+      return res.status(403).json({
+        error: 'Access denied: You do not have permission to access system.part_log',
+        details: errorMessage,
+        type: 'permission'
+      });
+    }
+    if (errorMessage.includes('Unknown table') ||
+        errorMessage.includes('doesn\'t exist') ||
+        errorMessage.includes('UNKNOWN_TABLE')) {
+      return res.status(404).json({
+        error: 'Table system.part_log does not exist or is not accessible',
+        details: errorMessage,
+        type: 'not_found'
+      });
+    }
+    res.status(500).json({
+      error: errorMessage,
+      type: 'server_error'
+    });
   }
 });
 
@@ -2506,7 +2641,40 @@ app.get('/api/part-log/timeseries-stacked', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching part_log stacked time series:', error);
-    res.status(500).json({ error: error.message });
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('password is incorrect') ||
+        errorMessage.includes('no user with such name') ||
+        error.code === 'AUTHENTICATION_ERROR' ||
+        error.code === 516) {
+      return res.status(401).json({
+        error: 'Authentication failed: Invalid username or password',
+        details: errorMessage,
+        type: 'authentication'
+      });
+    }
+    if (errorMessage.includes('Not enough privileges') ||
+        errorMessage.includes('ACCESS_DENIED') ||
+        error.code === 497) {
+      return res.status(403).json({
+        error: 'Access denied: You do not have permission to access system.part_log',
+        details: errorMessage,
+        type: 'permission'
+      });
+    }
+    if (errorMessage.includes('Unknown table') ||
+        errorMessage.includes('doesn\'t exist') ||
+        errorMessage.includes('UNKNOWN_TABLE')) {
+      return res.status(404).json({
+        error: 'Table system.part_log does not exist or is not accessible',
+        details: errorMessage,
+        type: 'not_found'
+      });
+    }
+    res.status(500).json({
+      error: errorMessage,
+      type: 'server_error'
+    });
   }
 });
 
@@ -2570,7 +2738,40 @@ app.get('/api/part-log/histogram/:field', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching part_log histogram:', error);
-    res.status(500).json({ error: error.message });
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('password is incorrect') ||
+        errorMessage.includes('no user with such name') ||
+        error.code === 'AUTHENTICATION_ERROR' ||
+        error.code === 516) {
+      return res.status(401).json({
+        error: 'Authentication failed: Invalid username or password',
+        details: errorMessage,
+        type: 'authentication'
+      });
+    }
+    if (errorMessage.includes('Not enough privileges') ||
+        errorMessage.includes('ACCESS_DENIED') ||
+        error.code === 497) {
+      return res.status(403).json({
+        error: 'Access denied: You do not have permission to access system.part_log',
+        details: errorMessage,
+        type: 'permission'
+      });
+    }
+    if (errorMessage.includes('Unknown table') ||
+        errorMessage.includes('doesn\'t exist') ||
+        errorMessage.includes('UNKNOWN_TABLE')) {
+      return res.status(404).json({
+        error: 'Table system.part_log does not exist or is not accessible',
+        details: errorMessage,
+        type: 'not_found'
+      });
+    }
+    res.status(500).json({
+      error: errorMessage,
+      type: 'server_error'
+    });
   }
 });
 
@@ -2619,7 +2820,40 @@ app.get('/api/part-log/distinct/:field', async (req, res) => {
     res.json(data.map(row => row.value).filter(v => v !== ''));
   } catch (error) {
     console.error('Error fetching part_log distinct values:', error);
-    res.status(500).json({ error: error.message });
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('password is incorrect') ||
+        errorMessage.includes('no user with such name') ||
+        error.code === 'AUTHENTICATION_ERROR' ||
+        error.code === 516) {
+      return res.status(401).json({
+        error: 'Authentication failed: Invalid username or password',
+        details: errorMessage,
+        type: 'authentication'
+      });
+    }
+    if (errorMessage.includes('Not enough privileges') ||
+        errorMessage.includes('ACCESS_DENIED') ||
+        error.code === 497) {
+      return res.status(403).json({
+        error: 'Access denied: You do not have permission to access system.part_log',
+        details: errorMessage,
+        type: 'permission'
+      });
+    }
+    if (errorMessage.includes('Unknown table') ||
+        errorMessage.includes('doesn\'t exist') ||
+        errorMessage.includes('UNKNOWN_TABLE')) {
+      return res.status(404).json({
+        error: 'Table system.part_log does not exist or is not accessible',
+        details: errorMessage,
+        type: 'not_found'
+      });
+    }
+    res.status(500).json({
+      error: errorMessage,
+      type: 'server_error'
+    });
   }
 });
 

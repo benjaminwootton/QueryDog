@@ -291,7 +291,13 @@ export async function fetchPartLog(
 
   const response = await fetch(`${API_BASE}/part-log?${params}`);
   if (!response.ok) {
-    throw new Error(`Failed to fetch part log: ${response.statusText}`);
+    const errorData = await response.json().catch(() => ({}));
+    const errorMessage = errorData.error || response.statusText;
+    const error: any = new Error(errorMessage);
+    error.status = response.status;
+    error.type = errorData.type;
+    error.details = errorData.details;
+    throw error;
   }
   return response.json();
 }
@@ -311,7 +317,13 @@ export async function fetchPartLogCount(
 
   const response = await fetch(`${API_BASE}/part-log/count?${params}`);
   if (!response.ok) {
-    throw new Error(`Failed to fetch part log count: ${response.statusText}`);
+    const errorData = await response.json().catch(() => ({}));
+    const errorMessage = errorData.error || response.statusText;
+    const error: any = new Error(errorMessage);
+    error.status = response.status;
+    error.type = errorData.type;
+    error.details = errorData.details;
+    throw error;
   }
   const data = await response.json();
   return data.total;
@@ -320,7 +332,13 @@ export async function fetchPartLogCount(
 export async function fetchPartLogColumnMetadata(): Promise<ColumnMetadata[]> {
   const response = await fetch(`${API_BASE}/part-log/columns`);
   if (!response.ok) {
-    throw new Error(`Failed to fetch part_log column metadata: ${response.statusText}`);
+    const errorData = await response.json().catch(() => ({}));
+    const errorMessage = errorData.error || response.statusText;
+    const error: any = new Error(errorMessage);
+    error.status = response.status;
+    error.type = errorData.type;
+    error.details = errorData.details;
+    throw error;
   }
   return response.json();
 }
@@ -404,7 +422,13 @@ export async function fetchPartLogTimeSeries(
 
   const response = await fetch(`${API_BASE}/part-log/timeseries?${params}`);
   if (!response.ok) {
-    throw new Error(`Failed to fetch part_log time series: ${response.statusText}`);
+    const errorData = await response.json().catch(() => ({}));
+    const errorMessage = errorData.error || response.statusText;
+    const error: any = new Error(errorMessage);
+    error.status = response.status;
+    error.type = errorData.type;
+    error.details = errorData.details;
+    throw error;
   }
   return response.json();
 }
@@ -426,7 +450,13 @@ export async function fetchPartLogStackedTimeSeries(
 
   const response = await fetch(`${API_BASE}/part-log/timeseries-stacked?${params}`);
   if (!response.ok) {
-    throw new Error(`Failed to fetch part_log stacked time series: ${response.statusText}`);
+    const errorData = await response.json().catch(() => ({}));
+    const errorMessage = errorData.error || response.statusText;
+    const error: any = new Error(errorMessage);
+    error.status = response.status;
+    error.type = errorData.type;
+    error.details = errorData.details;
+    throw error;
   }
   return response.json();
 }

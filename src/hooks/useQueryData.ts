@@ -90,17 +90,70 @@ export function useQueryData() {
     const offset = currentPage * pageSize;
 
     try {
-      const [entries, timeSeries, stackedSeries, total] = await Promise.all([
+      const results = await Promise.allSettled([
         fetchQueryLog(timeRange, search, sortField, sortOrder, fieldFilters, rangeFilters, pageSize, offset),
         fetchTimeSeries(timeRange, bucketSize, search, fieldFilters, rangeFilters),
         fetchStackedTimeSeries(timeRange, bucketSize, search, fieldFilters, rangeFilters),
         fetchTotalCount(timeRange, search, fieldFilters, rangeFilters),
       ]);
 
-      setEntries(entries);
-      setTimeSeries(timeSeries);
-      setStackedTimeSeries(stackedSeries);
-      setTotalCount(total);
+      // Process each result individually - set data if successful, show error if failed
+      let hasAnyData = false;
+      let errors: string[] = [];
+
+      if (results[0].status === 'fulfilled') {
+        setEntries(results[0].value);
+        hasAnyData = true;
+      } else {
+        console.error('Failed to load query log entries:', results[0].reason);
+        errors.push(`Entries: ${results[0].reason.message}`);
+        setEntries([]);
+      }
+
+      if (results[1].status === 'fulfilled') {
+        setTimeSeries(results[1].value);
+        hasAnyData = true;
+      } else {
+        console.error('Failed to load time series:', results[1].reason);
+        errors.push(`Time series: ${results[1].reason.message}`);
+        setTimeSeries([]);
+      }
+
+      if (results[2].status === 'fulfilled') {
+        setStackedTimeSeries(results[2].value);
+        hasAnyData = true;
+      } else {
+        console.error('Failed to load stacked time series:', results[2].reason);
+        errors.push(`Stacked series: ${results[2].reason.message}`);
+        setStackedTimeSeries([]);
+      }
+
+      if (results[3].status === 'fulfilled') {
+        setTotalCount(results[3].value);
+        hasAnyData = true;
+      } else {
+        console.error('Failed to load count:', results[3].reason);
+        errors.push(`Count: ${results[3].reason.message}`);
+        setTotalCount(0);
+      }
+
+      // If all requests failed, set the error message
+      if (!hasAnyData && errors.length > 0) {
+        // Check if it's an authentication or permission error
+        const firstError: any = results[0].status === 'rejected' ? results[0].reason : null;
+        if (firstError?.type === 'authentication') {
+          setError('⚠️ Authentication failed: Invalid username or password for ClickHouse');
+        } else if (firstError?.type === 'permission') {
+          setError('⚠️ Access denied: You do not have permission to access system.query_log table');
+        } else if (firstError?.type === 'not_found') {
+          setError('⚠️ Table system.query_log does not exist or is not accessible on this ClickHouse instance');
+        } else {
+          setError(`Failed to load data: ${errors[0]}`);
+        }
+      } else if (errors.length > 0 && hasAnyData) {
+        // Some data loaded, but some requests failed - show a warning
+        console.warn('Some query log data failed to load:', errors.join('; '));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -133,17 +186,70 @@ export function useQueryData() {
     const offset = partLogCurrentPage * partLogPageSize;
 
     try {
-      const [entries, timeSeries, stackedSeries, total] = await Promise.all([
+      const results = await Promise.allSettled([
         fetchPartLog(timeRange, partLogSortField, partLogSortOrder, partLogFieldFilters, partLogPageSize, offset),
         fetchPartLogTimeSeries(timeRange, bucketSize, partLogFieldFilters),
         fetchPartLogStackedTimeSeries(timeRange, bucketSize, partLogFieldFilters),
         fetchPartLogCount(timeRange, partLogFieldFilters),
       ]);
 
-      setPartLogEntries(entries);
-      setPartLogTimeSeries(timeSeries);
-      setPartLogStackedTimeSeries(stackedSeries);
-      setPartLogTotalCount(total);
+      // Process each result individually - set data if successful, show error if failed
+      let hasAnyData = false;
+      let errors: string[] = [];
+
+      if (results[0].status === 'fulfilled') {
+        setPartLogEntries(results[0].value);
+        hasAnyData = true;
+      } else {
+        console.error('Failed to load part log entries:', results[0].reason);
+        errors.push(`Entries: ${results[0].reason.message}`);
+        setPartLogEntries([]);
+      }
+
+      if (results[1].status === 'fulfilled') {
+        setPartLogTimeSeries(results[1].value);
+        hasAnyData = true;
+      } else {
+        console.error('Failed to load part log time series:', results[1].reason);
+        errors.push(`Time series: ${results[1].reason.message}`);
+        setPartLogTimeSeries([]);
+      }
+
+      if (results[2].status === 'fulfilled') {
+        setPartLogStackedTimeSeries(results[2].value);
+        hasAnyData = true;
+      } else {
+        console.error('Failed to load part log stacked time series:', results[2].reason);
+        errors.push(`Stacked series: ${results[2].reason.message}`);
+        setPartLogStackedTimeSeries([]);
+      }
+
+      if (results[3].status === 'fulfilled') {
+        setPartLogTotalCount(results[3].value);
+        hasAnyData = true;
+      } else {
+        console.error('Failed to load part log count:', results[3].reason);
+        errors.push(`Count: ${results[3].reason.message}`);
+        setPartLogTotalCount(0);
+      }
+
+      // If all requests failed, set the error message
+      if (!hasAnyData && errors.length > 0) {
+        // Check if it's an authentication or permission error
+        const firstError: any = results[0].status === 'rejected' ? results[0].reason : null;
+        if (firstError?.type === 'authentication') {
+          setError('⚠️ Authentication failed: Invalid username or password for ClickHouse');
+        } else if (firstError?.type === 'permission') {
+          setError('⚠️ Access denied: You do not have permission to access system.part_log table');
+        } else if (firstError?.type === 'not_found') {
+          setError('⚠️ Table system.part_log does not exist or is not accessible on this ClickHouse instance');
+        } else {
+          setError(`Failed to load part log data: ${errors[0]}`);
+        }
+      } else if (errors.length > 0 && hasAnyData) {
+        // Some data loaded, but some requests failed - show a warning
+        console.warn('Some part log data failed to load:', errors.join('; '));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load part log data');
     } finally {
