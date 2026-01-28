@@ -61,15 +61,24 @@ function App() {
   // Fetch connection info on mount
   useEffect(() => {
     fetch('/api/connection-info')
-      .then(res => {
-        if (!res.ok) throw new Error('Backend not available');
-        return res.json();
+      .then(async res => {
+        const data = await res.json();
+        if (!res.ok) {
+          // Backend is running but can't connect to ClickHouse
+          throw new Error(data.error || 'Failed to connect to ClickHouse');
+        }
+        return data;
       })
       .then(info => {
         setConnectionInfo(info);
         setBackendError(null);
       })
-      .catch(() => setBackendError('Backend server not running. Please start the server.'));
+      .catch((err) => {
+        const message = err.message === 'Failed to fetch'
+          ? 'Failed to connect to backend server. Please check if the server is running.'
+          : `Connection failed: ${err.message}`;
+        setBackendError(message);
+      });
   }, []);
 
   // Check if queries folder exists
@@ -251,12 +260,20 @@ function App() {
             onClick={() => {
               setBackendError(null);
               fetch('http://localhost:3001/api/connection-info')
-                .then(res => {
-                  if (!res.ok) throw new Error('Backend not available');
-                  return res.json();
+                .then(async res => {
+                  const data = await res.json();
+                  if (!res.ok) {
+                    throw new Error(data.error || 'Failed to connect to ClickHouse');
+                  }
+                  return data;
                 })
                 .then(setConnectionInfo)
-                .catch(() => setBackendError('Backend server not running. Please start the server.'));
+                .catch((err) => {
+                  const message = err.message === 'Failed to fetch'
+                    ? 'Failed to connect to backend server. Please check if the server is running.'
+                    : `Connection failed: ${err.message}`;
+                  setBackendError(message);
+                });
             }}
             className="px-2 py-0.5 bg-red-700 hover:bg-red-600 rounded text-white text-xs"
           >

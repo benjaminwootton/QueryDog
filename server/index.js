@@ -47,15 +47,49 @@ function getSystemTable(tableName) {
   return `system.${tableName}`;
 }
 
+// Health check endpoint - tests ClickHouse connection
+app.get('/api/health', async (req, res) => {
+  try {
+    await client.ping();
+    res.json({
+      status: 'healthy',
+      clickhouse: 'connected'
+    });
+  } catch (error) {
+    console.error('ClickHouse connection failed:', error.message);
+    res.status(503).json({
+      status: 'unhealthy',
+      clickhouse: 'disconnected',
+      error: error.message
+    });
+  }
+});
+
 // Connection info endpoint
-app.get('/api/connection-info', (req, res) => {
-  res.json({
-    host: process.env.CLICKHOUSE_HOST,
-    port: process.env.CLICKHOUSE_PORT_HTTP,
-    secure: process.env.CLICKHOUSE_SECURE === '1',
-    user: process.env.CLICKHOUSE_USER,
-    cluster: CLICKHOUSE_CLUSTER || null,
-  });
+app.get('/api/connection-info', async (req, res) => {
+  try {
+    // Test connection first
+    await client.ping();
+    res.json({
+      host: process.env.CLICKHOUSE_HOST,
+      port: process.env.CLICKHOUSE_PORT_HTTP,
+      secure: process.env.CLICKHOUSE_SECURE === '1',
+      user: process.env.CLICKHOUSE_USER,
+      cluster: CLICKHOUSE_CLUSTER || null,
+      connected: true
+    });
+  } catch (error) {
+    console.error('ClickHouse connection failed:', error.message);
+    res.status(503).json({
+      host: process.env.CLICKHOUSE_HOST,
+      port: process.env.CLICKHOUSE_PORT_HTTP,
+      secure: process.env.CLICKHOUSE_SECURE === '1',
+      user: process.env.CLICKHOUSE_USER,
+      cluster: CLICKHOUSE_CLUSTER || null,
+      connected: false,
+      error: error.message
+    });
+  }
 });
 
 // Define which fields are arrays for proper filtering
