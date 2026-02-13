@@ -88,6 +88,8 @@ interface QueryState {
   partLogStackedTimeSeries: PartLogStackedTimeSeriesPoint[];
   partLogTotalCount: number;
   partLogLoading: boolean;
+  hasPartLogAccess: boolean;
+  hasPartsAccess: boolean;
 
   // Chart
   chartMetric: ChartMetric;
@@ -182,6 +184,8 @@ interface QueryState {
   setPartLogStackedTimeSeries: (data: PartLogStackedTimeSeriesPoint[]) => void;
   setPartLogTotalCount: (count: number) => void;
   setPartLogLoading: (loading: boolean) => void;
+  setHasPartLogAccess: (hasAccess: boolean) => void;
+  setHasPartsAccess: (hasAccess: boolean) => void;
   setPartLogColumns: (columns: ColumnConfig[]) => void;
   togglePartLogColumnVisibility: (field: string) => void;
   setPartLogSortField: (field: string) => void;
@@ -224,6 +228,8 @@ export const useQueryStore = create<QueryState>((set) => ({
   partLogStackedTimeSeries: [],
   partLogTotalCount: 0,
   partLogLoading: false,
+  hasPartLogAccess: true,
+  hasPartsAccess: true,
 
   chartMetric: 'count',
   chartType: 'stacked-bar',
@@ -349,6 +355,8 @@ export const useQueryStore = create<QueryState>((set) => ({
   setPartLogStackedTimeSeries: (partLogStackedTimeSeries) => set({ partLogStackedTimeSeries }),
   setPartLogTotalCount: (partLogTotalCount) => set({ partLogTotalCount }),
   setPartLogLoading: (partLogLoading) => set({ partLogLoading }),
+  setHasPartLogAccess: (hasPartLogAccess) => set({ hasPartLogAccess }),
+  setHasPartsAccess: (hasPartsAccess) => set({ hasPartsAccess }),
   setPartLogColumns: (partLogColumns) => set({ partLogColumns, partLogColumnsLoaded: true }),
   togglePartLogColumnVisibility: (field) =>
     set((state) => ({

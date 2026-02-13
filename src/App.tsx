@@ -55,7 +55,7 @@ function App() {
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [hasQueriesFolder, setHasQueriesFolder] = useState(false);
-  const { loading, error, setActiveTab, setChartMetric, setTimeRange, setFieldFilter, clearAllFilters } = useQueryStore();
+  const { loading, error, hasPartLogAccess, hasPartsAccess, setActiveTab, setChartMetric, setTimeRange, setFieldFilter, clearAllFilters } = useQueryStore();
   const { refresh } = useQueryData();
 
   // Fetch connection info on mount
@@ -154,8 +154,8 @@ function App() {
 
   const navItems: { id: NavItem; label: string; icon: typeof Database }[] = [
     { id: 'queries', label: 'Queries', icon: Database },
-    { id: 'partlog', label: 'Parts Log', icon: Layers },
-    { id: 'parts', label: 'Objects', icon: HardDrive },
+    ...(hasPartLogAccess ? [{ id: 'partlog' as const, label: 'Parts Log', icon: Layers }] : []),
+    ...(hasPartsAccess ? [{ id: 'parts' as const, label: 'Objects', icon: HardDrive }] : []),
     { id: 'activity', label: 'Activity', icon: Activity },
     { id: 'metrics', label: 'Metrics', icon: BarChart2 },
     { id: 'textlog', label: 'Text Log', icon: FileText },

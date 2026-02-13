@@ -72,6 +72,7 @@ export function PartsPage() {
     partitionsCurrentPage,
     setPartitionsTotalCount,
     setPartitionsCurrentPage,
+    setHasPartsAccess,
   } = useQueryStore();
   const [activeTab, setActiveTab] = useState<PartsTab>('grouped');
   const [groupedData, setGroupedData] = useState<GroupedPartsEntry[]>([]);
@@ -209,8 +210,15 @@ export function PartsPage() {
   }, [partsFilters, partsSearch, setPartsTotalCount]);
 
   useEffect(() => {
-    fetchPartitionsSummaryCount(partsFilters, partsSearch).then(setPartitionsTotalCount);
-  }, [partsFilters, partsSearch, setPartitionsTotalCount]);
+    fetchPartitionsSummaryCount(partsFilters, partsSearch)
+      .then(setPartitionsTotalCount)
+      .catch((error: any) => {
+        if (error?.status === 403 || error?.type === 'permission') {
+          console.info('Parts access denied - hiding parts/objects features');
+          setHasPartsAccess(false);
+        }
+      });
+  }, [partsFilters, partsSearch, setPartitionsTotalCount, setHasPartsAccess]);
 
   // Fetch grouped data
   useEffect(() => {
@@ -218,9 +226,15 @@ export function PartsPage() {
       setGroupedLoading(true);
       fetchGroupedParts(partsFilters, partsSearch)
         .then(setGroupedData)
+        .catch((error: any) => {
+          if (error?.status === 403 || error?.type === 'permission') {
+            console.info('Parts access denied - hiding parts/objects features');
+            setHasPartsAccess(false);
+          }
+        })
         .finally(() => setGroupedLoading(false));
     }
-  }, [activeTab, partsFilters, partsSearch]);
+  }, [activeTab, partsFilters, partsSearch, setHasPartsAccess]);
 
   // Reset page when filters or search change
   useEffect(() => {

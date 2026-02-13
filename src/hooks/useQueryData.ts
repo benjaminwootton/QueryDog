@@ -43,6 +43,7 @@ export function useQueryData() {
     setPartLogStackedTimeSeries,
     setPartLogTotalCount,
     setPartLogLoading,
+    setHasPartLogAccess,
     setPartLogColumns,
   } = useQueryStore();
 
@@ -137,22 +138,28 @@ export function useQueryData() {
         setTotalCount(0);
       }
 
-      // If all requests failed, set the error message
-      if (!hasAnyData && errors.length > 0) {
-        // Check if it's an authentication or permission error
-        const firstError: any = results[0].status === 'rejected' ? results[0].reason : null;
-        if (firstError?.type === 'authentication') {
+      // Check for errors and categorize them
+      if (errors.length > 0) {
+        // Find the first error with a specific type (authentication, permission, not_found)
+        const rejectedResult = results.find(r =>
+          r.status === 'rejected' &&
+          ['authentication', 'permission', 'not_found'].includes((r as PromiseRejectedResult).reason?.type)
+        ) as PromiseRejectedResult | undefined;
+        const criticalError: any = rejectedResult?.reason;
+
+        if (criticalError?.type === 'authentication') {
           setError('⚠️ Authentication failed: Invalid username or password for ClickHouse');
-        } else if (firstError?.type === 'permission') {
+        } else if (criticalError?.type === 'permission') {
           setError('⚠️ Access denied: You do not have permission to access system.query_log table');
-        } else if (firstError?.type === 'not_found') {
+        } else if (criticalError?.type === 'not_found') {
           setError('⚠️ Table system.query_log does not exist or is not accessible on this ClickHouse instance');
-        } else {
+        } else if (!hasAnyData) {
+          // All requests failed with generic errors
           setError(`Failed to load data: ${errors[0]}`);
+        } else {
+          // Some data loaded, but some requests failed - show a warning
+          console.warn('Some query log data failed to load:', errors.join('; '));
         }
-      } else if (errors.length > 0 && hasAnyData) {
-        // Some data loaded, but some requests failed - show a warning
-        console.warn('Some query log data failed to load:', errors.join('; '));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -233,22 +240,35 @@ export function useQueryData() {
         setPartLogTotalCount(0);
       }
 
-      // If all requests failed, set the error message
-      if (!hasAnyData && errors.length > 0) {
-        // Check if it's an authentication or permission error
-        const firstError: any = results[0].status === 'rejected' ? results[0].reason : null;
-        if (firstError?.type === 'authentication') {
+      // Check for errors and categorize them
+      if (errors.length > 0) {
+        // Find the first error with a specific type (authentication, permission, not_found)
+        const rejectedResult = results.find(r =>
+          r.status === 'rejected' &&
+          ['authentication', 'permission', 'not_found'].includes((r as PromiseRejectedResult).reason?.type)
+        ) as PromiseRejectedResult | undefined;
+        const criticalError: any = rejectedResult?.reason;
+
+        if (criticalError?.type === 'permission') {
+          // Permission errors are expected - just mark as no access and don't show error
+          console.info('Part log access denied - hiding part log features');
+          setHasPartLogAccess(false);
+        } else if (criticalError?.type === 'authentication') {
+          // Authentication errors should be shown
           setError('⚠️ Authentication failed: Invalid username or password for ClickHouse');
-        } else if (firstError?.type === 'permission') {
-          setError('⚠️ Access denied: You do not have permission to access system.part_log table');
-        } else if (firstError?.type === 'not_found') {
-          setError('⚠️ Table system.part_log does not exist or is not accessible on this ClickHouse instance');
-        } else {
+          setHasPartLogAccess(false);
+        } else if (criticalError?.type === 'not_found') {
+          // Table doesn't exist - hide but don't show error
+          console.info('Part log table not found - hiding part log features');
+          setHasPartLogAccess(false);
+        } else if (!hasAnyData) {
+          // All requests failed with generic errors
           setError(`Failed to load part log data: ${errors[0]}`);
+          setHasPartLogAccess(false);
+        } else {
+          // Some data loaded, but some requests failed - show a warning
+          console.warn('Some part log data failed to load:', errors.join('; '));
         }
-      } else if (errors.length > 0 && hasAnyData) {
-        // Some data loaded, but some requests failed - show a warning
-        console.warn('Some part log data failed to load:', errors.join('; '));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load part log data');

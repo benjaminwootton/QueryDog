@@ -833,7 +833,40 @@ app.get('/api/parts/grouped', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching grouped parts:', error);
-    res.status(500).json({ error: error.message });
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('password is incorrect') ||
+        errorMessage.includes('no user with such name') ||
+        error.code === 'AUTHENTICATION_ERROR' ||
+        error.code === 516 || error.code === '516') {
+      return res.status(401).json({
+        error: 'Authentication failed: Invalid username or password',
+        details: errorMessage,
+        type: 'authentication'
+      });
+    }
+    if (errorMessage.includes('Not enough privileges') ||
+        errorMessage.includes('ACCESS_DENIED') ||
+        error.code === 497 || error.code === '497') {
+      return res.status(403).json({
+        error: 'Access denied: You do not have permission to access system.parts',
+        details: errorMessage,
+        type: 'permission'
+      });
+    }
+    if (errorMessage.includes('Unknown table') ||
+        errorMessage.includes('doesn\'t exist') ||
+        errorMessage.includes('UNKNOWN_TABLE')) {
+      return res.status(404).json({
+        error: 'Table system.parts does not exist or is not accessible',
+        details: errorMessage,
+        type: 'not_found'
+      });
+    }
+    res.status(500).json({
+      error: errorMessage,
+      type: 'server_error'
+    });
   }
 });
 
@@ -990,7 +1023,40 @@ app.get('/api/partitions-summary/count', async (req, res) => {
     res.json({ count: data[0]?.count || 0 });
   } catch (error) {
     console.error('Error fetching partitions summary count:', error);
-    res.status(500).json({ error: error.message });
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('password is incorrect') ||
+        errorMessage.includes('no user with such name') ||
+        error.code === 'AUTHENTICATION_ERROR' ||
+        error.code === 516 || error.code === '516') {
+      return res.status(401).json({
+        error: 'Authentication failed: Invalid username or password',
+        details: errorMessage,
+        type: 'authentication'
+      });
+    }
+    if (errorMessage.includes('Not enough privileges') ||
+        errorMessage.includes('ACCESS_DENIED') ||
+        error.code === 497 || error.code === '497') {
+      return res.status(403).json({
+        error: 'Access denied: You do not have permission to access system.parts',
+        details: errorMessage,
+        type: 'permission'
+      });
+    }
+    if (errorMessage.includes('Unknown table') ||
+        errorMessage.includes('doesn\'t exist') ||
+        errorMessage.includes('UNKNOWN_TABLE')) {
+      return res.status(404).json({
+        error: 'Table system.parts does not exist or is not accessible',
+        details: errorMessage,
+        type: 'not_found'
+      });
+    }
+    res.status(500).json({
+      error: errorMessage,
+      type: 'server_error'
+    });
   }
 });
 
@@ -2251,7 +2317,7 @@ app.get('/api/part-log/columns', async (req, res) => {
         errorMessage.includes('password is incorrect') ||
         errorMessage.includes('no user with such name') ||
         error.code === 'AUTHENTICATION_ERROR' ||
-        error.code === 516) {
+        error.code === 516 || error.code === '516') {
       return res.status(401).json({
         error: 'Authentication failed: Invalid username or password',
         details: errorMessage,
@@ -2260,7 +2326,7 @@ app.get('/api/part-log/columns', async (req, res) => {
     }
     if (errorMessage.includes('Not enough privileges') ||
         errorMessage.includes('ACCESS_DENIED') ||
-        error.code === 497) {
+        error.code === 497 || error.code === '497') {
       return res.status(403).json({
         error: 'Access denied: You do not have permission to access system.part_log',
         details: errorMessage,
@@ -2347,7 +2413,7 @@ app.get('/api/part-log', async (req, res) => {
         errorMessage.includes('password is incorrect') ||
         errorMessage.includes('no user with such name') ||
         error.code === 'AUTHENTICATION_ERROR' ||
-        error.code === 516) { // ClickHouse auth error code
+        error.code === 516 || error.code === '516') { // ClickHouse auth error code
       return res.status(401).json({
         error: 'Authentication failed: Invalid username or password',
         details: errorMessage,
@@ -2357,7 +2423,7 @@ app.get('/api/part-log', async (req, res) => {
     // Check if it's a permission error
     if (errorMessage.includes('Not enough privileges') ||
         errorMessage.includes('ACCESS_DENIED') ||
-        error.code === 497) { // ClickHouse access denied code
+        error.code === 497 || error.code === '497') { // ClickHouse access denied code
       return res.status(403).json({
         error: 'Access denied: You do not have permission to access system.part_log',
         details: errorMessage,
@@ -2434,7 +2500,7 @@ app.get('/api/part-log/count', async (req, res) => {
         errorMessage.includes('password is incorrect') ||
         errorMessage.includes('no user with such name') ||
         error.code === 'AUTHENTICATION_ERROR' ||
-        error.code === 516) {
+        error.code === 516 || error.code === '516') {
       return res.status(401).json({
         error: 'Authentication failed: Invalid username or password',
         details: errorMessage,
@@ -2443,7 +2509,7 @@ app.get('/api/part-log/count', async (req, res) => {
     }
     if (errorMessage.includes('Not enough privileges') ||
         errorMessage.includes('ACCESS_DENIED') ||
-        error.code === 497) {
+        error.code === 497 || error.code === '497') {
       return res.status(403).json({
         error: 'Access denied: You do not have permission to access system.part_log',
         details: errorMessage,
@@ -2541,7 +2607,7 @@ app.get('/api/part-log/timeseries', async (req, res) => {
         errorMessage.includes('password is incorrect') ||
         errorMessage.includes('no user with such name') ||
         error.code === 'AUTHENTICATION_ERROR' ||
-        error.code === 516) {
+        error.code === 516 || error.code === '516') {
       return res.status(401).json({
         error: 'Authentication failed: Invalid username or password',
         details: errorMessage,
@@ -2550,7 +2616,7 @@ app.get('/api/part-log/timeseries', async (req, res) => {
     }
     if (errorMessage.includes('Not enough privileges') ||
         errorMessage.includes('ACCESS_DENIED') ||
-        error.code === 497) {
+        error.code === 497 || error.code === '497') {
       return res.status(403).json({
         error: 'Access denied: You do not have permission to access system.part_log',
         details: errorMessage,
@@ -2646,7 +2712,7 @@ app.get('/api/part-log/timeseries-stacked', async (req, res) => {
         errorMessage.includes('password is incorrect') ||
         errorMessage.includes('no user with such name') ||
         error.code === 'AUTHENTICATION_ERROR' ||
-        error.code === 516) {
+        error.code === 516 || error.code === '516') {
       return res.status(401).json({
         error: 'Authentication failed: Invalid username or password',
         details: errorMessage,
@@ -2655,7 +2721,7 @@ app.get('/api/part-log/timeseries-stacked', async (req, res) => {
     }
     if (errorMessage.includes('Not enough privileges') ||
         errorMessage.includes('ACCESS_DENIED') ||
-        error.code === 497) {
+        error.code === 497 || error.code === '497') {
       return res.status(403).json({
         error: 'Access denied: You do not have permission to access system.part_log',
         details: errorMessage,
@@ -2743,7 +2809,7 @@ app.get('/api/part-log/histogram/:field', async (req, res) => {
         errorMessage.includes('password is incorrect') ||
         errorMessage.includes('no user with such name') ||
         error.code === 'AUTHENTICATION_ERROR' ||
-        error.code === 516) {
+        error.code === 516 || error.code === '516') {
       return res.status(401).json({
         error: 'Authentication failed: Invalid username or password',
         details: errorMessage,
@@ -2752,7 +2818,7 @@ app.get('/api/part-log/histogram/:field', async (req, res) => {
     }
     if (errorMessage.includes('Not enough privileges') ||
         errorMessage.includes('ACCESS_DENIED') ||
-        error.code === 497) {
+        error.code === 497 || error.code === '497') {
       return res.status(403).json({
         error: 'Access denied: You do not have permission to access system.part_log',
         details: errorMessage,
@@ -2825,7 +2891,7 @@ app.get('/api/part-log/distinct/:field', async (req, res) => {
         errorMessage.includes('password is incorrect') ||
         errorMessage.includes('no user with such name') ||
         error.code === 'AUTHENTICATION_ERROR' ||
-        error.code === 516) {
+        error.code === 516 || error.code === '516') {
       return res.status(401).json({
         error: 'Authentication failed: Invalid username or password',
         details: errorMessage,
@@ -2834,7 +2900,7 @@ app.get('/api/part-log/distinct/:field', async (req, res) => {
     }
     if (errorMessage.includes('Not enough privileges') ||
         errorMessage.includes('ACCESS_DENIED') ||
-        error.code === 497) {
+        error.code === 497 || error.code === '497') {
       return res.status(403).json({
         error: 'Access denied: You do not have permission to access system.part_log',
         details: errorMessage,
