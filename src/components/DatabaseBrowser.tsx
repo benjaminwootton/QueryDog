@@ -12,7 +12,7 @@ import {
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { X, Database, Table, Layers, Box, ChevronRight, Loader2, Users, User, Columns, FileText, Sparkles, Zap } from 'lucide-react';
+import { X, Database, Table, Layers, Box, ChevronRight, Loader2, Users, User, Columns, FileText, Sparkles, Zap, Info } from 'lucide-react';
 import {
   fetchBrowserDatabases,
   fetchBrowserTables,
@@ -66,8 +66,22 @@ function formatNumber(num: number): string {
   return num.toLocaleString();
 }
 
-// Fixed width for all nodes
-const nodeWidth = 'w-[140px]';
+// Fixed width and height for all nodes
+const nodeWidth = 'w-[180px]';
+const nodeHeight = 'py-1.5';
+
+// Info icon button component
+function InfoButton({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-gray-700/80 hover:bg-gray-600 rounded-full flex items-center justify-center z-10"
+      title="View details"
+    >
+      <Info className="w-2.5 h-2.5 text-gray-400" />
+    </button>
+  );
+}
 
 // Root category node (Databases, Users)
 function RootNode({ data }: { data: { label: string; icon: 'databases' | 'users'; selected: boolean; onClick: () => void } }) {
@@ -102,7 +116,7 @@ function UserNode({ data }: { data: { label: string; authType: string; storage: 
   return (
     <div
       title={tooltip}
-      className={`${nodeWidth} px-2 py-1 rounded border bg-gray-800 border-gray-600 text-gray-200`}
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border bg-gray-800 border-gray-600 text-gray-200`}
     >
       <Handle type="target" position={Position.Left} className="!bg-amber-500" />
       <div className="flex items-center gap-1">
@@ -114,12 +128,12 @@ function UserNode({ data }: { data: { label: string; authType: string; storage: 
 }
 
 // Custom node components
-function DatabaseNode({ data }: { data: { label: string; engine: string; selected: boolean; onClick: () => void } }) {
+function DatabaseNode({ data }: { data: { label: string; engine: string; selected: boolean; onClick: () => void; onInfo: (e: React.MouseEvent) => void } }) {
   return (
     <div
       onClick={data.onClick}
       title={data.engine}
-      className={`${nodeWidth} px-2 py-1 rounded border cursor-pointer transition-all ${
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border cursor-pointer transition-all relative ${
         data.selected
           ? 'bg-blue-600 border-blue-400 text-white'
           : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-blue-500'
@@ -127,6 +141,7 @@ function DatabaseNode({ data }: { data: { label: string; engine: string; selecte
     >
       <Handle type="target" position={Position.Left} className="!bg-blue-500" />
       <Handle type="source" position={Position.Right} className="!bg-blue-500" />
+      <InfoButton onClick={data.onInfo} />
       <div className="flex items-center gap-1">
         <Database className="w-2.5 h-2.5 text-blue-400 shrink-0" />
         <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
@@ -135,13 +150,13 @@ function DatabaseNode({ data }: { data: { label: string; engine: string; selecte
   );
 }
 
-function TableNode({ data }: { data: { label: string; engine: string; rows: number; bytes: number; selected: boolean; onClick: () => void } }) {
+function TableNode({ data }: { data: { label: string; engine: string; rows: number; bytes: number; selected: boolean; onClick: () => void; onInfo: (e: React.MouseEvent) => void } }) {
   const tooltip = `${data.engine} | ${formatNumber(data.rows)} rows | ${formatBytes(data.bytes)}`;
   return (
     <div
       onClick={data.onClick}
       title={tooltip}
-      className={`${nodeWidth} px-2 py-1 rounded border cursor-pointer transition-all ${
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border cursor-pointer transition-all relative ${
         data.selected
           ? 'bg-green-600 border-green-400 text-white'
           : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-green-500'
@@ -149,6 +164,7 @@ function TableNode({ data }: { data: { label: string; engine: string; rows: numb
     >
       <Handle type="target" position={Position.Left} className="!bg-blue-500" />
       <Handle type="source" position={Position.Right} className="!bg-green-500" />
+      <InfoButton onClick={data.onInfo} />
       <div className="flex items-center gap-1">
         <Table className="w-2.5 h-2.5 text-green-400 shrink-0" />
         <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
@@ -157,13 +173,13 @@ function TableNode({ data }: { data: { label: string; engine: string; rows: numb
   );
 }
 
-function PartitionNode({ data }: { data: { label: string; partCount: number; rows: number; bytes: number; selected: boolean; onClick: () => void } }) {
+function PartitionNode({ data }: { data: { label: string; partCount: number; rows: number; bytes: number; selected: boolean; onClick: () => void; onInfo: (e: React.MouseEvent) => void } }) {
   const tooltip = `${data.partCount} parts | ${formatNumber(data.rows)} rows`;
   return (
     <div
       onClick={data.onClick}
       title={tooltip}
-      className={`${nodeWidth} px-2 py-1 rounded border cursor-pointer transition-all ${
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border cursor-pointer transition-all relative ${
         data.selected
           ? 'bg-purple-600 border-purple-400 text-white'
           : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-purple-500'
@@ -171,6 +187,7 @@ function PartitionNode({ data }: { data: { label: string; partCount: number; row
     >
       <Handle type="target" position={Position.Left} className="!bg-green-500" />
       <Handle type="source" position={Position.Right} className="!bg-purple-500" />
+      <InfoButton onClick={data.onInfo} />
       <div className="flex items-center gap-1">
         <Layers className="w-2.5 h-2.5 text-purple-400 shrink-0" />
         <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
@@ -179,14 +196,15 @@ function PartitionNode({ data }: { data: { label: string; partCount: number; row
   );
 }
 
-function PartNode({ data }: { data: { label: string; rows: number; bytes: number; level: number } }) {
+function PartNode({ data }: { data: { label: string; rows: number; bytes: number; level: number; onInfo: (e: React.MouseEvent) => void } }) {
   const tooltip = `L${data.level} | ${formatNumber(data.rows)} rows | ${formatBytes(data.bytes)}`;
   return (
     <div
       title={tooltip}
-      className={`${nodeWidth} px-2 py-1 rounded border bg-gray-800 border-gray-600 text-gray-200`}
+      className={`${nodeWidth} px-2 py-1 rounded border bg-gray-800 border-gray-600 text-gray-200 relative`}
     >
       <Handle type="target" position={Position.Left} className="!bg-purple-500" />
+      <InfoButton onClick={data.onInfo} />
       <div className="flex items-center gap-1">
         <Box className="w-2.5 h-2.5 text-orange-400 shrink-0" />
         <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
@@ -203,7 +221,7 @@ function CategoryNode({ data }: { data: { label: string; category: 'partitions' 
     <div
       onClick={data.onClick}
       title={`${data.count} ${data.label.toLowerCase()}`}
-      className={`${nodeWidth} px-2 py-1 rounded border cursor-pointer transition-all ${
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border cursor-pointer transition-all ${
         data.selected
           ? `bg-${colorClass}-600 border-${colorClass}-400 text-white`
           : `bg-gray-800 border-gray-600 text-gray-200 hover:border-${colorClass}-500`
@@ -231,7 +249,7 @@ function ProjectionNode({ data }: { data: { label: string; type: string; sorting
     <div
       onClick={data.onClick}
       title={tooltip}
-      className={`${nodeWidth} px-2 py-1 rounded border cursor-pointer transition-all ${
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border cursor-pointer transition-all ${
         data.selected
           ? 'bg-pink-600 border-pink-400 text-white'
           : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-pink-500'
@@ -253,7 +271,7 @@ function ProjectionPartNode({ data }: { data: { label: string; rows: number; byt
   return (
     <div
       title={tooltip}
-      className={`${nodeWidth} px-2 py-1 rounded border bg-gray-800 border-gray-600 text-gray-200`}
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border bg-gray-800 border-gray-600 text-gray-200`}
     >
       <Handle type="target" position={Position.Left} className="!bg-pink-500" />
       <div className="flex items-center gap-1">
@@ -270,7 +288,7 @@ function IndexNode({ data }: { data: { label: string; type: string; expr: string
   return (
     <div
       title={tooltip}
-      className={`${nodeWidth} px-2 py-1 rounded border bg-gray-800 border-gray-600 text-gray-200`}
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border bg-gray-800 border-gray-600 text-gray-200`}
     >
       <Handle type="target" position={Position.Left} className="!bg-amber-500" />
       <div className="flex items-center gap-1">
@@ -282,20 +300,20 @@ function IndexNode({ data }: { data: { label: string; type: string; expr: string
 }
 
 // Column node
-function ColumnNode({ data }: { data: { label: string; type: string; isPrimaryKey: boolean; isPartitionKey: boolean; isSortingKey: boolean } }) {
+function ColumnNode({ data }: { data: { label: string; type: string; isPrimaryKey: boolean; isPartitionKey: boolean; isSortingKey: boolean; onInfo: (e: React.MouseEvent) => void } }) {
   const badges: string[] = [];
-  if (data.isPrimaryKey) badges.push('PK');
   if (data.isPartitionKey) badges.push('PART');
   if (data.isSortingKey) badges.push('SORT');
   const tooltip = `${data.type}${badges.length > 0 ? ' | ' + badges.join(', ') : ''}`;
   return (
     <div
       title={tooltip}
-      className={`${nodeWidth} px-2 py-1 rounded border bg-gray-800 border-gray-600 text-gray-200`}
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border bg-gray-800 border-gray-600 text-gray-200 relative`}
     >
       <Handle type="target" position={Position.Left} className="!bg-cyan-500" />
+      <InfoButton onClick={data.onInfo} />
       <div className="flex items-center gap-1">
-        <FileText className={`w-2.5 h-2.5 shrink-0 ${data.isPrimaryKey ? 'text-yellow-400' : 'text-cyan-400'}`} />
+        <FileText className="w-2.5 h-2.5 shrink-0 text-cyan-400" />
         <span className="text-[8px] font-medium tracking-wide truncate">{data.label}</span>
         {badges.length > 0 && (
           <span className="text-[7px] text-yellow-400 ml-auto">{badges[0]}</span>
@@ -336,10 +354,17 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
 
   const [selectedRoot, setSelectedRoot] = useState<'databases' | 'users' | null>(null);
   const [selectedDatabase, setSelectedDatabase] = useState<string | null>(null);
+  const [selectedDatabaseCategory, setSelectedDatabaseCategory] = useState<'tables' | 'views' | null>(null);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [selectedTableCategory, setSelectedTableCategory] = useState<'partitions' | 'columns' | 'projections' | 'indexes' | null>(null);
   const [selectedPartition, setSelectedPartition] = useState<string | null>(null);
   const [selectedProjection, setSelectedProjection] = useState<string | null>(null);
+  const [selectedPartitionsCategory, setSelectedPartitionsCategory] = useState<boolean>(false);
+  const [selectedPartCategory, setSelectedPartCategory] = useState<boolean>(false);
+
+  // Info modal state
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [infoModalData, setInfoModalData] = useState<{ title: string; data: Record<string, unknown> } | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [loadingTables, setLoadingTables] = useState(false);
@@ -395,11 +420,14 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
     if (!selectedDatabase) {
       setTables([]);
       setSelectedTable(null);
+      setSelectedDatabaseCategory(null);
       return;
     }
     setLoadingTables(true);
     setSelectedTable(null);
+    setSelectedDatabaseCategory(null);
     setSelectedTableCategory(null);
+    setSelectedPartitionsCategory(false);
     setPartitions([]);
     setColumns([]);
     setParts([]);
@@ -419,6 +447,7 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
       setSelectedTableCategory(null);
       setSelectedPartition(null);
       setSelectedProjection(null);
+      setSelectedPartitionsCategory(false);
       setParts([]);
       setProjectionParts([]);
       return;
@@ -431,6 +460,7 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
     setSelectedTableCategory(null);
     setSelectedPartition(null);
     setSelectedProjection(null);
+    setSelectedPartitionsCategory(false);
     setParts([]);
     setProjectionParts([]);
 
@@ -507,8 +537,8 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
     const newNodes: Node[] = [];
     const newEdges: Edge[] = [];
 
-    const columnX = [50, 220, 390, 560, 730, 900];
-    const nodeSpacing = 36;
+    const columnX = [20, 200, 380, 560, 740, 920, 1100, 1280];
+    const nodeSpacing = 55;
 
     // Root nodes (always visible)
     newNodes.push({
@@ -547,6 +577,20 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
             engine: db.engine,
             selected: selectedDatabase === db.name,
             onClick: () => setSelectedDatabase(db.name === selectedDatabase ? null : db.name),
+            onInfo: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setInfoModalData({
+                title: `Database: ${db.name}`,
+                data: {
+                  'Name': db.name,
+                  'Engine': db.engine,
+                  'Data Path': db.data_path || 'N/A',
+                  'Metadata Path': db.metadata_path || 'N/A',
+                  'UUID': db.uuid || 'N/A',
+                },
+              });
+              setInfoModalOpen(true);
+            },
           },
         });
         newEdges.push({
@@ -582,14 +626,67 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
       });
     }
 
-    // Table nodes
+    // Tables and Views category nodes (when database is selected)
     if (selectedDatabase && tables.length > 0) {
-      tables.forEach((tbl, i) => {
+      const regularTables = tables.filter(t => !['View', 'MaterializedView'].includes(t.engine));
+      const views = tables.filter(t => ['View', 'MaterializedView'].includes(t.engine));
+
+      // Tables category node
+      if (regularTables.length > 0) {
+        newNodes.push({
+          id: 'cat-tables',
+          type: 'category',
+          position: { x: columnX[2], y: 50 },
+          data: {
+            label: 'Tables',
+            category: 'columns',
+            count: regularTables.length,
+            selected: selectedDatabaseCategory === 'tables',
+            onClick: () => setSelectedDatabaseCategory(selectedDatabaseCategory === 'tables' ? null : 'tables'),
+          },
+        });
+        newEdges.push({
+          id: `edge-db-${selectedDatabase}-tables`,
+          source: `db-${selectedDatabase}`,
+          target: 'cat-tables',
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+      }
+
+      // Views category node
+      if (views.length > 0) {
+        newNodes.push({
+          id: 'cat-views',
+          type: 'category',
+          position: { x: columnX[2], y: 50 + nodeSpacing },
+          data: {
+            label: 'Views',
+            category: 'projections',
+            count: views.length,
+            selected: selectedDatabaseCategory === 'views',
+            onClick: () => setSelectedDatabaseCategory(selectedDatabaseCategory === 'views' ? null : 'views'),
+          },
+        });
+        newEdges.push({
+          id: `edge-db-${selectedDatabase}-views`,
+          source: `db-${selectedDatabase}`,
+          target: 'cat-views',
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+      }
+    }
+
+    // Individual Table nodes (when Tables category is selected)
+    if (selectedDatabaseCategory === 'tables') {
+      const regularTables = tables.filter(t => !['View', 'MaterializedView'].includes(t.engine));
+      regularTables.forEach((tbl, i) => {
         const nodeId = `tbl-${tbl.name}`;
         newNodes.push({
           id: nodeId,
           type: 'table',
-          position: { x: columnX[2], y: 50 + i * nodeSpacing },
+          position: { x: columnX[3], y: 50 + i * nodeSpacing },
           data: {
             label: tbl.name,
             engine: tbl.engine,
@@ -597,11 +694,25 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
             bytes: tbl.total_bytes || 0,
             selected: selectedTable === tbl.name,
             onClick: () => setSelectedTable(tbl.name === selectedTable ? null : tbl.name),
+            onInfo: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setInfoModalData({
+                title: `Table: ${tbl.name}`,
+                data: {
+                  'Name': tbl.name,
+                  'Engine': tbl.engine,
+                  'Total Rows': formatNumber(tbl.total_rows || 0),
+                  'Total Bytes': formatBytes(tbl.total_bytes || 0),
+                  'Last Modified': tbl.metadata_modification_time || 'N/A',
+                },
+              });
+              setInfoModalOpen(true);
+            },
           },
         });
         newEdges.push({
-          id: `edge-db-${selectedDatabase}-${tbl.name}`,
-          source: `db-${selectedDatabase}`,
+          id: `edge-cat-tables-${tbl.name}`,
+          source: 'cat-tables',
           target: nodeId,
           animated: false,
           style: { stroke: '#4b5563' },
@@ -609,156 +720,126 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
       });
     }
 
-    // Category nodes (Partitions and Columns) when table is selected
-    if (selectedTable) {
-      // Partitions category
-      newNodes.push({
-        id: 'cat-partitions',
-        type: 'category',
-        position: { x: columnX[3], y: 50 },
-        data: {
-          label: 'Partitions',
-          category: 'partitions',
-          count: partitions.length,
-          selected: selectedTableCategory === 'partitions',
-          onClick: () => {
-            setSelectedTableCategory(selectedTableCategory === 'partitions' ? null : 'partitions');
-            setSelectedPartition(null);
-            setSelectedProjection(null);
+    // Individual View nodes (when Views category is selected)
+    if (selectedDatabaseCategory === 'views') {
+      const views = tables.filter(t => ['View', 'MaterializedView'].includes(t.engine));
+      views.forEach((tbl, i) => {
+        const nodeId = `view-${tbl.name}`;
+        newNodes.push({
+          id: nodeId,
+          type: 'table',
+          position: { x: columnX[3], y: 50 + i * nodeSpacing },
+          data: {
+            label: tbl.name,
+            engine: tbl.engine,
+            rows: tbl.total_rows || 0,
+            bytes: tbl.total_bytes || 0,
+            selected: selectedTable === tbl.name,
+            onClick: () => setSelectedTable(tbl.name === selectedTable ? null : tbl.name),
+            onInfo: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setInfoModalData({
+                title: `View: ${tbl.name}`,
+                data: {
+                  'Name': tbl.name,
+                  'Engine': tbl.engine,
+                  'Total Rows': formatNumber(tbl.total_rows || 0),
+                  'Total Bytes': formatBytes(tbl.total_bytes || 0),
+                  'Last Modified': tbl.metadata_modification_time || 'N/A',
+                },
+              });
+              setInfoModalOpen(true);
+            },
           },
-        },
+        });
+        newEdges.push({
+          id: `edge-cat-views-${tbl.name}`,
+          source: 'cat-views',
+          target: nodeId,
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
       });
-      newEdges.push({
-        id: `edge-tbl-${selectedTable}-partitions`,
-        source: `tbl-${selectedTable}`,
-        target: 'cat-partitions',
-        animated: false,
-        style: { stroke: '#4b5563' },
-      });
+    }
 
-      // Columns category
+    // "Columns" category node (when table is selected and has columns)
+    if (selectedTable && columns.length > 0) {
       newNodes.push({
         id: 'cat-columns',
         type: 'category',
-        position: { x: columnX[3], y: 50 + nodeSpacing },
+        position: { x: columnX[4], y: 50 },
         data: {
           label: 'Columns',
           category: 'columns',
           count: columns.length,
           selected: selectedTableCategory === 'columns',
-          onClick: () => {
-            setSelectedTableCategory(selectedTableCategory === 'columns' ? null : 'columns');
-            setSelectedPartition(null);
-            setSelectedProjection(null);
-          },
+          onClick: () => setSelectedTableCategory(selectedTableCategory === 'columns' ? null : 'columns'),
         },
       });
       newEdges.push({
-        id: `edge-tbl-${selectedTable}-columns`,
-        source: `tbl-${selectedTable}`,
+        id: `edge-table-${selectedTable}-columns`,
+        source: selectedDatabaseCategory === 'views' ? `view-${selectedTable}` : `tbl-${selectedTable}`,
         target: 'cat-columns',
         animated: false,
         style: { stroke: '#4b5563' },
       });
-
-      // Projections category (only show if there are projections)
-      if (projections.length > 0) {
-        newNodes.push({
-          id: 'cat-projections',
-          type: 'category',
-          position: { x: columnX[3], y: 50 + nodeSpacing * 2 },
-          data: {
-            label: 'Projections',
-            category: 'projections',
-            count: projections.length,
-            selected: selectedTableCategory === 'projections',
-            onClick: () => {
-              setSelectedTableCategory(selectedTableCategory === 'projections' ? null : 'projections');
-              setSelectedPartition(null);
-              setSelectedProjection(null);
-            },
-          },
-        });
-        newEdges.push({
-          id: `edge-tbl-${selectedTable}-projections`,
-          source: `tbl-${selectedTable}`,
-          target: 'cat-projections',
-          animated: false,
-          style: { stroke: '#4b5563' },
-        });
-      }
-
-      // Indexes category (only show if there are indexes)
-      if (indexes.length > 0) {
-        // Calculate position based on whether projections exist
-        const indexesY = 50 + nodeSpacing * (2 + (projections.length > 0 ? 1 : 0));
-        newNodes.push({
-          id: 'cat-indexes',
-          type: 'category',
-          position: { x: columnX[3], y: indexesY },
-          data: {
-            label: 'Indexes',
-            category: 'indexes',
-            count: indexes.length,
-            selected: selectedTableCategory === 'indexes',
-            onClick: () => {
-              setSelectedTableCategory(selectedTableCategory === 'indexes' ? null : 'indexes');
-              setSelectedPartition(null);
-              setSelectedProjection(null);
-            },
-          },
-        });
-        newEdges.push({
-          id: `edge-tbl-${selectedTable}-indexes`,
-          source: `tbl-${selectedTable}`,
-          target: 'cat-indexes',
-          animated: false,
-          style: { stroke: '#4b5563' },
-        });
-      }
     }
 
-    // Partition nodes (when Partitions category is selected)
-    if (selectedTableCategory === 'partitions' && partitions.length > 0) {
-      partitions.forEach((part, i) => {
-        const nodeId = `part-${part.partition_id}`;
-        newNodes.push({
-          id: nodeId,
-          type: 'partition',
-          position: { x: columnX[4], y: 50 + i * nodeSpacing },
-          data: {
-            label: part.partition_id || 'all',
-            partCount: part.part_count,
-            rows: part.total_rows || 0,
-            bytes: part.total_bytes || 0,
-            selected: selectedPartition === part.partition_id,
-            onClick: () => setSelectedPartition(part.partition_id === selectedPartition ? null : part.partition_id),
-          },
-        });
-        newEdges.push({
-          id: `edge-cat-partitions-${part.partition_id}`,
-          source: 'cat-partitions',
-          target: nodeId,
-          animated: false,
-          style: { stroke: '#4b5563' },
-        });
+    // "Partitions" category node (when table is selected and has partitions)
+    if (selectedTable && partitions.length > 0) {
+      newNodes.push({
+        id: 'cat-partitions',
+        type: 'category',
+        position: { x: columnX[4], y: 50 + nodeSpacing },
+        data: {
+          label: 'Partitions',
+          category: 'partitions',
+          count: partitions.length,
+          selected: selectedTableCategory === 'partitions',
+          onClick: () => setSelectedTableCategory(selectedTableCategory === 'partitions' ? null : 'partitions'),
+        },
+      });
+      newEdges.push({
+        id: `edge-table-${selectedTable}-partitions`,
+        source: selectedDatabaseCategory === 'views' ? `view-${selectedTable}` : `tbl-${selectedTable}`,
+        target: 'cat-partitions',
+        animated: false,
+        style: { stroke: '#4b5563' },
       });
     }
 
-    // Column nodes (when Columns category is selected)
+    // Individual Column nodes (when Columns category is selected)
     if (selectedTableCategory === 'columns' && columns.length > 0) {
       columns.forEach((col, i) => {
         const nodeId = `col-${col.name}`;
         newNodes.push({
           id: nodeId,
           type: 'column',
-          position: { x: columnX[4], y: 50 + i * nodeSpacing },
+          position: { x: columnX[5], y: 50 + i * nodeSpacing },
           data: {
             label: col.name,
             type: col.type,
             isPrimaryKey: col.is_in_primary_key === 1,
-            isPartitionKey: col.is_in_partition_key === 1,
             isSortingKey: col.is_in_sorting_key === 1,
+            isPartitionKey: col.is_in_partition_key === 1,
+            onInfo: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setInfoModalData({
+                title: `Column: ${col.name}`,
+                data: {
+                  'Column Name': col.name,
+                  'Type': col.type,
+                  'Default Kind': col.default_kind || '-',
+                  'Default Expression': col.default_expression || '-',
+                  'Compression Codec': col.compression_codec || '-',
+                  'Comment': col.comment || '-',
+                  'Is in Primary Key': col.is_in_primary_key === 1 ? 'Yes' : 'No',
+                  'Is in Sorting Key': col.is_in_sorting_key === 1 ? 'Yes' : 'No',
+                  'Is in Partition Key': col.is_in_partition_key === 1 ? 'Yes' : 'No',
+                },
+              });
+              setInfoModalOpen(true);
+            },
           },
         });
         newEdges.push({
@@ -771,25 +852,39 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
       });
     }
 
-    // Projection nodes (when Projections category is selected)
-    if (selectedTableCategory === 'projections' && projections.length > 0) {
-      projections.forEach((proj, i) => {
-        const nodeId = `proj-${proj.name}`;
+    // Individual Partition nodes (when Partitions category is selected)
+    if (selectedTableCategory === 'partitions' && partitions.length > 0) {
+      partitions.forEach((part, i) => {
+        const nodeId = `part-${part.partition_id}`;
         newNodes.push({
           id: nodeId,
-          type: 'projection',
-          position: { x: columnX[4], y: 50 + i * nodeSpacing },
+          type: 'partition',
+          position: { x: columnX[5], y: 50 + i * nodeSpacing },
           data: {
-            label: proj.name,
-            type: proj.type,
-            sortingKey: proj.sorting_key,
-            selected: selectedProjection === proj.name,
-            onClick: () => setSelectedProjection(proj.name === selectedProjection ? null : proj.name),
+            label: part.partition_id || 'all',
+            partCount: part.part_count,
+            rows: part.total_rows || 0,
+            bytes: part.total_bytes || 0,
+            selected: selectedPartition === part.partition_id,
+            onClick: () => setSelectedPartition(part.partition_id === selectedPartition ? null : part.partition_id),
+            onInfo: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setInfoModalData({
+                title: `Partition: ${part.partition_id || 'all'}`,
+                data: {
+                  'Partition ID': part.partition_id || 'all',
+                  'Part Count': part.part_count,
+                  'Total Rows': formatNumber(part.total_rows || 0),
+                  'Total Bytes': formatBytes(part.total_bytes || 0),
+                },
+              });
+              setInfoModalOpen(true);
+            },
           },
         });
         newEdges.push({
-          id: `edge-cat-projections-${proj.name}`,
-          source: 'cat-projections',
+          id: `edge-cat-partitions-${part.partition_id}`,
+          source: 'cat-partitions',
           target: nodeId,
           animated: false,
           style: { stroke: '#4b5563' },
@@ -797,74 +892,61 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
       });
     }
 
-    // Index nodes (when Indexes category is selected)
-    if (selectedTableCategory === 'indexes' && indexes.length > 0) {
-      indexes.forEach((idx, i) => {
-        const nodeId = `idx-${idx.name}`;
-        newNodes.push({
-          id: nodeId,
-          type: 'index',
-          position: { x: columnX[4], y: 50 + i * nodeSpacing },
-          data: {
-            label: idx.name,
-            type: idx.type,
-            expr: idx.expr,
-            granularity: idx.granularity,
-          },
-        });
-        newEdges.push({
-          id: `edge-cat-indexes-${idx.name}`,
-          source: 'cat-indexes',
-          target: nodeId,
-          animated: false,
-          style: { stroke: '#4b5563' },
-        });
+    // "Parts" category node (when partition is selected)
+    if (selectedPartition) {
+      newNodes.push({
+        id: 'cat-parts',
+        type: 'category',
+        position: { x: columnX[6], y: 50 },
+        data: {
+          label: 'Parts',
+          category: 'partitions',
+          count: parts.length,
+          selected: selectedPartCategory,
+          onClick: () => setSelectedPartCategory(!selectedPartCategory),
+        },
+      });
+      newEdges.push({
+        id: `edge-partition-${selectedPartition}-parts`,
+        source: `part-${selectedPartition}`,
+        target: 'cat-parts',
+        animated: false,
+        style: { stroke: '#4b5563' },
       });
     }
 
-    // Part nodes (when partition is selected)
-    if (selectedPartition && parts.length > 0) {
+    // Individual Part nodes (when Parts category is selected)
+    if (selectedPartCategory && parts.length > 0) {
       parts.forEach((p, i) => {
         const nodeId = `prt-${p.name}`;
         newNodes.push({
           id: nodeId,
           type: 'part',
-          position: { x: columnX[5], y: 50 + i * nodeSpacing },
+          position: { x: columnX[7], y: 50 + i * nodeSpacing },
           data: {
             label: p.name,
             rows: p.rows || 0,
             bytes: p.bytes_on_disk || 0,
             level: p.level,
+            onInfo: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setInfoModalData({
+                title: `Part: ${p.name}`,
+                data: {
+                  'Name': p.name,
+                  'Rows': formatNumber(p.rows || 0),
+                  'Bytes on Disk': formatBytes(p.bytes_on_disk || 0),
+                  'Level': p.level,
+                  'Modification Time': p.modification_time || 'N/A',
+                },
+              });
+              setInfoModalOpen(true);
+            },
           },
         });
         newEdges.push({
-          id: `edge-partition-${selectedPartition}-${p.name}`,
-          source: `part-${selectedPartition}`,
-          target: nodeId,
-          animated: false,
-          style: { stroke: '#4b5563' },
-        });
-      });
-    }
-
-    // Projection part nodes (when projection is selected)
-    if (selectedProjection && projectionParts.length > 0) {
-      projectionParts.forEach((pp, i) => {
-        const nodeId = `projpart-${pp.part_name}`;
-        newNodes.push({
-          id: nodeId,
-          type: 'projectionPart',
-          position: { x: columnX[5], y: 50 + i * nodeSpacing },
-          data: {
-            label: pp.part_name,
-            rows: pp.rows || 0,
-            bytes: pp.bytes_on_disk || 0,
-            parentPart: pp.parent_part_name || '',
-          },
-        });
-        newEdges.push({
-          id: `edge-projection-${selectedProjection}-${pp.part_name}`,
-          source: `proj-${selectedProjection}`,
+          id: `edge-parts-${p.name}`,
+          source: 'cat-parts',
           target: nodeId,
           animated: false,
           style: { stroke: '#4b5563' },
@@ -874,7 +956,7 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
 
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [databases, users, tables, partitions, parts, columns, projections, projectionParts, indexes, selectedRoot, selectedDatabase, selectedTable, selectedTableCategory, selectedPartition, selectedProjection, setNodes, setEdges]);
+  }, [databases, users, tables, partitions, parts, columns, projections, projectionParts, indexes, selectedRoot, selectedDatabase, selectedDatabaseCategory, selectedTable, selectedTableCategory, selectedPartition, selectedProjection, selectedPartitionsCategory, selectedPartCategory, setNodes, setEdges]);
 
   const isLoading = loading || loadingTables || loadingPartitions || loadingParts || loadingColumns || loadingProjections || loadingProjectionParts || loadingIndexes;
 
@@ -974,9 +1056,9 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
-            defaultViewport={{ x: 20, y: 20, zoom: 1 }}
+            defaultViewport={{ x: 20, y: 20, zoom: 1.3 }}
             minZoom={0.5}
-            maxZoom={1.5}
+            maxZoom={2}
             proOptions={{ hideAttribution: true }}
           >
             <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#374151" />
@@ -986,6 +1068,43 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
           </ReactFlow>
         </div>
       </div>
+
+      {/* Info Modal */}
+      {infoModalOpen && infoModalData && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]" onClick={() => setInfoModalOpen(false)}>
+          <div
+            className="bg-gray-900 border border-gray-700 rounded-lg w-[600px] max-h-[80vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-3 border-b border-gray-700">
+              <h3 className="text-sm font-semibold text-white">{infoModalData.title}</h3>
+              <button onClick={() => setInfoModalOpen(false)} className="text-gray-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-3">
+              <div className="bg-gray-800 rounded max-h-96 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-gray-800">
+                    <tr className="border-b border-gray-700">
+                      <th className="text-left p-1.5 text-gray-400">Property</th>
+                      <th className="text-right p-1.5 text-gray-400">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(infoModalData.data).map(([key, value]) => (
+                      <tr key={key} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                        <td className="p-1.5 text-blue-300 font-mono">{key}</td>
+                        <td className="p-1.5 text-right text-green-300 font-mono">{String(value)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

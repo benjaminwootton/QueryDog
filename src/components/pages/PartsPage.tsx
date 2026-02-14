@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { HardDrive, ChevronLeft, ChevronRight, Layers, Grid3X3, BarChart2, Settings, X, Eye, Search, Sparkles, Zap } from 'lucide-react';
+import { HardDrive, ChevronLeft, ChevronRight, Layers, Grid3X3, BarChart2, Settings, X, Eye, Search, Sparkles, Zap, Server, Loader2 } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, FirstDataRenderedEvent } from 'ag-grid-community';
@@ -7,8 +7,8 @@ import { SystemTable, type SystemTableRef } from '../SystemTable';
 import { PartsFilterPanel } from '../PartsFilterPanel';
 import { PartsHistogramsTab } from '../PartsHistogramsTab';
 import { ProjectionsTab } from '../ProjectionsTab';
-import { IndexesTab } from '../IndexesTab';
-import { fetchParts, fetchPartsColumns, fetchPartsCount, fetchPartitionsSummary, fetchPartitionsSummaryColumns, fetchPartitionsSummaryCount, fetchGroupedParts, fetchTablePartitions, fetchPartitionParts, fetchTableCompression, fetchBrowserColumns, fetchBrowserSampleData, type GroupedPartsEntry, type TablePartitionEntry, type PartitionPartEntry, type ColumnCompressionEntry, type BrowserColumn } from '../../services/api';
+import { DataSkippingIndexesTab } from '../DataSkippingIndexesTab';
+import { fetchParts, fetchPartsColumns, fetchPartsCount, fetchPartitionsSummary, fetchPartitionsSummaryColumns, fetchPartitionsSummaryCount, fetchGroupedParts, fetchTablePartitions, fetchPartitionParts, fetchTableCompression, fetchBrowserColumns, fetchBrowserSampleData, fetchBrowserTables, fetchMergeTreeIndex, fetchTableDefinition, fetchDatabasesSummary, type GroupedPartsEntry, type TablePartitionEntry, type PartitionPartEntry, type ColumnCompressionEntry, type BrowserColumn, type BrowserTable, type MergeTreeIndexEntry, type DatabaseSummary } from '../../services/api';
 import { useQueryStore } from '../../stores/queryStore';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -31,7 +31,7 @@ const darkTheme = themeAlpine.withParams({
   headerHeight: 30,
 });
 
-type PartsTab = 'parts' | 'partitions' | 'grouped' | 'projections' | 'indexes' | 'histograms';
+type PartsTab = 'databases' | 'parts' | 'partitions' | 'grouped' | 'projections' | 'secondary-indexes' | 'histograms';
 
 const PARTS_DEFAULT_VISIBLE_FIELDS = [
   'database',
@@ -46,15 +46,16 @@ const PARTS_DEFAULT_VISIBLE_FIELDS = [
   'marks',
 ];
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined || bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-function formatNumber(num: number): string {
+function formatNumber(num: number | null | undefined): string {
+  if (num === null || num === undefined) return '0';
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
   if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
   return num.toLocaleString();
@@ -74,7 +75,9 @@ export function PartsPage() {
     setPartitionsCurrentPage,
     setHasPartsAccess,
   } = useQueryStore();
-  const [activeTab, setActiveTab] = useState<PartsTab>('grouped');
+  const [activeTab, setActiveTab] = useState<PartsTab>('databases');
+  const [databasesData, setDatabasesData] = useState<DatabaseSummary[]>([]);
+  const [databasesLoading, setDatabasesLoading] = useState(false);
   const [groupedData, setGroupedData] = useState<GroupedPartsEntry[]>([]);
   const [groupedLoading, setGroupedLoading] = useState(false);
   const partsTableRef = useRef<SystemTableRef>(null);
@@ -86,18 +89,83 @@ export function PartsPage() {
   const [partsSearch, setPartsSearch] = useState('');
   const [localSearch, setLocalSearch] = useState('');
 
+  // Database filter state - shared across all tabs
+  const [databaseFilter, setDatabaseFilter] = useState<string>('');
+
+  // Apply database filter to partsFilters when it changes
+  useEffect(() => {
+    if (databaseFilter) {
+      setPartsFilters(prev => ({ ...prev, database: [databaseFilter] }));
+    } else {
+      setPartsFilters(prev => {
+        const updated = { ...prev };
+        delete updated.database;
+        return updated;
+      });
+    }
+  }, [databaseFilter]);
+
+  // Filtered databases data
+  const filteredDatabasesData = useMemo(() => {
+    if (!databaseFilter) return databasesData;
+    return databasesData.filter(db => db.database === databaseFilter);
+  }, [databasesData, databaseFilter]);
+
   // Modal state for partition details
   const [selectedTable, setSelectedTable] = useState<{ database: string; table: string } | null>(null);
   const [partitionDetails, setPartitionDetails] = useState<TablePartitionEntry[]>([]);
   const [partitionDetailsLoading, setPartitionDetailsLoading] = useState(false);
+  const [tableDetailsTab, setTableDetailsTab] = useState<'definition' | 'partitions' | 'sample' | 'index' | 'compression' | 'stats'>('definition');
 
   // Schema state for table details modal
   const [schemaColumns, setSchemaColumns] = useState<BrowserColumn[]>([]);
   const [schemaLoading, setSchemaLoading] = useState(false);
 
+  // Table definition state
+  const [tableDefinition, setTableDefinition] = useState<string>('');
+  const [definitionLoading, setDefinitionLoading] = useState(false);
+
+  // Database info modal state
+  const [selectedDatabaseInfo, setSelectedDatabaseInfo] = useState<DatabaseSummary | null>(null);
+  const [databaseTables, setDatabaseTables] = useState<BrowserTable[]>([]);
+  const [loadingDatabaseTables, setLoadingDatabaseTables] = useState(false);
+
+  // Load tables when database info modal opens
+  useEffect(() => {
+    if (selectedDatabaseInfo) {
+      setLoadingDatabaseTables(true);
+      fetchBrowserTables(selectedDatabaseInfo.database)
+        .then(setDatabaseTables)
+        .catch(console.error)
+        .finally(() => setLoadingDatabaseTables(false));
+    } else {
+      setDatabaseTables([]);
+    }
+  }, [selectedDatabaseInfo]);
+
+  // Handle Escape key to close database info modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedDatabaseInfo) {
+        setSelectedDatabaseInfo(null);
+        setDatabaseTables([]);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [selectedDatabaseInfo]);
+
   // Sample data state for table details modal
   const [sampleData, setSampleData] = useState<Record<string, unknown>[]>([]);
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
+
+  // MergeTree index state for table details modal
+  const [mergeTreeIndexData, setMergeTreeIndexData] = useState<MergeTreeIndexEntry[]>([]);
+  const [mergeTreeIndexLoading, setMergeTreeIndexLoading] = useState(false);
+  const [compressionData, setCompressionData] = useState<ColumnCompressionEntry[]>([]);
+  const [compressionLoading, setCompressionLoading] = useState(false);
+  const [statsData, setStatsData] = useState<Array<{ column: string; null_percent: number; cardinality: number; is_nullable: boolean; is_low_cardinality: boolean }>>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
 
   // Modal state for partition parts (parts within a partition)
   const [selectedPartition, setSelectedPartition] = useState<{ database: string; table: string; partitionId: string } | null>(null);
@@ -110,7 +178,6 @@ export function PartsPage() {
   // Modal state for compression details
   const [compressionTable, setCompressionTable] = useState<{ database: string; table: string } | null>(null);
   const [compressionDetails, setCompressionDetails] = useState<ColumnCompressionEntry[]>([]);
-  const [compressionLoading, setCompressionLoading] = useState(false);
 
   // Close modals on Escape key
   useEffect(() => {
@@ -153,6 +220,7 @@ export function PartsPage() {
     setPartsFilters({ active: ['1'] });
     setPartsSearch('');
     setLocalSearch('');
+    setDatabaseFilter('');
   }, []);
 
   // Debounce search input
@@ -220,6 +288,22 @@ export function PartsPage() {
       });
   }, [partsFilters, partsSearch, setPartitionsTotalCount, setHasPartsAccess]);
 
+  // Fetch databases data
+  useEffect(() => {
+    if (activeTab === 'databases') {
+      setDatabasesLoading(true);
+      fetchDatabasesSummary()
+        .then(setDatabasesData)
+        .catch((error: any) => {
+          if (error?.status === 403 || error?.type === 'permission') {
+            console.info('Parts access denied - hiding parts/objects features');
+            setHasPartsAccess(false);
+          }
+        })
+        .finally(() => setDatabasesLoading(false));
+    }
+  }, [activeTab, setHasPartsAccess]);
+
   // Fetch grouped data
   useEffect(() => {
     if (activeTab === 'grouped') {
@@ -248,24 +332,61 @@ export function PartsPage() {
     setPartitionDetailsLoading(true);
     setSchemaLoading(true);
     setSampleDataLoading(true);
+    setMergeTreeIndexLoading(true);
+    setDefinitionLoading(true);
     try {
-      const [partitionData, schemaData, sampleDataResult] = await Promise.allSettled([
+      const [partitionData, schemaData, sampleDataResult, mergeTreeIndexResult, definitionResult] = await Promise.allSettled([
         fetchTablePartitions(database, table),
         fetchBrowserColumns(database, table),
         fetchBrowserSampleData(database, table),
+        fetchMergeTreeIndex(database, table),
+        fetchTableDefinition(database, table),
       ]);
       setPartitionDetails(partitionData.status === 'fulfilled' ? partitionData.value : []);
-      setSchemaColumns(schemaData.status === 'fulfilled' ? schemaData.value : []);
+
+      // Sort schema columns: PK first, then sort key, then others
+      const unsortedSchema = schemaData.status === 'fulfilled' ? schemaData.value : [];
+      const sortedSchema = [...unsortedSchema].sort((a, b) => {
+        const aIsPK = a.is_in_primary_key === 1;
+        const bIsPK = b.is_in_primary_key === 1;
+        const aIsSort = a.is_in_sorting_key === 1;
+        const bIsSort = b.is_in_sorting_key === 1;
+
+        // Primary key columns first
+        if (aIsPK && !bIsPK) return -1;
+        if (!aIsPK && bIsPK) return 1;
+
+        // Then sorting key columns
+        if (aIsSort && !bIsSort) return -1;
+        if (!aIsSort && bIsSort) return 1;
+
+        // Keep original order for others
+        return 0;
+      });
+      setSchemaColumns(sortedSchema);
+
       setSampleData(sampleDataResult.status === 'fulfilled' ? sampleDataResult.value : []);
+      setMergeTreeIndexData(mergeTreeIndexResult.status === 'fulfilled' ? mergeTreeIndexResult.value : []);
+      setTableDefinition(definitionResult.status === 'fulfilled' ? definitionResult.value : '');
+
+      // Load compression data
+      setCompressionLoading(true);
+      fetchTableCompression(database, table)
+        .then(setCompressionData)
+        .catch(console.error)
+        .finally(() => setCompressionLoading(false));
     } catch (error) {
       console.error('Error fetching table details:', error);
       setPartitionDetails([]);
       setSchemaColumns([]);
       setSampleData([]);
+      setMergeTreeIndexData([]);
     } finally {
       setPartitionDetailsLoading(false);
       setSchemaLoading(false);
       setSampleDataLoading(false);
+      setMergeTreeIndexLoading(false);
+      setDefinitionLoading(false);
     }
   }, []);
 
@@ -274,7 +395,23 @@ export function PartsPage() {
     setPartitionDetails([]);
     setSchemaColumns([]);
     setSampleData([]);
+    setMergeTreeIndexData([]);
+    setCompressionData([]);
+    setStatsData([]);
+    setTableDefinition('');
+    setTableDetailsTab('definition');
   }, []);
+
+  // Handle Escape key to close table details modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedTable) {
+        handleCloseModal();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [selectedTable, handleCloseModal]);
 
   // Handle viewing parts for a specific partition
   const handleViewPartitionParts = useCallback(async (database: string, table: string, partitionId: string) => {
@@ -295,6 +432,17 @@ export function PartsPage() {
     setSelectedPartition(null);
     setPartitionParts([]);
   }, []);
+
+  // Handle Escape key to close partition parts modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedPartition) {
+        handleClosePartsModal();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [selectedPartition, handleClosePartsModal]);
 
   // Handle viewing single part details
   const handleViewPartDetails = useCallback((data: Record<string, unknown>) => {
@@ -365,14 +513,40 @@ export function PartsPage() {
       field: 'database',
       width: 150,
       sortable: true,
-      cellStyle: { color: '#93c5fd' },
+      cellStyle: { color: '#93c5fd', cursor: 'pointer' },
+      onCellClicked: (params) => {
+        if (params.data) {
+          const currentDb = partsFilters.database?.[0];
+          if (currentDb === params.data.database) {
+            setPartsFilters(prev => {
+              const { database, ...rest } = prev;
+              return rest;
+            });
+          } else {
+            setPartsFilters(prev => ({ ...prev, database: [params.data!.database] }));
+          }
+        }
+      },
     },
     {
       headerName: 'Table',
       field: 'table',
       width: 400,
       sortable: true,
-      cellStyle: { color: '#93c5fd' },
+      cellStyle: { color: '#93c5fd', cursor: 'pointer' },
+      onCellClicked: (params) => {
+        if (params.data) {
+          const currentTable = partsFilters.table?.[0];
+          if (currentTable === params.data.table) {
+            setPartsFilters(prev => {
+              const { table, ...rest } = prev;
+              return rest;
+            });
+          } else {
+            setPartsFilters(prev => ({ ...prev, database: [params.data!.database], table: [params.data!.table] }));
+          }
+        }
+      },
     },
     {
       headerName: 'Partitions',
@@ -469,6 +643,133 @@ export function PartsPage() {
     },
   ], [handleViewPartitions, handleViewCompression]);
 
+  // Eye icon cell renderer for databases
+  const EyeButtonRenderer = useCallback((params: ICellRendererParams<DatabaseSummary>) => {
+    return (
+      <button
+        onClick={() => setSelectedDatabaseInfo(params.data || null)}
+        className="flex items-center justify-center w-full h-full hover:bg-gray-700/50 transition-colors"
+        title="View database details"
+      >
+        <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-blue-400" />
+      </button>
+    );
+  }, []);
+
+  // Column definitions for databases table
+  const databasesColumnDefs = useMemo((): ColDef<DatabaseSummary>[] => [
+    {
+      headerName: '',
+      field: 'database',
+      width: 50,
+      sortable: false,
+      cellRenderer: EyeButtonRenderer,
+      cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
+    },
+    {
+      headerName: 'Database',
+      field: 'database',
+      width: 200,
+      sortable: true,
+      cellStyle: { color: '#93c5fd', fontWeight: 'bold', cursor: 'pointer' },
+      onCellClicked: (params) => {
+        if (params.data) {
+          setDatabaseFilter(params.data.database === databaseFilter ? '' : params.data.database);
+        }
+      },
+    },
+    {
+      headerName: 'Engine',
+      field: 'engine',
+      width: 120,
+      sortable: true,
+      cellStyle: { color: '#c4b5fd' },
+    },
+    {
+      headerName: 'Tables',
+      field: 'table_count',
+      width: 100,
+      sortable: true,
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+      valueFormatter: (params) => formatNumber(params.value || 0),
+    },
+    {
+      headerName: 'Partitions',
+      field: 'partition_count',
+      width: 110,
+      sortable: true,
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+      valueFormatter: (params) => formatNumber(params.value || 0),
+    },
+    {
+      headerName: 'Parts',
+      field: 'part_count',
+      width: 100,
+      sortable: true,
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+      valueFormatter: (params) => formatNumber(params.value || 0),
+    },
+    {
+      headerName: 'Total Rows',
+      field: 'total_rows',
+      width: 120,
+      sortable: true,
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+      valueFormatter: (params) => formatNumber(params.value || 0),
+    },
+    {
+      headerName: 'Size on Disk',
+      field: 'bytes_on_disk',
+      width: 130,
+      sortable: true,
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+      valueFormatter: (params) => formatBytes(params.value || 0),
+    },
+    {
+      headerName: 'Uncompressed',
+      field: 'uncompressed_bytes',
+      width: 130,
+      sortable: true,
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+      valueFormatter: (params) => formatBytes(params.value || 0),
+    },
+    {
+      headerName: 'Compressed',
+      field: 'compressed_bytes',
+      width: 120,
+      sortable: true,
+      cellStyle: { textAlign: 'right', color: '#86efac' },
+      valueFormatter: (params) => formatBytes(params.value || 0),
+    },
+    {
+      headerName: 'Compression',
+      field: 'compression_ratio',
+      width: 110,
+      sortable: true,
+      cellStyle: { textAlign: 'right', color: '#fcd34d' },
+      valueFormatter: (params) => params.value != null && params.value >= 0 ? `${params.value.toFixed(0)}%` : '-',
+    },
+    {
+      headerName: 'Last Modified',
+      field: 'latest_modification',
+      flex: 1,
+      sortable: true,
+      cellStyle: { color: '#fca5a5' },
+      valueFormatter: (params) => {
+        if (!params.value) return '-';
+        const date = new Date(params.value);
+        return date.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        });
+      },
+    },
+  ], [EyeButtonRenderer]);
+
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
@@ -484,11 +785,12 @@ export function PartsPage() {
   }, []);
 
   const tabs: { id: PartsTab; label: string; icon: typeof HardDrive }[] = [
+    { id: 'databases', label: 'Databases', icon: Server },
     { id: 'grouped', label: 'Tables', icon: Grid3X3 },
     { id: 'partitions', label: 'Partitions', icon: Layers },
     { id: 'parts', label: 'Parts', icon: HardDrive },
     { id: 'projections', label: 'Projections', icon: Sparkles },
-    { id: 'indexes', label: 'Indexes', icon: Zap },
+    { id: 'secondary-indexes', label: 'Secondary Indexes', icon: Zap },
     { id: 'histograms', label: 'Histograms', icon: BarChart2 },
   ];
 
@@ -610,6 +912,23 @@ export function PartsPage() {
         ))}
         {/* Column selector and pagination on the right */}
         <div className="ml-auto flex items-center gap-3">
+          {databaseFilter && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-blue-400">Database: {databaseFilter}</span>
+              <button
+                onClick={() => setDatabaseFilter('')}
+                className="text-gray-400 hover:text-white"
+                title="Clear database filter"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+          {activeTab === 'databases' && (
+            <span className="text-gray-400 text-xs">
+              {filteredDatabasesData.length.toLocaleString()} {filteredDatabasesData.length !== databasesData.length && `of ${databasesData.length}`} databases
+            </span>
+          )}
           {activeTab === 'grouped' && (
             <span className="text-gray-400 text-xs">
               {groupedData.length.toLocaleString()} tables
@@ -686,9 +1005,32 @@ export function PartsPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-hidden p-4">
+        {activeTab === 'databases' && (
+          <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
+            <AgGridReact<DatabaseSummary>
+              key={`databases-${databaseFilter}`}
+              theme={darkTheme}
+              rowData={filteredDatabasesData}
+              columnDefs={databasesColumnDefs}
+              defaultColDef={defaultColDef}
+              loading={databasesLoading}
+              animateRows={false}
+              suppressCellFocus={true}
+              enableCellTextSelection={true}
+              onFirstDataRendered={onFirstDataRendered}
+              getRowId={(params) => params.data.database}
+              initialState={{
+                sort: {
+                  sortModel: [{ colId: 'database', sort: 'asc' }]
+                }
+              }}
+            />
+          </div>
+        )}
         {activeTab === 'grouped' && (
           <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
             <AgGridReact<GroupedPartsEntry>
+              key={`grouped-${JSON.stringify(partsFilters)}-${partsSearch}`}
               theme={darkTheme}
               rowData={groupedData}
               columnDefs={groupedColumnDefs}
@@ -699,6 +1041,16 @@ export function PartsPage() {
               enableCellTextSelection={true}
               onFirstDataRendered={onFirstDataRendered}
               getRowId={(params) => `${params.data.database}-${params.data.table}`}
+              onCellClicked={(event) => {
+                if (event.colDef.field === 'database' && event.data) {
+                  setDatabaseFilter(event.data.database === databaseFilter ? '' : event.data.database);
+                }
+              }}
+              initialState={{
+                sort: {
+                  sortModel: [{ colId: 'database', sort: 'asc' }, { colId: 'table', sort: 'asc' }]
+                }
+              }}
             />
           </div>
         )}
@@ -713,6 +1065,46 @@ export function PartsPage() {
             hideTitle
             showActionColumn
             onRowAction={handleViewPartDetails}
+            onCellClick={(field, value, data) => {
+              const strValue = String(value);
+              if (field === 'database') {
+                const currentDb = partsFilters.database?.[0];
+                if (currentDb === strValue) {
+                  setPartsFilters(prev => {
+                    const { database, ...rest } = prev;
+                    return rest;
+                  });
+                } else {
+                  setPartsFilters(prev => ({ ...prev, database: [strValue] }));
+                }
+              } else if (field === 'table') {
+                const currentTable = partsFilters.table?.[0];
+                if (currentTable === strValue) {
+                  setPartsFilters(prev => {
+                    const { table, ...rest } = prev;
+                    return rest;
+                  });
+                } else {
+                  setPartsFilters(prev => ({ ...prev, database: [String(data.database)], table: [strValue] }));
+                }
+              } else if (field === 'partition_id') {
+                const currentPartition = partsFilters.partition_id?.[0];
+                if (currentPartition === strValue) {
+                  setPartsFilters(prev => {
+                    const { partition_id, ...rest } = prev;
+                    return rest;
+                  });
+                } else {
+                  setPartsFilters(prev => ({ ...prev, database: [String(data.database)], table: [String(data.table)], partition_id: [strValue] }));
+                }
+              }
+            }}
+            defaultSort={[
+              { colId: 'database', sort: 'asc' },
+              { colId: 'table', sort: 'asc' },
+              { colId: 'partition_id', sort: 'asc' },
+              { colId: 'name', sort: 'asc' }
+            ]}
           />
         )}
         {activeTab === 'partitions' && (
@@ -726,6 +1118,45 @@ export function PartsPage() {
             hideTitle
             showActionColumn
             onRowAction={(data) => handleViewPartitionParts(String(data.database), String(data.table), String(data.partition_id))}
+            onCellClick={(field, value, data) => {
+              const strValue = String(value);
+              if (field === 'database') {
+                const currentDb = partsFilters.database?.[0];
+                if (currentDb === strValue) {
+                  setPartsFilters(prev => {
+                    const { database, ...rest } = prev;
+                    return rest;
+                  });
+                } else {
+                  setPartsFilters(prev => ({ ...prev, database: [strValue] }));
+                }
+              } else if (field === 'table') {
+                const currentTable = partsFilters.table?.[0];
+                if (currentTable === strValue) {
+                  setPartsFilters(prev => {
+                    const { table, ...rest } = prev;
+                    return rest;
+                  });
+                } else {
+                  setPartsFilters(prev => ({ ...prev, database: [String(data.database)], table: [strValue] }));
+                }
+              } else if (field === 'partition' || field === 'partition_id') {
+                const currentPartition = partsFilters.partition_id?.[0];
+                if (currentPartition === strValue) {
+                  setPartsFilters(prev => {
+                    const { partition_id, ...rest } = prev;
+                    return rest;
+                  });
+                } else {
+                  setPartsFilters(prev => ({ ...prev, database: [String(data.database)], table: [String(data.table)], partition_id: [strValue] }));
+                }
+              }
+            }}
+            defaultSort={[
+              { colId: 'database', sort: 'asc' },
+              { colId: 'table', sort: 'asc' },
+              { colId: 'partition', sort: 'asc' }
+            ]}
           />
         )}
         {activeTab === 'projections' && (
@@ -734,8 +1165,8 @@ export function PartsPage() {
             search={partsSearch}
           />
         )}
-        {activeTab === 'indexes' && (
-          <IndexesTab
+        {activeTab === 'secondary-indexes' && (
+          <DataSkippingIndexesTab
             filters={partsFilters}
             search={partsSearch}
           />
@@ -752,7 +1183,7 @@ export function PartsPage() {
       {selectedTable && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={handleCloseModal}>
           <div
-            className="bg-gray-900 border border-gray-700 rounded-lg w-[1650px] max-h-[90vh] overflow-hidden flex flex-col"
+            className="bg-gray-900 border border-gray-700 rounded-lg w-[1650px] h-[95vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-3 border-b border-gray-700">
@@ -765,17 +1196,19 @@ export function PartsPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-3">
+            <div className="flex-1 overflow-hidden flex flex-col">
               {partitionDetailsLoading ? (
                 <div className="flex items-center justify-center h-32 text-gray-400">Loading...</div>
               ) : partitionDetails.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-gray-400">No partitions found</div>
               ) : (
                 <>
-                  <div className="grid grid-cols-6 gap-2 mb-4">
+                  {/* Stats Panel */}
+                  <div className="p-3 border-b border-gray-700">
+                    <div className="grid grid-cols-4 gap-2">
                     <div className="bg-gray-800 p-2 rounded">
                       <div className="text-xs text-gray-400">Rows</div>
-                      <div className="text-sm font-semibold text-green-400">
+                      <div className="text-sm font-semibold text-cyan-400">
                         {partitionDetails.reduce((sum, p) => sum + Number(p.total_rows), 0).toLocaleString()}
                       </div>
                     </div>
@@ -783,42 +1216,6 @@ export function PartsPage() {
                       <div className="text-xs text-gray-400">Size on Disk</div>
                       <div className="text-sm font-semibold text-green-400">
                         {formatBytes(partitionDetails.reduce((sum, p) => sum + Number(p.total_bytes), 0))}
-                      </div>
-                    </div>
-                    <div className="bg-gray-800 p-2 rounded">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-gray-400">Partitions</div>
-                        <button
-                          onClick={() => {
-                            setPartsFilters({ database: [selectedTable.database], table: [selectedTable.table] });
-                            setActiveTab('partitions');
-                            handleCloseModal();
-                          }}
-                          className="text-gray-400 hover:text-blue-400 transition-colors"
-                          title="View all partitions for this table"
-                        >
-                          <Search className="w-3 h-3" />
-                        </button>
-                      </div>
-                      <div className="text-sm font-semibold text-white">{partitionDetails.length.toLocaleString()}</div>
-                    </div>
-                    <div className="bg-gray-800 p-2 rounded">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-gray-400">Parts</div>
-                        <button
-                          onClick={() => {
-                            setPartsFilters({ database: [selectedTable.database], table: [selectedTable.table], active: ['1'] });
-                            setActiveTab('parts');
-                            handleCloseModal();
-                          }}
-                          className="text-gray-400 hover:text-blue-400 transition-colors"
-                          title="View all parts for this table"
-                        >
-                          <Search className="w-3 h-3" />
-                        </button>
-                      </div>
-                      <div className="text-sm font-semibold text-white">
-                        {partitionDetails.reduce((sum, p) => sum + p.parts_count, 0).toLocaleString()}
                       </div>
                     </div>
                     <div className="bg-gray-800 p-2 rounded">
@@ -833,56 +1230,153 @@ export function PartsPage() {
                         {new Date(Math.max(...partitionDetails.map(p => new Date(p.newest_part).getTime()))).toLocaleDateString()}
                       </div>
                     </div>
+                    </div>
                   </div>
 
-                  {/* Schema Section */}
-                  <div className="mb-4">
-                    <h3 className="text-xs font-semibold text-gray-300 mb-2">Schema ({schemaColumns.length} columns)</h3>
-                    {schemaLoading ? (
-                      <div className="flex items-center justify-center h-20 text-gray-400">Loading schema...</div>
-                    ) : schemaColumns.length === 0 ? (
-                      <div className="flex items-center justify-center h-20 text-gray-400">No schema found</div>
+                  {/* Tabs */}
+                  <div className="border-b border-gray-700 px-3 flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => setTableDetailsTab('definition')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                        tableDetailsTab === 'definition'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-gray-400 hover:text-gray-300'
+                      }`}
+                    >
+                      Definition
+                    </button>
+                    <button
+                      onClick={() => setTableDetailsTab('partitions')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                        tableDetailsTab === 'partitions'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-gray-400 hover:text-gray-300'
+                      }`}
+                    >
+                      Partitions
+                    </button>
+                    <button
+                      onClick={() => setTableDetailsTab('sample')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                        tableDetailsTab === 'sample'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-gray-400 hover:text-gray-300'
+                      }`}
+                    >
+                      Sample Data
+                    </button>
+                    <button
+                      onClick={() => setTableDetailsTab('index')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                        tableDetailsTab === 'index'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-gray-400 hover:text-gray-300'
+                      }`}
+                    >
+                      Primary Index
+                    </button>
+                    <button
+                      onClick={() => setTableDetailsTab('compression')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                        tableDetailsTab === 'compression'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-gray-400 hover:text-gray-300'
+                      }`}
+                    >
+                      Compression
+                    </button>
+                    <button
+                      onClick={() => setTableDetailsTab('stats')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                        tableDetailsTab === 'stats'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-gray-400 hover:text-gray-300'
+                      }`}
+                    >
+                      Stats
+                    </button>
+                  </div>
+
+                  {/* Tab Content */}
+                  <div className="flex-1 overflow-auto p-3">
+                    {/* Definition Section */}
+                    {tableDetailsTab === 'definition' && (
+                      <div>
+                    <h3 className="text-xs font-semibold text-gray-300 mb-2">Table Definition</h3>
+                    {definitionLoading ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">Loading definition...</div>
+                    ) : !tableDefinition ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">No definition found</div>
                     ) : (
-                      <div className="bg-gray-800 rounded max-h-[200px] overflow-y-auto">
-                        <table className="w-full text-xs">
-                          <thead className="sticky top-0 bg-gray-800">
-                            <tr className="border-b border-gray-700">
-                              <th className="text-left p-2 text-gray-400">Column</th>
-                              <th className="text-left p-2 text-gray-400">Type</th>
-                              <th className="text-center p-2 text-gray-400">Keys</th>
-                              <th className="text-left p-2 text-gray-400">Codec</th>
-                              <th className="text-left p-2 text-gray-400">Comment</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {schemaColumns.map((col) => (
-                              <tr key={col.name} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                                <td className="p-2 font-mono text-blue-300">{col.name}</td>
-                                <td className="p-2 text-gray-300">{col.type}</td>
-                                <td className="p-2 text-center">
-                                  {col.is_in_primary_key === 1 && <span className="inline-block px-1 bg-yellow-600/30 text-yellow-400 rounded text-[10px] mr-1">PK</span>}
-                                  {col.is_in_partition_key === 1 && <span className="inline-block px-1 bg-purple-600/30 text-purple-400 rounded text-[10px] mr-1">PART</span>}
-                                  {col.is_in_sorting_key === 1 && <span className="inline-block px-1 bg-green-600/30 text-green-400 rounded text-[10px]">SORT</span>}
-                                </td>
-                                <td className="p-2 text-gray-400">{col.compression_codec || '-'}</td>
-                                <td className="p-2 text-gray-500 truncate max-w-[150px]" title={col.comment}>{col.comment || '-'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="bg-gray-800 rounded p-3 max-h-[650px] overflow-y-auto">
+                        <pre className="text-xs font-mono text-gray-300 whitespace-pre-wrap">{tableDefinition}</pre>
                       </div>
                     )}
-                  </div>
+                      </div>
+                    )}
 
-                  {/* Sample Data Section */}
-                  <div className="mb-4">
+                    {/* Partitions Section */}
+                    {tableDetailsTab === 'partitions' && (
+                      <div>
+                    <h3 className="text-xs font-semibold text-gray-300 mb-2">Partitions ({partitionDetails.length})</h3>
+                    <div className="bg-gray-800 rounded max-h-[650px] overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-gray-800">
+                          <tr className="border-b border-gray-700">
+                            <th className="text-left p-1.5 text-gray-400 w-[200px]">Partition ID</th>
+                            <th className="text-right p-1.5 text-gray-400 w-[80px]">Parts</th>
+                            <th className="text-right p-1.5 text-gray-400 w-[100px]">Rows</th>
+                            <th className="text-right p-1.5 text-gray-400 w-[100px]">Size</th>
+                            <th className="text-right p-1.5 text-gray-400 w-[150px]">Block Range</th>
+                            <th className="text-right p-1.5 text-gray-400">Newest Part</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {partitionDetails.map((partition) => (
+                            <tr key={partition.partition_id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                              <td className="p-1.5 font-mono">
+                                <button
+                                  onClick={() => selectedTable && handlePartitionClick(selectedTable.database, selectedTable.table, partition.partition_id || '')}
+                                  className="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
+                                  title="View in Partitions tab"
+                                >
+                                  {partition.partition_id || '(all)'}
+                                </button>
+                              </td>
+                              <td className="p-1.5 text-right text-green-400 font-mono">{partition.parts_count.toLocaleString()}</td>
+                              <td className="p-1.5 text-right text-green-400 font-mono">{Number(partition.total_rows).toLocaleString()}</td>
+                              <td className="p-1.5 text-right text-green-400 font-mono">{formatBytes(Number(partition.total_bytes))}</td>
+                              <td className="p-1.5 text-right text-gray-300 font-mono">{partition.min_block} - {partition.max_block}</td>
+                              <td className="p-1.5 text-right text-red-300 font-mono">
+                                {partition.newest_part
+                                  ? new Date(partition.newest_part).toLocaleString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      second: '2-digit',
+                                      hour12: false,
+                                    })
+                                  : '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                      </div>
+                    )}
+
+                    {/* Sample Data Section */}
+                    {tableDetailsTab === 'sample' && (
+                      <div>
                     <h3 className="text-xs font-semibold text-gray-300 mb-2">Sample Data ({sampleData.length} rows)</h3>
                     {sampleDataLoading ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">Loading sample data...</div>
                     ) : sampleData.length === 0 ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">No data available</div>
                     ) : (
-                      <div className="bg-gray-800 rounded max-h-[250px] overflow-auto">
+                      <div className="bg-gray-800 rounded max-h-[650px] overflow-auto">
                         <table className="w-full text-xs">
                           <thead className="sticky top-0 bg-gray-800">
                             <tr className="border-b border-gray-700">
@@ -909,56 +1403,173 @@ export function PartsPage() {
                         </table>
                       </div>
                     )}
-                  </div>
+                      </div>
+                    )}
 
-                  {/* Partitions Section */}
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-300 mb-2">Partitions ({partitionDetails.length})</h3>
-                    <div className="bg-gray-800 rounded max-h-[250px] overflow-y-auto">
-                      <table className="w-full text-xs">
-                        <thead className="sticky top-0 bg-gray-800">
-                          <tr className="border-b border-gray-700">
-                            <th className="text-left p-2 text-gray-400">Partition ID</th>
-                            <th className="text-right p-2 text-gray-400">Parts</th>
-                            <th className="text-right p-2 text-gray-400">Rows</th>
-                            <th className="text-right p-2 text-gray-400">Size</th>
-                            <th className="text-right p-2 text-gray-400">Block Range</th>
-                            <th className="text-right p-2 text-gray-400">Newest Part</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {partitionDetails.map((partition) => (
-                            <tr key={partition.partition_id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                              <td className="p-2 font-mono">
-                                <button
-                                  onClick={() => selectedTable && handlePartitionClick(selectedTable.database, selectedTable.table, partition.partition_id || '')}
-                                  className="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
-                                  title="View in Partitions tab"
-                                >
-                                  {partition.partition_id || '(all)'}
-                                </button>
-                              </td>
-                              <td className="p-2 text-right text-green-400">{partition.parts_count.toLocaleString()}</td>
-                              <td className="p-2 text-right text-green-400">{Number(partition.total_rows).toLocaleString()}</td>
-                              <td className="p-2 text-right text-green-400">{formatBytes(Number(partition.total_bytes))}</td>
-                              <td className="p-2 text-right text-gray-300">{partition.min_block} - {partition.max_block}</td>
-                              <td className="p-2 text-right text-red-300">
-                                {partition.newest_part
-                                  ? new Date(partition.newest_part).toLocaleString('en-US', {
-                                      month: 'short',
-                                      day: 'numeric',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                      second: '2-digit',
-                                      hour12: false,
-                                    })
-                                  : '-'}
-                              </td>
+                    {/* MergeTree Index Granules Section */}
+                    {tableDetailsTab === 'index' && (
+                      <div>
+                    <h3 className="text-xs font-semibold text-gray-300 mb-2">MergeTree Index Granules ({mergeTreeIndexData.length})</h3>
+                    {mergeTreeIndexLoading ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">Loading index granules...</div>
+                    ) : mergeTreeIndexData.length === 0 ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">No index data available</div>
+                    ) : (
+                      <div className="bg-gray-800 rounded max-h-[650px] overflow-auto">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-gray-800">
+                            <tr className="border-b border-gray-700">
+                              {Object.keys(mergeTreeIndexData[0]).map((key) => (
+                                <th key={key} className="text-left p-1.5 text-gray-400 whitespace-nowrap">{key}</th>
+                              ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {mergeTreeIndexData.map((row, idx) => (
+                              <tr key={idx} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                                {Object.entries(row).map(([, value], colIdx) => {
+                                  const strValue = value === null ? 'NULL' : String(value);
+                                  return (
+                                    <td
+                                      key={colIdx}
+                                      className="p-1.5 text-gray-300 font-mono whitespace-nowrap"
+                                      title={strValue}
+                                    >
+                                      {value === null ? <span className="text-gray-500 italic">NULL</span> : strValue}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                      </div>
+                    )}
+
+                    {/* Compression Section */}
+                    {tableDetailsTab === 'compression' && (
+                      <div>
+                    <h3 className="text-xs font-semibold text-gray-300 mb-2">Column Compression ({compressionData.length} columns)</h3>
+                    {compressionLoading ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">Loading compression data...</div>
+                    ) : compressionData.length === 0 ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">No compression data available</div>
+                    ) : (
+                      <div className="bg-gray-800 rounded max-h-[650px] overflow-auto">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-gray-800">
+                            <tr className="border-b border-gray-700">
+                              <th className="text-left p-1.5 text-gray-400 w-[200px]">Column</th>
+                              <th className="text-right p-1.5 text-gray-400 w-[120px]">Compressed</th>
+                              <th className="text-right p-1.5 text-gray-400 w-[120px]">Uncompressed</th>
+                              <th className="text-right p-1.5 text-gray-400 w-[100px]">Ratio</th>
+                              <th className="text-right p-1.5 text-gray-400 w-[80px]">Savings</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {compressionData.map((col, idx) => {
+                              const ratio = col.uncompressed_bytes > 0
+                                ? col.uncompressed_bytes / col.compressed_bytes
+                                : 0;
+                              const savings = col.uncompressed_bytes > 0
+                                ? ((col.uncompressed_bytes - col.compressed_bytes) / col.uncompressed_bytes * 100)
+                                : 0;
+                              return (
+                                <tr key={idx} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                                  <td className="p-1.5 text-blue-300 font-mono">{col.name}</td>
+                                  <td className="p-1.5 text-right text-green-400 font-mono">{formatBytes(col.compressed_bytes)}</td>
+                                  <td className="p-1.5 text-right text-gray-300 font-mono">{formatBytes(col.uncompressed_bytes)}</td>
+                                  <td className="p-1.5 text-right text-cyan-400 font-mono">{ratio.toFixed(2)}x</td>
+                                  <td className="p-1.5 text-right text-green-400 font-mono">{savings.toFixed(1)}%</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                      </div>
+                    )}
+
+                    {/* Stats Section */}
+                    {tableDetailsTab === 'stats' && (
+                      <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-xs font-semibold text-gray-300">Column Statistics</h3>
+                      <button
+                        onClick={async () => {
+                          if (!selectedTable) return;
+                          setStatsLoading(true);
+                          try {
+                            const response = await fetch('/api/table-stats', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                database: selectedTable.database,
+                                table: selectedTable.table,
+                              }),
+                            });
+                            if (!response.ok) throw new Error('Failed to fetch stats');
+                            const data = await response.json();
+                            setStatsData(data);
+                          } catch (error) {
+                            console.error('Error fetching stats:', error);
+                          } finally {
+                            setStatsLoading(false);
+                          }
+                        }}
+                        disabled={statsLoading}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-white text-xs font-medium flex items-center gap-1"
+                      >
+                        {statsLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Analyze'}
+                      </button>
                     </div>
+                    {statsLoading ? (
+                      <div className="flex items-center justify-center h-20 text-gray-400">Analyzing table statistics...</div>
+                    ) : statsData.length === 0 ? (
+                      <div></div>
+                    ) : (
+                      <div className="bg-gray-800 rounded max-h-[650px] overflow-auto">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-gray-800">
+                            <tr className="border-b border-gray-700">
+                              <th className="text-left p-1.5 text-gray-400 w-[200px]">Column</th>
+                              <th className="text-center p-1.5 text-gray-400 w-[80px]">Nullable</th>
+                              <th className="text-center p-1.5 text-gray-400 w-[100px]">Low Card.</th>
+                              <th className="text-right p-1.5 text-gray-400 w-[100px]">% Null</th>
+                              <th className="text-right p-1.5 text-gray-400 w-[120px]">Cardinality</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {statsData.map((stat, idx) => (
+                              <tr key={idx} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                                <td className="p-1.5 text-blue-300 font-mono">{stat.column}</td>
+                                <td className="p-1.5 text-center">
+                                  {stat.is_nullable ? (
+                                    <span className="text-green-400">✓</span>
+                                  ) : (
+                                    <span className="text-gray-600">-</span>
+                                  )}
+                                </td>
+                                <td className="p-1.5 text-center">
+                                  {stat.is_low_cardinality ? (
+                                    <span className="text-green-400">✓</span>
+                                  ) : (
+                                    <span className="text-gray-600">-</span>
+                                  )}
+                                </td>
+                                <td className="p-1.5 text-right text-yellow-400 font-mono">{stat.null_percent.toFixed(2)}%</td>
+                                <td className="p-1.5 text-right text-cyan-400 font-mono">{formatNumber(stat.cardinality)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -1242,6 +1853,106 @@ export function PartsPage() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Database Info Modal */}
+      {selectedDatabaseInfo && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => {
+          setSelectedDatabaseInfo(null);
+          setDatabaseTables([]);
+        }}>
+          <div
+            className="bg-gray-900 border border-gray-700 rounded-lg w-[1200px] max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-3 border-b border-gray-700">
+              <div>
+                <h3 className="text-sm font-semibold text-white">Database Details</h3>
+                <p className="text-xs text-gray-400 font-mono">{selectedDatabaseInfo.database}</p>
+              </div>
+              <button onClick={() => {
+                setSelectedDatabaseInfo(null);
+                setDatabaseTables([]);
+              }} className="text-gray-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-3">
+              {/* Key Stats */}
+              <div className="grid grid-cols-6 gap-3 mb-4">
+                <div className="bg-gray-800 p-4 rounded">
+                  <div className="text-xs text-gray-400 mb-1">Tables</div>
+                  <div className="text-lg font-semibold text-cyan-400">{formatNumber(selectedDatabaseInfo.table_count)}</div>
+                </div>
+                <div className="bg-gray-800 p-4 rounded">
+                  <div className="text-xs text-gray-400 mb-1">Total Rows</div>
+                  <div className="text-lg font-semibold text-cyan-400">{formatNumber(selectedDatabaseInfo.part_rows)}</div>
+                </div>
+                <div className="bg-gray-800 p-4 rounded">
+                  <div className="text-xs text-gray-400 mb-1">Size on Disk</div>
+                  <div className="text-lg font-semibold text-green-400">{formatBytes(selectedDatabaseInfo.bytes_on_disk)}</div>
+                </div>
+                <div className="bg-gray-800 p-4 rounded">
+                  <div className="text-xs text-gray-400 mb-1">Partitions</div>
+                  <div className="text-lg font-semibold text-cyan-400">{formatNumber(selectedDatabaseInfo.partition_count)}</div>
+                </div>
+                <div className="bg-gray-800 p-4 rounded">
+                  <div className="text-xs text-gray-400 mb-1">Parts</div>
+                  <div className="text-lg font-semibold text-cyan-400">{formatNumber(selectedDatabaseInfo.part_count)}</div>
+                </div>
+                <div className="bg-gray-800 p-4 rounded">
+                  <div className="text-xs text-gray-400 mb-1">Compression</div>
+                  <div className="text-lg font-semibold text-white">{selectedDatabaseInfo.compression_ratio.toFixed(1)}</div>
+                </div>
+              </div>
+
+              {/* Tables Section */}
+              <div className="mb-4">
+                <h3 className="text-xs font-semibold text-gray-400 mb-2">
+                  Tables ({selectedDatabaseInfo.table_count})
+                </h3>
+
+                {loadingDatabaseTables ? (
+                  <div className="bg-gray-800 rounded p-8 text-center">
+                    <div className="text-sm text-gray-400">Loading tables...</div>
+                  </div>
+                ) : databaseTables.length > 0 ? (
+                  <div className="bg-gray-800 rounded max-h-96 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-gray-800">
+                        <tr className="border-b border-gray-700">
+                          <th className="text-left p-1.5 text-gray-400">Table</th>
+                          <th className="text-left p-1.5 text-gray-400">Engine</th>
+                          <th className="text-right p-1.5 text-gray-400">Partitions</th>
+                          <th className="text-right p-1.5 text-gray-400">Rows</th>
+                          <th className="text-right p-1.5 text-gray-400">Size</th>
+                          <th className="text-left p-1.5 text-gray-400">Last Modified</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {databaseTables.map((table) => (
+                          <tr key={table.name} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                            <td className="p-1.5 text-blue-300 font-mono">{table.name}</td>
+                            <td className="p-1.5 text-gray-300 font-mono">{table.engine}</td>
+                            <td className="p-1.5 text-right text-cyan-400 font-mono">{formatNumber(table.partition_count)}</td>
+                            <td className="p-1.5 text-right text-green-300 font-mono">{formatNumber(table.total_rows)}</td>
+                            <td className="p-1.5 text-right text-green-300 font-mono">{formatBytes(table.total_bytes)}</td>
+                            <td className="p-1.5 text-gray-300 font-mono text-xs">{table.metadata_modification_time}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="bg-gray-800 rounded p-8 text-center">
+                    <div className="text-sm text-gray-400">No tables found</div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

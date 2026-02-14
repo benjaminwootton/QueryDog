@@ -1,3 +1,4 @@
+-- experiment: Sausage
 select
     toDate(order_date) as date,
     count(*) as orders,

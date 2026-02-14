@@ -1,4 +1,3 @@
--- experiment: Sausage
 select
     coupon_code,
     count(*) as times_used,

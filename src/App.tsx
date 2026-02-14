@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText, Layers, FileCode } from 'lucide-react';
+import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText, Layers, FileCode, Table } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
 import { PartsPage } from './components/pages/PartsPage';
@@ -9,6 +9,7 @@ import { MetricsPage } from './components/pages/MetricsPage';
 import { InstancePage } from './components/pages/InstancePage';
 import { TextLogPage } from './components/pages/TextLogPage';
 import { MyQueriesPage } from './components/pages/MyQueriesPage';
+import { DataExplorerPage } from './components/pages/DataExplorerPage';
 import { ProfileEventsModal } from './components/ProfileEventsModal';
 import { DatabaseBrowser } from './components/DatabaseBrowser';
 import { QueryEditor } from './components/QueryEditor';
@@ -50,6 +51,7 @@ function App() {
     return false;
   });
   const [browserOpen, setBrowserOpen] = useState(false);
+  const [dataExplorerOpen, setDataExplorerOpen] = useState(false);
   const [queryEditorOpen, setQueryEditorOpen] = useState(false);
   const [queryEditorInitialQuery, setQueryEditorInitialQuery] = useState('');
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
@@ -145,6 +147,7 @@ function App() {
       if (e.key === 'Escape') {
         setAboutOpen(false);
         setBrowserOpen(false);
+        setDataExplorerOpen(false);
         setQueryEditorOpen(false);
       }
     };
@@ -154,8 +157,8 @@ function App() {
 
   const navItems: { id: NavItem; label: string; icon: typeof Database }[] = [
     { id: 'queries', label: 'Queries', icon: Database },
-    ...(hasPartLogAccess ? [{ id: 'partlog' as const, label: 'Parts Log', icon: Layers }] : []),
     ...(hasPartsAccess ? [{ id: 'parts' as const, label: 'Objects', icon: HardDrive }] : []),
+    ...(hasPartLogAccess ? [{ id: 'partlog' as const, label: 'Parts Log', icon: Layers }] : []),
     { id: 'activity', label: 'Activity', icon: Activity },
     { id: 'metrics', label: 'Metrics', icon: BarChart2 },
     { id: 'textlog', label: 'Text Log', icon: FileText },
@@ -217,6 +220,14 @@ function App() {
           >
             <FolderTree className="w-3.5 h-3.5" />
             Browser
+          </button>
+          <button
+            onClick={() => setDataExplorerOpen(true)}
+            className="flex items-center gap-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 text-xs"
+            title="Data Explorer"
+          >
+            <Table className="w-3.5 h-3.5" />
+            Data
           </button>
           <button
             onClick={() => {
@@ -299,6 +310,26 @@ function App() {
 
       {/* Database Browser Modal */}
       {browserOpen && <DatabaseBrowser onClose={() => setBrowserOpen(false)} />}
+
+      {/* Data Explorer Modal */}
+      {dataExplorerOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => setDataExplorerOpen(false)}>
+          <div
+            className="bg-gray-900 border border-gray-700 rounded-lg w-[95vw] h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-3 border-b border-gray-700 shrink-0">
+              <h2 className="text-sm font-semibold text-white">Data Explorer</h2>
+              <button onClick={() => setDataExplorerOpen(false)} className="text-gray-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <DataExplorerPage />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Query Editor Modal */}
       {queryEditorOpen && (

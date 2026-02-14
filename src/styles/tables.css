@@ -1,0 +1,194 @@
+/* Consistent Table Styles for Query Dog */
+
+/* Tight Popup Table Container - minimal styling */
+.qd-table-container {
+  @apply rounded overflow-hidden border border-gray-700;
+}
+
+/* Table Base - tight spacing */
+.qd-table {
+  @apply w-full text-xs font-mono;
+}
+
+.qd-table-fixed {
+  @apply w-full text-xs font-mono table-fixed;
+}
+
+/* Table Header - absolute minimal padding */
+.qd-table thead {
+  @apply sticky top-0 bg-gray-900;
+}
+
+.qd-table-fixed thead {
+  @apply sticky top-0 bg-gray-900;
+}
+
+.qd-table th {
+  @apply px-1 py-0 text-left text-gray-400 font-normal border-b border-gray-700 leading-tight;
+}
+
+.qd-table-fixed th {
+  @apply px-1 py-0 text-left text-gray-400 font-normal border-b border-gray-700 leading-tight;
+}
+
+.qd-table th.text-right {
+  @apply text-right;
+}
+
+.qd-table th.text-center {
+  @apply text-center;
+}
+
+/* Table Body - no backgrounds, absolute minimal spacing */
+.qd-table tbody tr {
+  @apply border-b border-gray-700/30;
+}
+
+.qd-table-fixed tbody tr {
+  @apply border-b border-gray-700/30;
+}
+
+.qd-table tbody tr.highlight-diff {
+  @apply bg-yellow-900/10;
+}
+
+.qd-table-fixed tbody tr.highlight-diff {
+  @apply bg-yellow-900/10;
+}
+
+.qd-table td {
+  @apply px-1 py-0 text-gray-300 leading-tight;
+}
+
+.qd-table-fixed td {
+  @apply px-1 py-0 text-gray-300 leading-tight;
+}
+
+/* Modal Styles */
+.qd-modal-overlay {
+  @apply fixed inset-0 bg-black/70 flex items-center justify-center z-50;
+}
+
+.qd-modal {
+  @apply bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col;
+}
+
+.qd-modal-header {
+  @apply flex items-center justify-between p-3 border-b border-gray-700;
+}
+
+.qd-modal-title {
+  @apply text-sm font-semibold text-white;
+}
+
+.qd-modal-subtitle {
+  @apply text-xs text-gray-400;
+}
+
+.qd-modal-close {
+  @apply text-gray-400 hover:text-white transition-colors;
+}
+
+.qd-modal-body {
+  @apply flex-1 overflow-auto p-3;
+}
+
+/* Section Headers */
+.qd-section-header {
+  @apply flex items-center gap-1 text-xs font-semibold text-gray-400 mb-2 hover:text-white cursor-pointer;
+}
+
+/* Stats Cards */
+.qd-stat-card {
+  @apply bg-gray-800 p-2 rounded;
+}
+
+.qd-stat-label {
+  @apply text-xs text-gray-400;
+}
+
+.qd-stat-value {
+  @apply text-sm font-semibold text-white;
+}
+
+.qd-stat-value-success {
+  @apply text-sm font-semibold text-green-400;
+}
+
+.qd-stat-value-warning {
+  @apply text-sm font-semibold text-yellow-400;
+}
+
+.qd-stat-value-danger {
+  @apply text-sm font-semibold text-red-400;
+}
+
+/* Buttons */
+.qd-btn {
+  @apply px-3 py-1.5 rounded text-xs font-medium transition-colors;
+}
+
+.qd-btn-primary {
+  @apply bg-blue-600 hover:bg-blue-500 text-white;
+}
+
+.qd-btn-secondary {
+  @apply bg-gray-700 hover:bg-gray-600 text-gray-300;
+}
+
+.qd-btn-success {
+  @apply bg-green-600 hover:bg-green-500 text-white;
+}
+
+.qd-btn-danger {
+  @apply bg-red-600 hover:bg-red-500 text-white;
+}
+
+/* Input Fields */
+.qd-input {
+  @apply px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-white;
+  @apply focus:outline-none focus:border-blue-500;
+}
+
+.qd-select {
+  @apply px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-white;
+  @apply focus:outline-none focus:border-blue-500;
+}
+
+/* Text Colors */
+.qd-text-primary {
+  @apply text-blue-400;
+}
+
+.qd-text-success {
+  @apply text-green-400;
+}
+
+.qd-text-warning {
+  @apply text-yellow-400;
+}
+
+.qd-text-danger {
+  @apply text-red-400;
+}
+
+.qd-text-muted {
+  @apply text-gray-500;
+}
+
+/* Spacing Utilities */
+.qd-spacing-xs {
+  @apply gap-1;
+}
+
+.qd-spacing-sm {
+  @apply gap-2;
+}
+
+.qd-spacing-md {
+  @apply gap-3;
+}
+
+.qd-spacing-lg {
+  @apply gap-4;
+}

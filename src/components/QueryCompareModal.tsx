@@ -7,28 +7,6 @@ interface QueryCompareModalProps {
   onClose: () => void;
 }
 
-// Custom tooltip header component
-function TooltipHeader({ label, queryId, query, color }: { label: string; queryId: string; query: string; color: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <th
-      className={`relative p-2 ${color} cursor-help`}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      {label}
-      {show && (
-        <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-1 w-72 bg-gray-900 border border-gray-600 rounded shadow-lg p-2 text-left">
-          <div className="text-[10px] text-gray-400 font-mono break-all">{queryId}</div>
-          <div className="text-[10px] text-gray-500 mt-1 break-words whitespace-pre-wrap">
-            {query.length > 300 ? query.substring(0, 300) + '...' : query}
-          </div>
-        </div>
-      )}
-    </th>
-  );
-}
-
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -84,6 +62,10 @@ export function QueryCompareModal({ entries, onClose }: QueryCompareModalProps) 
     profileEvents: true,
     settings: false,
   });
+
+  // Calculate column widths for consistent alignment across all tables
+  const labelColWidth = entries.length <= 2 ? 'w-[500px]' : entries.length <= 4 ? 'w-[400px]' : 'w-[300px]';
+  const queryColWidth = entries.length <= 2 ? 'w-[250px]' : entries.length <= 4 ? 'w-[200px]' : 'w-[150px]';
 
   // Close modal on Escape key
   useEffect(() => {
@@ -198,19 +180,21 @@ export function QueryCompareModal({ entries, onClose }: QueryCompareModalProps) 
               Performance Metrics
             </button>
             {expandedSections.metrics && (
-              <div className="bg-gray-800 rounded overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
+              <div className="bg-gray-800 rounded overflow-y-auto">
+                <table className="text-xs table-fixed w-full">
+                  <thead className="sticky top-0 bg-gray-800">
                     <tr className="border-b border-gray-700">
-                      <th className="text-left p-2 text-gray-400 w-32">Metric</th>
+                      <th className={`text-left p-1.5 text-gray-400 ${labelColWidth}`}>Metric</th>
                       {entries.map((entry, idx) => (
-                        <TooltipHeader
+                        <th
                           key={idx}
-                          label={`Q${idx + 1}`}
-                          queryId={String(entry.query_id || '')}
-                          query={String(entry.query || '')}
-                          color={`text-right ${HEADER_COLORS[idx % HEADER_COLORS.length]}`}
-                        />
+                          className={`text-right p-1.5 ${HEADER_COLORS[idx % HEADER_COLORS.length]} ${queryColWidth}`}
+                        >
+                          Q{idx + 1}
+                          <div className="text-[9px] text-gray-500 truncate" title={String(entry.query_id || '')}>
+                            {String(entry.query_id || '').substring(0, 12)}...
+                          </div>
+                        </th>
                       ))}
                     </tr>
                   </thead>
@@ -221,8 +205,8 @@ export function QueryCompareModal({ entries, onClose }: QueryCompareModalProps) 
                       const hasDiff = !values.every(v => v === values[0]);
 
                       return (
-                        <tr key={metric.field} className={`border-b border-gray-700/50 ${hasDiff ? 'bg-yellow-900/20' : ''}`}>
-                          <td className="p-2 text-gray-300">{metric.label}</td>
+                        <tr key={metric.field} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                          <td className="p-1.5 text-blue-300 font-mono">{metric.label}</td>
                           {entries.map((entry, idx) => {
                             const value = Number(entry[metric.field]) || 0;
                             const isBest = metric.higherIsBetter !== undefined &&
@@ -235,10 +219,10 @@ export function QueryCompareModal({ entries, onClose }: QueryCompareModalProps) 
                             return (
                               <td
                                 key={idx}
-                                className={`p-2 text-right font-mono ${
+                                className={`p-1.5 text-right font-mono ${
                                   isBest ? 'text-green-400' :
                                   isWorst ? 'text-red-400' :
-                                  'text-gray-300'
+                                  'text-green-300'
                                 }`}
                               >
                                 {metric.format(value)}
@@ -264,32 +248,34 @@ export function QueryCompareModal({ entries, onClose }: QueryCompareModalProps) 
               ProfileEvents ({profileEventsWithDiffs.length} different, {profileEventsWithValues.length} with values)
             </button>
             {expandedSections.profileEvents && (
-              <div className="bg-gray-800 rounded overflow-hidden max-h-80 overflow-y-auto">
-                <table className="w-full text-xs table-fixed">
+              <div className="bg-gray-800 rounded max-h-80 overflow-y-auto">
+                <table className="text-xs table-fixed w-full">
                   <thead className="sticky top-0 bg-gray-800">
                     <tr className="border-b border-gray-700">
-                      <th className="text-left p-2 text-gray-400 w-[300px]">Event</th>
+                      <th className={`text-left p-1.5 text-gray-400 ${labelColWidth}`}>Event</th>
                       {entries.map((entry, idx) => (
-                        <TooltipHeader
+                        <th
                           key={idx}
-                          label={`Q${idx + 1}`}
-                          queryId={String(entry.query_id || '')}
-                          query={String(entry.query || '')}
-                          color={`text-right ${HEADER_COLORS[idx % HEADER_COLORS.length]}`}
-                        />
+                          className={`text-right p-1.5 ${HEADER_COLORS[idx % HEADER_COLORS.length]} ${queryColWidth}`}
+                        >
+                          Q{idx + 1}
+                          <div className="text-[9px] text-gray-500 truncate" title={String(entry.query_id || '')}>
+                            {String(entry.query_id || '').substring(0, 12)}...
+                          </div>
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {profileEventsWithValues.map(eventName => {
-                      const { values, hasDiff } = getProfileEventDiff(eventName);
+                      const { values } = getProfileEventDiff(eventName);
                       const isBytes = eventName.toLowerCase().includes('bytes');
 
                       return (
-                        <tr key={eventName} className={`border-b border-gray-700/50 hover:bg-gray-700/30 ${hasDiff ? 'bg-yellow-900/20' : ''}`}>
-                          <td className="p-1.5 text-blue-300 font-mono text-[10px] truncate" title={eventName}>{eventName}</td>
+                        <tr key={eventName} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                          <td className="p-1.5 text-blue-300 font-mono">{eventName}</td>
                           {values.map((value, idx) => (
-                            <td key={idx} className="p-1.5 text-right text-gray-300 font-mono text-[10px]">
+                            <td key={idx} className="p-1.5 text-right text-green-300 font-mono">
                               {isBytes ? formatBytes(value) : formatNumber(value)}
                             </td>
                           ))}
@@ -312,34 +298,36 @@ export function QueryCompareModal({ entries, onClose }: QueryCompareModalProps) 
               Settings ({settingsWithDiffs.length} different, {allSettings.length} total)
             </button>
             {expandedSections.settings && (
-              <div className="bg-gray-800 rounded overflow-hidden max-h-80 overflow-y-auto">
+              <div className="bg-gray-800 rounded max-h-80 overflow-y-auto">
                 {allSettings.length === 0 ? (
                   <div className="p-3 text-xs text-gray-500">No settings recorded</div>
                 ) : (
-                  <table className="w-full text-xs table-fixed">
+                  <table className="text-xs table-fixed w-full">
                     <thead className="sticky top-0 bg-gray-800">
                       <tr className="border-b border-gray-700">
-                        <th className="text-left p-2 text-gray-400 w-[300px]">Setting</th>
+                        <th className={`text-left p-1.5 text-gray-400 ${labelColWidth}`}>Setting</th>
                         {entries.map((entry, idx) => (
-                          <TooltipHeader
+                          <th
                             key={idx}
-                            label={`Q${idx + 1}`}
-                            queryId={String(entry.query_id || '')}
-                            query={String(entry.query || '')}
-                            color={`text-center ${HEADER_COLORS[idx % HEADER_COLORS.length]}`}
-                          />
+                            className={`text-right p-1.5 ${HEADER_COLORS[idx % HEADER_COLORS.length]} ${queryColWidth}`}
+                          >
+                            Q{idx + 1}
+                            <div className="text-[9px] text-gray-500 truncate" title={String(entry.query_id || '')}>
+                              {String(entry.query_id || '').substring(0, 12)}...
+                            </div>
+                          </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {allSettings.map(settingName => {
-                        const { values, hasDiff } = getSettingDiff(settingName);
+                        const { values } = getSettingDiff(settingName);
 
                         return (
-                          <tr key={settingName} className={`border-b border-gray-700/50 hover:bg-gray-700/30 ${hasDiff ? 'bg-yellow-900/20' : ''}`}>
-                            <td className="p-1.5 text-blue-300 font-mono text-[10px] truncate" title={settingName}>{settingName}</td>
+                          <tr key={settingName} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                            <td className="p-1.5 text-blue-300 font-mono">{settingName}</td>
                             {values.map((value, idx) => (
-                              <td key={idx} className="p-1.5 text-center text-gray-300 font-mono text-[10px] truncate" title={value}>
+                              <td key={idx} className="p-1.5 text-right text-green-300 font-mono truncate" title={value}>
                                 {value || <span className="text-gray-500">-</span>}
                               </td>
                             ))}

@@ -330,6 +330,8 @@ app.get('/api/query-log/timeseries', async (req, res) => {
       ORDER BY time ASC
     `;
 
+    console.log('Time series query:', query.substring(0, 200) + '...', 'params:', params);
+
     const result = await client.query({
       query,
       query_params: params,
@@ -340,6 +342,8 @@ app.get('/api/query-log/timeseries', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching time series:', error);
+    console.error('Query was:', query);
+    console.error('Params were:', params);
     res.status(500).json({ error: error.message });
   }
 });
@@ -877,14 +881,14 @@ app.get('/api/table-compression/:database/:table', async (req, res) => {
 
     const query = `
       SELECT
-        name,
-        type,
+        column AS name,
+        any(type) AS type,
         sum(data_compressed_bytes) AS compressed_bytes,
         sum(data_uncompressed_bytes) AS uncompressed_bytes,
         round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) AS savings_pct
-      FROM system.columns
-      WHERE database = {database:String} AND table = {table:String}
-      GROUP BY name, type
+      FROM ${getSystemTable('parts_columns')}
+      WHERE database = {database:String} AND table = {table:String} AND active = 1
+      GROUP BY column
       ORDER BY compressed_bytes DESC
     `;
 
@@ -959,7 +963,7 @@ app.get('/api/partitions-summary', async (req, res) => {
       FROM ${getSystemTable('parts')}
       ${whereClause}
       GROUP BY database, table, partition_id, partition
-      ORDER BY ${safeSortField} ${safeSortOrder}
+      ORDER BY database ASC, table ASC, ${safeSortField} ${safeSortOrder}
       LIMIT {limit:UInt32} OFFSET {offset:UInt32}
     `;
 
@@ -1285,6 +1289,124 @@ app.get('/api/table-partitions/:database/:table', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching table partitions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get MergeTree index information for a specific table
+app.get('/api/table-mergetree-index/:database/:table', async (req, res) => {
+  try {
+    const { database, table } = req.params;
+
+    // Escape single quotes to prevent SQL injection
+    const safeDatabase = database.replace(/'/g, "''");
+    const safeTable = table.replace(/'/g, "''");
+
+    // Query mergeTreeIndex table function for granule boundaries
+    const query = `SELECT * FROM mergeTreeIndex('${safeDatabase}', '${safeTable}')`;
+
+    console.log('MergeTree index query:', query);
+
+    const result = await client.query({
+      query,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    console.log('MergeTree index result count:', data.length);
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching MergeTree index:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get table definition (SHOW CREATE TABLE)
+app.get('/api/table-definition/:database/:table', async (req, res) => {
+  try {
+    const { database, table } = req.params;
+
+    const query = `SHOW CREATE TABLE \`${database}\`.\`${table}\``;
+
+    const result = await client.query({
+      query,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    // SHOW CREATE TABLE returns a single row with 'statement' column containing the SQL
+    const definition = data[0]?.statement || '';
+    res.json({ definition });
+  } catch (error) {
+    console.error('Error fetching table definition:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get table statistics (null percent and cardinality per column)
+app.post('/api/table-stats', async (req, res) => {
+  try {
+    const { database, table } = req.body;
+
+    // First get all columns with type information
+    const columnsQuery = `
+      SELECT
+        name,
+        type,
+        type LIKE 'Nullable%' AS is_nullable,
+        type LIKE 'LowCardinality%' AS is_low_cardinality
+      FROM system.columns
+      WHERE database = {database:String} AND table = {table:String}
+      ORDER BY position
+    `;
+
+    const columnsResult = await client.query({
+      query: columnsQuery,
+      query_params: { database, table },
+      format: 'JSONEachRow',
+    });
+
+    const columns = await columnsResult.json();
+
+    // Build dynamic query to calculate null percent and cardinality for each column
+    const selectStatements = columns.map(col => {
+      const colName = col.name;
+      // Use backticks for column names that might be reserved keywords
+      const quotedCol = `\`${colName}\``;
+      return `
+        countIf(${quotedCol} IS NULL) * 100.0 / count() AS \`null_percent_${colName}\`,
+        uniq(${quotedCol}) AS \`cardinality_${colName}\`
+      `;
+    }).join(',\n');
+
+    const statsQuery = `
+      SELECT
+        ${selectStatements}
+      FROM \`${database}\`.\`${table}\`
+      LIMIT 1
+    `;
+
+    console.log('Stats query:', statsQuery);
+
+    const statsResult = await client.query({
+      query: statsQuery,
+      format: 'JSONEachRow',
+    });
+
+    const statsData = await statsResult.json();
+
+    // Transform the result into the expected format
+    const result = columns.map(col => ({
+      column: col.name,
+      null_percent: statsData[0]?.[`null_percent_${col.name}`] || 0,
+      cardinality: statsData[0]?.[`cardinality_${col.name}`] || 0,
+      is_nullable: col.is_nullable,
+      is_low_cardinality: col.is_low_cardinality,
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching table stats:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1651,15 +1773,61 @@ app.get('/api/browser/databases', async (req, res) => {
   }
 });
 
+// Get database summary with statistics
+app.get('/api/databases/summary', async (req, res) => {
+  try {
+    const query = `
+      SELECT
+        d.name AS database,
+        d.engine AS engine,
+        COUNT(DISTINCT t.name) AS table_count,
+        SUM(t.total_rows) AS total_rows,
+        SUM(t.total_bytes) AS total_bytes,
+        COUNT(DISTINCT p.partition) AS partition_count,
+        COUNT(p.name) AS part_count,
+        SUM(p.rows) AS part_rows,
+        SUM(p.bytes_on_disk) AS bytes_on_disk,
+        SUM(p.data_compressed_bytes) AS compressed_bytes,
+        SUM(p.data_uncompressed_bytes) AS uncompressed_bytes,
+        CASE
+          WHEN SUM(p.data_uncompressed_bytes) > 0
+          THEN ROUND(((SUM(p.data_uncompressed_bytes) - SUM(p.data_compressed_bytes)) / SUM(p.data_uncompressed_bytes)) * 100, 1)
+          ELSE 0
+        END AS compression_ratio,
+        MAX(t.metadata_modification_time) AS latest_modification
+      FROM ${getSystemTable('databases')} d
+      LEFT JOIN ${getSystemTable('tables')} t ON d.name = t.database
+      LEFT JOIN ${getSystemTable('parts')} p ON d.name = p.database AND t.name = p.table AND p.active = 1
+      WHERE d.name != 'information_schema'
+      GROUP BY d.name, d.engine
+      ORDER BY total_bytes DESC NULLS LAST, d.name
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching database summary:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get tables for a database
 app.get('/api/browser/tables/:database', async (req, res) => {
   try {
     const { database } = req.params;
     const query = `
-      SELECT name, engine, total_rows, total_bytes, metadata_modification_time
-      FROM system.tables
-      WHERE database = {database:String}
-      ORDER BY name
+      SELECT
+        t.name,
+        t.engine,
+        t.total_rows,
+        t.total_bytes,
+        t.metadata_modification_time,
+        COUNT(DISTINCT p.partition) AS partition_count
+      FROM system.tables t
+      LEFT JOIN system.parts p ON t.database = p.database AND t.name = p.table AND p.active = 1
+      WHERE t.database = {database:String}
+      GROUP BY t.name, t.engine, t.total_rows, t.total_bytes, t.metadata_modification_time
+      ORDER BY t.name
     `;
     const result = await client.query({
       query,
@@ -2028,6 +2196,57 @@ app.get('/api/browser/indexes/:database/:table', async (req, res) => {
   }
 });
 
+// Get data skipping indexes with formatted size (for Data Skipping tab)
+app.get('/api/data-skipping-indexes', async (req, res) => {
+  try {
+    const { filters, search } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    // Parse and apply filters
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
+        }
+      }
+    }
+
+    // Apply search
+    if (search) {
+      whereConditions.push('(database ILIKE {search:String} OR table ILIKE {search:String} OR name ILIKE {search:String})');
+      params.search = `%${search}%`;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT
+        database,
+        table,
+        name,
+        type_full,
+        formatReadableSize(data_uncompressed_bytes) AS size
+      FROM ${getSystemTable('data_skipping_indices')}
+      ${whereClause}
+      ORDER BY database, table, name
+    `;
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching data skipping indexes:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== METRICS ENDPOINTS ====================
 
 // Get system.metrics
@@ -2284,6 +2503,78 @@ app.post('/api/query', async (req, res) => {
     });
   } catch (error) {
     console.error('Error executing query:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Data Explorer endpoint
+app.post('/api/explore', async (req, res) => {
+  try {
+    const { database, table, selectedColumns = [], groupByColumns = [], limit = 1000 } = req.body;
+
+    if (!database || !table) {
+      return res.status(400).json({ error: 'Database and table are required' });
+    }
+
+    // Validate limit
+    const safeLimit = Math.min(10000, Math.max(1, parseInt(limit) || 1000));
+
+    // Build SELECT clause
+    let selectClause;
+    if (groupByColumns.length > 0) {
+      // When using GROUP BY, we need aggregations
+      const groupCols = groupByColumns.map(col => `\`${col}\``).join(', ');
+
+      // For non-grouped columns, use any() aggregation
+      const otherCols = selectedColumns
+        .filter(col => !groupByColumns.includes(col))
+        .map(col => `any(\`${col}\`) AS \`${col}\``)
+        .join(', ');
+
+      if (otherCols) {
+        selectClause = `${groupCols}, ${otherCols}`;
+      } else {
+        selectClause = groupCols;
+      }
+    } else {
+      // No GROUP BY - just select the columns
+      if (selectedColumns.length > 0) {
+        selectClause = selectedColumns.map(col => `\`${col}\``).join(', ');
+      } else {
+        selectClause = '*';
+      }
+    }
+
+    // Build the query
+    let query = `SELECT ${selectClause} FROM \`${database}\`.\`${table}\``;
+
+    if (groupByColumns.length > 0) {
+      const groupByClause = groupByColumns.map(col => `\`${col}\``).join(', ');
+      query += ` GROUP BY ${groupByClause}`;
+    }
+
+    query += ` LIMIT ${safeLimit}`;
+
+    const startTime = Date.now();
+    const result = await client.query({
+      query,
+      format: 'JSONEachRow',
+    });
+    const data = await result.json();
+    const duration = Date.now() - startTime;
+
+    // Get column names from first row or from selectedColumns
+    const columns = data.length > 0 ? Object.keys(data[0]) : selectedColumns;
+
+    res.json({
+      columns,
+      data,
+      rowCount: data.length,
+      duration,
+      query,
+    });
+  } catch (error) {
+    console.error('Error exploring table data:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -3365,6 +3656,7 @@ app.get('/api/my-queries', (req, res) => {
       const content = fs.readFileSync(filePath, 'utf-8').trim();
       const stats = queryRunStats.get(filename) || { runs: [], lastRun: null, lastDuration: null, lastRowCount: null };
 
+
       // Calculate statistics
       const runTimes = stats.runs || [];
       const avgRunTime = runTimes.length > 0
@@ -3581,6 +3873,84 @@ app.get('/api/my-queries/run-log/:filename', async (req, res) => {
     res.json({ runLog });
   } catch (error) {
     console.error('Error fetching run log:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update a query file
+app.put('/api/my-queries/update', (req, res) => {
+  try {
+    const { filename, query } = req.body;
+
+    if (!filename || !query) {
+      return res.status(400).json({ error: 'Filename and query are required' });
+    }
+
+    // Validate filename - only allow .sql files and no directory traversal
+    if (!filename.endsWith('.sql') || filename.includes('/') || filename.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    const queriesPath = getQueriesPath();
+    const filePath = path.join(queriesPath, filename);
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Query file not found' });
+    }
+
+    // Write the updated query
+    fs.writeFileSync(filePath, query.trim() + '\n', 'utf-8');
+
+    res.json({ success: true, filename });
+  } catch (error) {
+    console.error('Error updating query:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Clone a query file
+app.post('/api/my-queries/clone', (req, res) => {
+  try {
+    const { sourceFilename, newFilename, query } = req.body;
+
+    if (!sourceFilename || !newFilename || !query) {
+      return res.status(400).json({ error: 'Source filename, new filename, and query are required' });
+    }
+
+    // Validate filenames - only allow .sql files and no directory traversal
+    if (!newFilename.endsWith('.sql') || newFilename.includes('/') || newFilename.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    const queriesPath = getQueriesPath();
+    const newFilePath = path.join(queriesPath, newFilename);
+
+    // Check if new file already exists
+    if (fs.existsSync(newFilePath)) {
+      // Find a unique filename by appending a number
+      let counter = 1;
+      let uniqueFilename = newFilename;
+      let uniqueFilePath = newFilePath;
+
+      while (fs.existsSync(uniqueFilePath)) {
+        const baseName = newFilename.replace(/\.sql$/, '');
+        uniqueFilename = `${baseName}_${counter}.sql`;
+        uniqueFilePath = path.join(queriesPath, uniqueFilename);
+        counter++;
+      }
+
+      // Write the cloned query with unique filename
+      fs.writeFileSync(uniqueFilePath, query.trim() + '\n', 'utf-8');
+      return res.json({ success: true, filename: uniqueFilename });
+    }
+
+    // Write the cloned query
+    fs.writeFileSync(newFilePath, query.trim() + '\n', 'utf-8');
+
+    res.json({ success: true, filename: newFilename });
+  } catch (error) {
+    console.error('Error cloning query:', error);
     res.status(500).json({ error: error.message });
   }
 });

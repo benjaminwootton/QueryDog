@@ -2,7 +2,7 @@ import { useMemo, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent, ICellRendererParams, SelectionChangedEvent, RowClassParams } from 'ag-grid-community';
-import { Eye, Pin } from 'lucide-react';
+import { Eye, Pin, Pencil } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import type { QueryLogEntry } from '../types/queryLog';
 
@@ -72,14 +72,32 @@ export function QueryTable() {
   }, [pinnedEntries]);
 
   const ActionCellRenderer = useCallback((params: ICellRendererParams<QueryLogEntry>) => {
+    const handleEdit = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const query = params.data!.query as string;
+      const openQueryEditor = (window as unknown as { openQueryEditor?: (query: string) => void }).openQueryEditor;
+      if (openQueryEditor) {
+        openQueryEditor(query);
+      }
+    };
+
     return (
-      <button
-        onClick={() => setSelectedEntry(params.data!)}
-        className="p-1 hover:bg-gray-600 rounded"
-        title="View ProfileEvents & Settings"
-      >
-        <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
-      </button>
+      <div className="flex items-center gap-0.5">
+        <button
+          onClick={() => setSelectedEntry(params.data!)}
+          className="p-1 hover:bg-gray-600 rounded"
+          title="View ProfileEvents & Settings"
+        >
+          <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
+        </button>
+        <button
+          onClick={handleEdit}
+          className="p-1 hover:bg-gray-600 rounded"
+          title="Edit query"
+        >
+          <Pencil className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
+        </button>
+      </div>
     );
   }, [setSelectedEntry]);
 
@@ -115,7 +133,7 @@ export function QueryTable() {
       {
         headerName: '',
         field: 'query_id' as keyof QueryLogEntry,
-        width: 40,
+        width: 70,
         sortable: false,
         cellRenderer: ActionCellRenderer,
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },

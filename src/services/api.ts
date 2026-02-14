@@ -675,6 +675,27 @@ export async function fetchTablePartitions(
   return response.json();
 }
 
+export type MergeTreeIndexEntry = Record<string, unknown>;
+
+export async function fetchMergeTreeIndex(
+  database: string,
+  table: string
+): Promise<MergeTreeIndexEntry[]> {
+  const response = await fetch(`${API_BASE}/table-mergetree-index/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
+  if (!response.ok) throw new Error(`Failed to fetch MergeTree index: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchTableDefinition(
+  database: string,
+  table: string
+): Promise<string> {
+  const response = await fetch(`${API_BASE}/table-definition/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
+  if (!response.ok) throw new Error(`Failed to fetch table definition: ${response.statusText}`);
+  const data = await response.json();
+  return data.definition;
+}
+
 export interface PartitionPartEntry {
   name: string;
   rows: number;
@@ -851,6 +872,7 @@ export interface BrowserTable {
   total_rows: number;
   total_bytes: number;
   metadata_modification_time: string;
+  partition_count: number;
 }
 
 export interface BrowserPartition {
@@ -876,6 +898,28 @@ export interface BrowserPart {
   max_time: string;
   level: number;
   primary_key_bytes_in_memory: number;
+}
+
+export interface DatabaseSummary {
+  database: string;
+  engine: string;
+  table_count: number;
+  total_rows: number;
+  total_bytes: number;
+  partition_count: number;
+  part_count: number;
+  part_rows: number;
+  bytes_on_disk: number;
+  compressed_bytes: number;
+  uncompressed_bytes: number;
+  compression_ratio: number;
+  latest_modification: string;
+}
+
+export async function fetchDatabasesSummary(): Promise<DatabaseSummary[]> {
+  const response = await fetch(`${API_BASE}/databases/summary`);
+  if (!response.ok) throw new Error(`Failed to fetch databases summary: ${response.statusText}`);
+  return response.json();
 }
 
 export async function fetchBrowserDatabases(): Promise<BrowserDatabase[]> {
@@ -1045,6 +1089,32 @@ export interface BrowserIndex {
 export async function fetchBrowserIndexes(database: string, table: string): Promise<BrowserIndex[]> {
   const response = await fetch(`${API_BASE}/browser/indexes/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
   if (!response.ok) throw new Error(`Failed to fetch indexes: ${response.statusText}`);
+  return response.json();
+}
+
+// Data skipping indexes (formatted size)
+export interface DataSkippingIndex {
+  database: string;
+  table: string;
+  name: string;
+  type_full: string;
+  size: string;
+}
+
+export async function fetchDataSkippingIndexes(
+  filters: Record<string, string[]> = {},
+  search = ''
+): Promise<DataSkippingIndex[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
+  }
+  const url = params.toString() ? `${API_BASE}/data-skipping-indexes?${params}` : `${API_BASE}/data-skipping-indexes`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch data skipping indexes: ${response.statusText}`);
   return response.json();
 }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, X, Loader2, Copy, Check, ChevronDown, ChevronRight, Clock, Table as TableIcon, AlertCircle } from 'lucide-react';
+import { Play, X, Loader2, Copy, Check, ChevronDown, ChevronRight, Clock, Table as TableIcon, AlertCircle, Activity } from 'lucide-react';
 import { executeQuery, fetchExplainByType, type ExplainType, type QueryResult } from '../services/api';
 
 interface QueryEditorProps {
@@ -7,11 +7,13 @@ interface QueryEditorProps {
   onClose: () => void;
 }
 
-type ExplainTab = 'plan' | 'indexes' | 'pipeline' | 'ast' | 'syntax' | 'estimate';
+type ExplainTab = 'plan' | 'indexes' | 'actions' | 'pipeline' | 'ast' | 'syntax' | 'estimate' | 'performance';
 
 const EXPLAIN_TABS: { id: ExplainTab; label: string; description: string }[] = [
+  { id: 'performance', label: 'Performance', description: 'Query performance metrics' },
   { id: 'plan', label: 'Plan', description: 'Basic execution plan' },
   { id: 'indexes', label: 'Indexes', description: 'Plan with index usage info' },
+  { id: 'actions', label: 'Actions', description: 'Query execution actions' },
   { id: 'pipeline', label: 'Pipeline', description: 'Query execution pipeline' },
   { id: 'ast', label: 'AST', description: 'Abstract syntax tree' },
   { id: 'syntax', label: 'Syntax', description: 'Optimized query syntax' },
@@ -29,6 +31,10 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
+function formatNumber(num: number): string {
+  return num.toLocaleString();
+}
+
 export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<QueryResult | null>(null);
@@ -37,26 +43,32 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
   const [copied, setCopied] = useState(false);
 
   // Explain state
-  const [activeExplainTab, setActiveExplainTab] = useState<ExplainTab>('plan');
+  const [activeExplainTab, setActiveExplainTab] = useState<ExplainTab>('performance');
   const [explainResults, setExplainResults] = useState<Record<ExplainTab, string[] | null>>({
+    performance: null,
     plan: null,
     indexes: null,
+    actions: null,
     pipeline: null,
     ast: null,
     syntax: null,
     estimate: null,
   });
   const [explainLoading, setExplainLoading] = useState<Record<ExplainTab, boolean>>({
+    performance: false,
     plan: false,
     indexes: false,
+    actions: false,
     pipeline: false,
     ast: false,
     syntax: false,
     estimate: false,
   });
   const [explainErrors, setExplainErrors] = useState<Record<ExplainTab, string | null>>({
+    performance: null,
     plan: null,
     indexes: null,
+    actions: null,
     pipeline: null,
     ast: null,
     syntax: null,
@@ -69,9 +81,9 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
   // Auto-run explain when query changes and is valid
   useEffect(() => {
     if (initialQuery && initialQuery.trim()) {
-      // Auto-load the plan tab with a small delay to ensure state is ready
+      // Auto-load the performance tab with a small delay to ensure state is ready
       const timer = setTimeout(() => {
-        loadExplain('plan', true);
+        setActiveExplainTab('performance');
       }, 100);
       return () => clearTimeout(timer);
     }
@@ -87,16 +99,20 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
 
     // Reset explain results so they reload with the new query
     setExplainResults({
+      performance: null,
       plan: null,
       indexes: null,
+      actions: null,
       pipeline: null,
       ast: null,
       syntax: null,
       estimate: null,
     });
     setExplainErrors({
+      performance: null,
       plan: null,
       indexes: null,
+      actions: null,
       pipeline: null,
       ast: null,
       syntax: null,
@@ -117,6 +133,8 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
 
   const loadExplain = async (type: ExplainTab, forceReload = false) => {
     if (!query.trim()) return;
+    // Skip loading for performance tab - it's populated from query results
+    if (type === 'performance') return;
     if (!forceReload && (explainResults[type] !== null || explainLoading[type])) return; // Already loaded or loading
 
     setExplainLoading(prev => ({ ...prev, [type]: true }));
@@ -318,25 +336,57 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
                     </div>
                   )}
 
-                  {query.trim() && explainLoading[activeExplainTab] && (
+                  {/* Performance Tab - Show metrics from query results */}
+                  {query.trim() && activeExplainTab === 'performance' && (
+                    <div>
+                      {!results && !executing && (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500 text-sm gap-2 p-6">
+                          <Activity className="w-8 h-8 opacity-50" />
+                          <p>Run the query to see performance metrics</p>
+                        </div>
+                      )}
+                      {executing && (
+                        <div className="flex items-center justify-center h-full">
+                          <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                        </div>
+                      )}
+                      {results && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-gray-400 mb-3">Query Performance</h3>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-gray-800 p-2 rounded">
+                              <div className="text-xs text-gray-400">Duration</div>
+                              <div className="text-sm font-semibold text-white">{formatDuration(results.duration)}</div>
+                            </div>
+                            <div className="bg-gray-800 p-2 rounded">
+                              <div className="text-xs text-gray-400">Rows Returned</div>
+                              <div className="text-sm font-semibold text-white">{formatNumber(results.rowCount)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {query.trim() && activeExplainTab !== 'performance' && explainLoading[activeExplainTab] && (
                     <div className="flex items-center justify-center h-full">
                       <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
                     </div>
                   )}
 
-                  {query.trim() && explainErrors[activeExplainTab] && (
+                  {query.trim() && activeExplainTab !== 'performance' && explainErrors[activeExplainTab] && (
                     <div className="p-3 bg-red-900/30 border border-red-800 rounded text-xs text-red-300">
                       {explainErrors[activeExplainTab]}
                     </div>
                   )}
 
-                  {query.trim() && explainResults[activeExplainTab] && (
+                  {query.trim() && activeExplainTab !== 'performance' && explainResults[activeExplainTab] && (
                     <pre className="bg-gray-800 p-3 rounded text-xs text-green-300 overflow-auto whitespace-pre-wrap font-mono h-full">
                       {explainResults[activeExplainTab]?.join('\n')}
                     </pre>
                   )}
 
-                  {query.trim() && !explainLoading[activeExplainTab] && !explainErrors[activeExplainTab] && !explainResults[activeExplainTab] && (
+                  {query.trim() && activeExplainTab !== 'performance' && !explainLoading[activeExplainTab] && !explainErrors[activeExplainTab] && !explainResults[activeExplainTab] && (
                     <div className="flex items-center justify-center h-full text-gray-500 text-sm">
                       Click a tab to load analysis
                     </div>

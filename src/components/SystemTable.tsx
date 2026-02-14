@@ -76,6 +76,8 @@ interface SystemTableProps {
   showActionColumn?: boolean;
   onRowAction?: (data: Record<string, unknown>) => void;
   columnWidthOverrides?: Record<string, number>;
+  defaultSort?: Array<{ colId: string; sort: 'asc' | 'desc' }>;
+  onCellClick?: (field: string, value: unknown, data: Record<string, unknown>) => void;
 }
 
 function SystemTableInner({
@@ -90,9 +92,11 @@ function SystemTableInner({
   onColumnsChange,
   hideTitle = false,
   hideHeader = true,
+  onCellClick,
   showActionColumn = false,
   onRowAction,
   columnWidthOverrides,
+  defaultSort,
 }: SystemTableProps, ref: React.ForwardedRef<SystemTableRef>) {
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns || []);
@@ -222,9 +226,16 @@ function SystemTableInner({
         def.cellRenderer = (params: ICellRendererParams) => <ArrayCellRenderer value={params.value} />;
       }
 
-      // Table name styling - light blue
-      if (col.field === 'table') {
-        def.cellStyle = { color: '#60a5fa' };
+      // Table, database, partition styling - light blue and clickable
+      if (col.field === 'table' || col.field === 'database' || col.field === 'partition' || col.field === 'partition_id') {
+        def.cellStyle = { color: '#60a5fa', cursor: onCellClick ? 'pointer' : 'default' };
+        if (onCellClick) {
+          def.onCellClicked = (params) => {
+            if (params.data && params.value != null) {
+              onCellClick(col.field, params.value, params.data);
+            }
+          };
+        }
       }
 
       // Format bytes fields - light green
@@ -263,7 +274,7 @@ function SystemTableInner({
     });
 
     return defs;
-  }, [columns, showActionColumn, onRowAction, ActionCellRenderer, columnWidthOverrides]);
+  }, [columns, showActionColumn, onRowAction, ActionCellRenderer, columnWidthOverrides, onCellClick]);
 
   const onSortChanged = useCallback((event: SortChangedEvent) => {
     if (!onSortChange) return;
@@ -363,6 +374,11 @@ function SystemTableInner({
           tooltipShowDelay={300}
           tooltipInteraction={true}
           getRowId={getRowId ? (params) => getRowId(params.data) : undefined}
+          initialState={defaultSort ? {
+            sort: {
+              sortModel: defaultSort
+            }
+          } : undefined}
         />
       </div>
     </div>
