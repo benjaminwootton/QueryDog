@@ -125,6 +125,7 @@ export function DataSkippingIndexesTab({ filters, search }: DataSkippingIndexesT
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   const onFirstDataRendered = useCallback((event: FirstDataRenderedEvent) => {

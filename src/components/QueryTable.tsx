@@ -2,7 +2,7 @@ import { useMemo, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent, ICellRendererParams, SelectionChangedEvent, RowClassParams } from 'ag-grid-community';
-import { Eye, Pin, Pencil } from 'lucide-react';
+import { Eye, Pin } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import type { QueryLogEntry } from '../types/queryLog';
 
@@ -43,6 +43,19 @@ function formatNumber(num: number): string {
   return num.toString();
 }
 
+// Numeric comparator for AG Grid sorting - handles null values and ensures numeric sorting
+function numericComparator(valueA: unknown, valueB: unknown): number {
+  const a = valueA === null || valueA === undefined ? null : Number(valueA);
+  const b = valueB === null || valueB === undefined ? null : Number(valueB);
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;  // nulls go to bottom
+  if (b === null) return -1;
+  if (isNaN(a) && isNaN(b)) return 0;
+  if (isNaN(a)) return 1;
+  if (isNaN(b)) return -1;
+  return a - b;
+}
+
 function ArrayCellRenderer({ value }: { value: string[] }) {
   if (!value || value.length === 0) return <span className="text-gray-500">-</span>;
   if (value.length <= 2) {
@@ -56,14 +69,13 @@ function ArrayCellRenderer({ value }: { value: string[] }) {
 }
 
 export function QueryTable() {
-  const { entries, columns, setSortField, setSortOrder, setSelectedEntry, setSelectedEntries, pinnedEntries, pinEntry, unpinEntry, loading } = useQueryStore();
+  const { entries, columns, sortField, sortOrder, setSortField, setSortOrder, setSelectedEntry, setSelectedEntries, pinnedEntries, pinEntry, unpinEntry, loading } = useQueryStore();
   const gridRef = useRef<AgGridReact<QueryLogEntry>>(null);
 
-  // Combine pinned entries with regular entries, pinned at top, no duplicates
-  const combinedEntries = useMemo(() => {
+  // Keep pinned entries at the top while sorting the rest
+  const unpinnedEntries = useMemo(() => {
     const pinnedIds = new Set(pinnedEntries.map(e => `${e.query_id}-${e.event_time}`));
-    const unpinnedEntries = entries.filter(e => !pinnedIds.has(`${e.query_id}-${e.event_time}`));
-    return [...pinnedEntries, ...unpinnedEntries];
+    return entries.filter(e => !pinnedIds.has(`${e.query_id}-${e.event_time}`));
   }, [entries, pinnedEntries]);
 
   // Check if an entry is pinned
@@ -72,32 +84,14 @@ export function QueryTable() {
   }, [pinnedEntries]);
 
   const ActionCellRenderer = useCallback((params: ICellRendererParams<QueryLogEntry>) => {
-    const handleEdit = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      const query = params.data!.query as string;
-      const openQueryEditor = (window as unknown as { openQueryEditor?: (query: string) => void }).openQueryEditor;
-      if (openQueryEditor) {
-        openQueryEditor(query);
-      }
-    };
-
     return (
-      <div className="flex items-center gap-0.5">
-        <button
-          onClick={() => setSelectedEntry(params.data!)}
-          className="p-1 hover:bg-gray-600 rounded"
-          title="View ProfileEvents & Settings"
-        >
-          <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
-        </button>
-        <button
-          onClick={handleEdit}
-          className="p-1 hover:bg-gray-600 rounded"
-          title="Edit query"
-        >
-          <Pencil className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
-        </button>
-      </div>
+      <button
+        onClick={() => setSelectedEntry(params.data!)}
+        className="p-1 hover:bg-gray-600 rounded"
+        title="View details (read-only)"
+      >
+        <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
+      </button>
     );
   }, [setSelectedEntry]);
 
@@ -132,15 +126,17 @@ export function QueryTable() {
     const defs: ColDef<QueryLogEntry>[] = [
       {
         headerName: '',
-        field: 'query_id' as keyof QueryLogEntry,
-        width: 70,
+        colId: '__view',
+        field: '__view',
+        width: 40,
         sortable: false,
         cellRenderer: ActionCellRenderer,
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
       },
       {
         headerName: '',
-        field: 'event_time' as keyof QueryLogEntry,
+        colId: '__pin',
+        field: '__pin',
         width: 40,
         sortable: false,
         cellRenderer: PinCellRenderer,
@@ -213,12 +209,14 @@ export function QueryTable() {
         case 'written_bytes':
         case 'result_bytes':
           def.valueFormatter = (params) => formatBytes(Number(params.value));
+          def.comparator = numericComparator;
           def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
         case 'read_rows':
         case 'written_rows':
         case 'result_rows':
           def.valueFormatter = (params) => formatNumber(Number(params.value));
+          def.comparator = numericComparator;
           def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
         case 'query_duration_ms':
@@ -228,6 +226,7 @@ export function QueryTable() {
             if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
             return ms + 'ms';
           };
+          def.comparator = numericComparator;
           def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
       }
@@ -235,12 +234,14 @@ export function QueryTable() {
       // Format bytes for any _bytes field
       if (col.field.endsWith('_bytes') && !def.valueFormatter) {
         def.valueFormatter = (params) => formatBytes(Number(params.value));
+        def.comparator = numericComparator;
         def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
       // Format rows for any _rows field
       if (col.field.endsWith('_rows') && !def.valueFormatter) {
         def.valueFormatter = (params) => formatNumber(Number(params.value));
+        def.comparator = numericComparator;
         def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
@@ -264,6 +265,7 @@ export function QueryTable() {
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   // Row class for pinned rows
@@ -287,9 +289,18 @@ export function QueryTable() {
       <AgGridReact<QueryLogEntry>
         ref={gridRef}
         theme={darkTheme}
-        rowData={combinedEntries}
+        rowData={unpinnedEntries}
+        pinnedTopRowData={pinnedEntries}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
+        initialState={{
+          sort: {
+            sortModel: [{
+              colId: sortField,
+              sort: sortOrder === 'ASC' ? 'asc' : 'desc',
+            }],
+          },
+        }}
         onSortChanged={onSortChanged}
         onSelectionChanged={onSelectionChanged}
         rowSelection="multiple"

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Copy, Check } from 'lucide-react';
+import { X, Copy, Check, Play } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 
 function formatBytes(bytes: number): string {
@@ -64,6 +64,14 @@ export function ProfileEventsModal() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleAnalyseQuery = () => {
+    const openQueryEditor = (window as unknown as { openQueryEditor?: (query: string) => void }).openQueryEditor;
+    if (openQueryEditor) {
+      openQueryEditor(String(selectedEntry.query || ''));
+      handleClose();
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={handleClose}>
       <div
@@ -92,6 +100,14 @@ export function ProfileEventsModal() {
               >
                 {queryCopied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
                 {queryCopied ? 'Copied' : 'Copy'}
+              </button>
+              <button
+                onClick={handleAnalyseQuery}
+                className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-blue-400 hover:text-white hover:bg-blue-600 rounded transition-colors"
+                title="Open in Query Editor"
+              >
+                <Play className="w-3 h-3" />
+                Analyse
               </button>
             </div>
             <pre className="bg-gray-800 p-3 rounded text-xs text-gray-300 max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-mono">

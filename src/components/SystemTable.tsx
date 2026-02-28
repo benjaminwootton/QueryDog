@@ -41,6 +41,19 @@ function formatNumber(num: number): string {
   return num.toLocaleString();
 }
 
+// Numeric comparator for AG Grid sorting - handles null values and ensures numeric sorting
+function numericComparator(valueA: unknown, valueB: unknown): number {
+  const a = valueA === null || valueA === undefined ? null : Number(valueA);
+  const b = valueB === null || valueB === undefined ? null : Number(valueB);
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;  // nulls go to bottom
+  if (b === null) return -1;
+  if (isNaN(a) && isNaN(b)) return 0;
+  if (isNaN(a)) return 1;
+  if (isNaN(b)) return -1;
+  return a - b;
+}
+
 function ArrayCellRenderer({ value }: { value: unknown[] }) {
   if (!value || value.length === 0) return <span className="text-gray-500">-</span>;
   const strValue = value.map(v => String(v));
@@ -241,12 +254,14 @@ function SystemTableInner({
       // Format bytes fields - light green
       if (col.field.includes('bytes') || col.field.includes('size') || col.field.includes('memory')) {
         def.valueFormatter = (params) => params.value != null ? formatBytes(Number(params.value)) : '-';
+        def.comparator = numericComparator;
         def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
       // Format number fields - light green
       if (col.field.includes('rows') || col.field.includes('count') || col.field.includes('num_')) {
         def.valueFormatter = (params) => params.value != null ? formatNumber(Number(params.value)) : '-';
+        def.comparator = numericComparator;
         def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
@@ -256,6 +271,7 @@ function SystemTableInner({
           if (params.value == null || Number(params.value) < 0) return '-';
           return `${Number(params.value).toFixed(0)}%`;
         };
+        def.comparator = numericComparator;
         def.cellStyle = { textAlign: 'right', color: '#fde047' };
       }
 
@@ -299,6 +315,7 @@ function SystemTableInner({
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   return (

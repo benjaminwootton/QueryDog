@@ -125,6 +125,7 @@ export function MetricsPage() {
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   return (

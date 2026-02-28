@@ -204,6 +204,7 @@ export async function fetchColumnMetadata(): Promise<ColumnMetadata[]> {
 
 export interface GroupedQueryEntry {
   example_query: string;
+  normalized_query_hash?: string;  // Only present when normalize=true
   user: string;
   current_database: string;
   count: number;
@@ -262,6 +263,63 @@ export async function fetchGroupedQueryLog(
   const response = await fetch(`${API_BASE}/query-log/grouped?${params}`);
   if (!response.ok) {
     throw new Error(`Failed to fetch grouped query log: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+// ==================== BY TABLE STATS API ====================
+
+export interface ByTableEntry {
+  table_name: string;
+  count: number;
+  total_duration: number;
+  avg_duration: number;
+  max_duration: number;
+  min_duration: number;
+  total_memory: number;
+  avg_memory: number;
+  max_memory: number;
+  total_read_rows: number;
+  avg_read_rows: number;
+  total_read_bytes: number;
+  error_count: number;
+  error_rate: number;
+  first_seen: string;
+  last_seen: string;
+}
+
+export async function fetchByTableStats(
+  timeRange: TimeRange,
+  search: string,
+  sortField: string,
+  sortOrder: 'ASC' | 'DESC',
+  filters: Record<string, string[]>,
+  rangeFilters: Record<string, RangeFilter> = {},
+  limit = 500
+): Promise<ByTableEntry[]> {
+  const params = new URLSearchParams({
+    start: formatDateTime(timeRange.start),
+    end: formatDateTime(timeRange.end),
+    sortField,
+    sortOrder,
+    limit: limit.toString(),
+  });
+
+  if (search) {
+    params.set('search', search);
+  }
+
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+
+  if (Object.keys(rangeFilters).length > 0) {
+    params.set('rangeFilters', JSON.stringify(rangeFilters));
+  }
+
+  const response = await fetch(`${API_BASE}/query-log/by-table?${params}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch by-table stats: ${response.statusText}`);
   }
   return response.json();
 }
@@ -1318,17 +1376,28 @@ export async function fetchProfileEvents(
   filters: Record<string, string[]>,
   eventColumns: string[],
   search?: string,
-  limit = 1000
+  sortField = 'event_time',
+  sortOrder: 'ASC' | 'DESC' = 'DESC',
+  rangeFilters: Record<string, RangeFilter> = {},
+  limit = 1000,
+  offset = 0
 ): Promise<Record<string, unknown>[]> {
   const params = new URLSearchParams({
     start: formatDateTime(timeRange.start),
     end: formatDateTime(timeRange.end),
+    sortField,
+    sortOrder,
     limit: limit.toString(),
+    offset: offset.toString(),
     eventColumns: eventColumns.join(','),
   });
 
   if (Object.keys(filters).length > 0) {
     params.set('filters', JSON.stringify(filters));
+  }
+
+  if (Object.keys(rangeFilters).length > 0) {
+    params.set('rangeFilters', JSON.stringify(rangeFilters));
   }
 
   if (search) {

@@ -61,7 +61,7 @@ export function DataExplorerPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExploreResult | null>(null);
 
-  // Add CSS for styling select options (browser-specific)
+  // Add CSS for styling select dropdowns
   useEffect(() => {
     const styleId = 'data-explorer-select-styles';
     if (!document.getElementById(styleId)) {
@@ -69,16 +69,14 @@ export function DataExplorerPage() {
       style.id = styleId;
       style.textContent = `
         select.data-explorer-select option {
-          background-color: #1f2937 !important;
-          color: #ffffff !important;
-          padding: 8px !important;
+          background-color: #111827;
+          color: #d1d5db;
+          padding: 8px 12px;
         }
         select.data-explorer-select option:checked {
-          background-color: #3b82f6 !important;
-          color: #ffffff !important;
-        }
-        select.data-explorer-select option:hover {
-          background-color: #374151 !important;
+          background: linear-gradient(0deg, #3b82f6 0%, #3b82f6 100%);
+          color: white;
+          font-weight: 500;
         }
       `;
       document.head.appendChild(style);
@@ -217,9 +215,9 @@ export function DataExplorerPage() {
               <select
                 value={selectedDatabase}
                 onChange={(e) => setSelectedDatabase(e.target.value)}
-                className="data-explorer-select w-full pl-10 pr-8 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white font-medium shadow-sm appearance-none cursor-pointer
-                  hover:bg-gray-700 hover:border-blue-500
-                  focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500
+                className="data-explorer-select w-full pl-10 pr-8 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-300 font-medium shadow-sm appearance-none cursor-pointer
+                  hover:bg-gray-800 hover:border-blue-500 hover:text-white
+                  focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:text-white
                   transition-all duration-150"
                 style={{
                   backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
@@ -245,10 +243,10 @@ export function DataExplorerPage() {
                 value={selectedTable}
                 onChange={(e) => setSelectedTable(e.target.value)}
                 disabled={!selectedDatabase}
-                className="data-explorer-select w-full pl-10 pr-8 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white font-medium shadow-sm appearance-none
-                  enabled:cursor-pointer enabled:hover:bg-gray-700 enabled:hover:border-blue-500
-                  focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500
-                  disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-800/50
+                className="data-explorer-select w-full pl-10 pr-8 py-2 bg-gray-900 border border-gray-600 rounded-lg text-sm text-gray-300 font-medium shadow-sm appearance-none
+                  enabled:cursor-pointer enabled:hover:bg-gray-800 enabled:hover:border-blue-500 enabled:hover:text-white
+                  focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:text-white
+                  disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-900/50
                   transition-all duration-150"
                 style={{
                   backgroundImage: selectedDatabase ? `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")` : 'none',

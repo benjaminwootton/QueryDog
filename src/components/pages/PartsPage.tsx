@@ -36,7 +36,7 @@ type PartsTab = 'databases' | 'parts' | 'partitions' | 'grouped' | 'projections'
 const PARTS_DEFAULT_VISIBLE_FIELDS = [
   'database',
   'table',
-  'partition_id',
+  'partition',
   'name',
   'rows',
   'bytes_on_disk',
@@ -59,6 +59,19 @@ function formatNumber(num: number | null | undefined): string {
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
   if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
   return num.toLocaleString();
+}
+
+// Numeric comparator for AG Grid sorting - handles null values and ensures numeric sorting
+function numericComparator(valueA: unknown, valueB: unknown): number {
+  const a = valueA === null || valueA === undefined ? null : Number(valueA);
+  const b = valueB === null || valueB === undefined ? null : Number(valueB);
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;  // nulls go to bottom
+  if (b === null) return -1;
+  if (isNaN(a) && isNaN(b)) return 0;
+  if (isNaN(a)) return 1;
+  if (isNaN(b)) return -1;
+  return a - b;
 }
 
 export function PartsPage() {
@@ -555,6 +568,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatNumber(params.value),
+      comparator: numericComparator,
     },
     {
       headerName: 'Parts',
@@ -563,6 +577,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatNumber(params.value),
+      comparator: numericComparator,
     },
     {
       headerName: 'Total Rows',
@@ -571,6 +586,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatNumber(params.value),
+      comparator: numericComparator,
     },
     {
       headerName: 'Total Size',
@@ -579,6 +595,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatBytes(params.value),
+      comparator: numericComparator,
     },
     {
       headerName: 'Uncompressed',
@@ -587,6 +604,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatBytes(params.value),
+      comparator: numericComparator,
     },
     {
       headerName: 'Compressed',
@@ -595,12 +613,14 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatBytes(params.value),
+      comparator: numericComparator,
     },
     {
       headerName: 'Savings',
       field: 'savings_pct',
       width: 90,
       sortable: true,
+      comparator: numericComparator,
       cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' },
       cellRenderer: (params: ICellRendererParams<GroupedPartsEntry>) => {
         if (!params.data) return null;
@@ -692,6 +712,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatNumber(params.value || 0),
+      comparator: numericComparator,
     },
     {
       headerName: 'Partitions',
@@ -700,6 +721,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatNumber(params.value || 0),
+      comparator: numericComparator,
     },
     {
       headerName: 'Parts',
@@ -708,6 +730,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatNumber(params.value || 0),
+      comparator: numericComparator,
     },
     {
       headerName: 'Total Rows',
@@ -716,6 +739,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatNumber(params.value || 0),
+      comparator: numericComparator,
     },
     {
       headerName: 'Size on Disk',
@@ -724,6 +748,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatBytes(params.value || 0),
+      comparator: numericComparator,
     },
     {
       headerName: 'Uncompressed',
@@ -732,6 +757,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatBytes(params.value || 0),
+      comparator: numericComparator,
     },
     {
       headerName: 'Compressed',
@@ -740,6 +766,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#86efac' },
       valueFormatter: (params) => formatBytes(params.value || 0),
+      comparator: numericComparator,
     },
     {
       headerName: 'Compression',
@@ -748,6 +775,7 @@ export function PartsPage() {
       sortable: true,
       cellStyle: { textAlign: 'right', color: '#fcd34d' },
       valueFormatter: (params) => params.value != null && params.value >= 0 ? `${params.value.toFixed(0)}%` : '-',
+      comparator: numericComparator,
     },
     {
       headerName: 'Last Modified',
@@ -773,6 +801,7 @@ export function PartsPage() {
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   // Auto-size columns on first data render
@@ -1087,22 +1116,23 @@ export function PartsPage() {
                 } else {
                   setPartsFilters(prev => ({ ...prev, database: [String(data.database)], table: [strValue] }));
                 }
-              } else if (field === 'partition_id') {
+              } else if (field === 'partition_id' || field === 'partition') {
+                const partitionIdValue = data.partition_id != null ? String(data.partition_id) : strValue;
                 const currentPartition = partsFilters.partition_id?.[0];
-                if (currentPartition === strValue) {
+                if (currentPartition === partitionIdValue) {
                   setPartsFilters(prev => {
                     const { partition_id, ...rest } = prev;
                     return rest;
                   });
                 } else {
-                  setPartsFilters(prev => ({ ...prev, database: [String(data.database)], table: [String(data.table)], partition_id: [strValue] }));
+                  setPartsFilters(prev => ({ ...prev, database: [String(data.database)], table: [String(data.table)], partition_id: [partitionIdValue] }));
                 }
               }
             }}
             defaultSort={[
               { colId: 'database', sort: 'asc' },
               { colId: 'table', sort: 'asc' },
-              { colId: 'partition_id', sort: 'asc' },
+              { colId: 'partition', sort: 'asc' },
               { colId: 'name', sort: 'asc' }
             ]}
           />
@@ -1141,14 +1171,15 @@ export function PartsPage() {
                   setPartsFilters(prev => ({ ...prev, database: [String(data.database)], table: [strValue] }));
                 }
               } else if (field === 'partition' || field === 'partition_id') {
+                const partitionIdValue = data.partition_id != null ? String(data.partition_id) : strValue;
                 const currentPartition = partsFilters.partition_id?.[0];
-                if (currentPartition === strValue) {
+                if (currentPartition === partitionIdValue) {
                   setPartsFilters(prev => {
                     const { partition_id, ...rest } = prev;
                     return rest;
                   });
                 } else {
-                  setPartsFilters(prev => ({ ...prev, database: [String(data.database)], table: [String(data.table)], partition_id: [strValue] }));
+                  setPartsFilters(prev => ({ ...prev, database: [String(data.database)], table: [String(data.table)], partition_id: [partitionIdValue] }));
                 }
               }
             }}
@@ -1196,7 +1227,7 @@ export function PartsPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex-1 overflow-auto flex flex-col">
               {partitionDetailsLoading ? (
                 <div className="flex items-center justify-center h-32 text-gray-400">Loading...</div>
               ) : partitionDetails.length === 0 ? (
@@ -1298,17 +1329,17 @@ export function PartsPage() {
                   </div>
 
                   {/* Tab Content */}
-                  <div className="flex-1 overflow-auto p-3">
+                  <div className="flex-1 overflow-auto p-3 flex flex-col">
                     {/* Definition Section */}
                     {tableDetailsTab === 'definition' && (
-                      <div>
+                      <div className="flex flex-col flex-1">
                     <h3 className="text-xs font-semibold text-gray-300 mb-2">Table Definition</h3>
                     {definitionLoading ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">Loading definition...</div>
                     ) : !tableDefinition ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">No definition found</div>
                     ) : (
-                      <div className="bg-gray-800 rounded p-3 max-h-[650px] overflow-y-auto">
+                      <div className="bg-gray-800 rounded p-3 flex-1 overflow-y-auto">
                         <pre className="text-xs font-mono text-gray-300 whitespace-pre-wrap">{tableDefinition}</pre>
                       </div>
                     )}
@@ -1317,9 +1348,9 @@ export function PartsPage() {
 
                     {/* Partitions Section */}
                     {tableDetailsTab === 'partitions' && (
-                      <div>
+                      <div className="flex flex-col flex-1">
                     <h3 className="text-xs font-semibold text-gray-300 mb-2">Partitions ({partitionDetails.length})</h3>
-                    <div className="bg-gray-800 rounded max-h-[650px] overflow-y-auto">
+                    <div className="bg-gray-800 rounded flex-1 overflow-y-auto">
                       <table className="w-full text-xs">
                         <thead className="sticky top-0 bg-gray-800">
                           <tr className="border-b border-gray-700">
@@ -1369,14 +1400,14 @@ export function PartsPage() {
 
                     {/* Sample Data Section */}
                     {tableDetailsTab === 'sample' && (
-                      <div>
+                      <div className="flex flex-col flex-1">
                     <h3 className="text-xs font-semibold text-gray-300 mb-2">Sample Data ({sampleData.length} rows)</h3>
                     {sampleDataLoading ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">Loading sample data...</div>
                     ) : sampleData.length === 0 ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">No data available</div>
                     ) : (
-                      <div className="bg-gray-800 rounded max-h-[650px] overflow-auto">
+                      <div className="bg-gray-800 rounded flex-1 overflow-auto">
                         <table className="w-full text-xs">
                           <thead className="sticky top-0 bg-gray-800">
                             <tr className="border-b border-gray-700">
@@ -1408,14 +1439,14 @@ export function PartsPage() {
 
                     {/* MergeTree Index Granules Section */}
                     {tableDetailsTab === 'index' && (
-                      <div>
-                    <h3 className="text-xs font-semibold text-gray-300 mb-2">MergeTree Index Granules ({mergeTreeIndexData.length})</h3>
+                      <div className="flex flex-col flex-1">
+                    <h3 className="text-xs font-semibold text-gray-300 mb-2">MergeTree Index Granules ({mergeTreeIndexData.length}) <span className="text-gray-500 font-normal">(limit 5)</span></h3>
                     {mergeTreeIndexLoading ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">Loading index granules...</div>
                     ) : mergeTreeIndexData.length === 0 ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">No index data available</div>
                     ) : (
-                      <div className="bg-gray-800 rounded max-h-[650px] overflow-auto">
+                      <div className="bg-gray-800 rounded flex-1 overflow-auto">
                         <table className="w-full text-xs">
                           <thead className="sticky top-0 bg-gray-800">
                             <tr className="border-b border-gray-700">
@@ -1450,18 +1481,19 @@ export function PartsPage() {
 
                     {/* Compression Section */}
                     {tableDetailsTab === 'compression' && (
-                      <div>
+                      <div className="flex flex-col flex-1">
                     <h3 className="text-xs font-semibold text-gray-300 mb-2">Column Compression ({compressionData.length} columns)</h3>
                     {compressionLoading ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">Loading compression data...</div>
                     ) : compressionData.length === 0 ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">No compression data available</div>
                     ) : (
-                      <div className="bg-gray-800 rounded max-h-[650px] overflow-auto">
+                      <div className="bg-gray-800 rounded flex-1 overflow-auto">
                         <table className="w-full text-xs">
                           <thead className="sticky top-0 bg-gray-800">
                             <tr className="border-b border-gray-700">
                               <th className="text-left p-1.5 text-gray-400 w-[200px]">Column</th>
+                              <th className="text-left p-1.5 text-gray-400 w-[160px]">Type</th>
                               <th className="text-right p-1.5 text-gray-400 w-[120px]">Compressed</th>
                               <th className="text-right p-1.5 text-gray-400 w-[120px]">Uncompressed</th>
                               <th className="text-right p-1.5 text-gray-400 w-[100px]">Ratio</th>
@@ -1479,6 +1511,7 @@ export function PartsPage() {
                               return (
                                 <tr key={idx} className="border-b border-gray-700/50 hover:bg-gray-700/30">
                                   <td className="p-1.5 text-blue-300 font-mono">{col.name}</td>
+                                  <td className="p-1.5 text-gray-400 font-mono">{col.type || '-'}</td>
                                   <td className="p-1.5 text-right text-green-400 font-mono">{formatBytes(col.compressed_bytes)}</td>
                                   <td className="p-1.5 text-right text-gray-300 font-mono">{formatBytes(col.uncompressed_bytes)}</td>
                                   <td className="p-1.5 text-right text-cyan-400 font-mono">{ratio.toFixed(2)}x</td>
@@ -1495,7 +1528,7 @@ export function PartsPage() {
 
                     {/* Stats Section */}
                     {tableDetailsTab === 'stats' && (
-                      <div>
+                      <div className="flex flex-col flex-1">
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="text-xs font-semibold text-gray-300">Column Statistics</h3>
                       <button
@@ -1531,7 +1564,7 @@ export function PartsPage() {
                     ) : statsData.length === 0 ? (
                       <div></div>
                     ) : (
-                      <div className="bg-gray-800 rounded max-h-[650px] overflow-auto">
+                      <div className="bg-gray-800 rounded flex-1 overflow-auto">
                         <table className="w-full text-xs">
                           <thead className="sticky top-0 bg-gray-800">
                             <tr className="border-b border-gray-700">

@@ -40,6 +40,19 @@ function formatNumber(num: number): string {
   return num.toString();
 }
 
+// Numeric comparator for AG Grid sorting - handles null values and ensures numeric sorting
+function numericComparator(valueA: unknown, valueB: unknown): number {
+  const a = valueA === null || valueA === undefined ? null : Number(valueA);
+  const b = valueB === null || valueB === undefined ? null : Number(valueB);
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;  // nulls go to bottom
+  if (b === null) return -1;
+  if (isNaN(a) && isNaN(b)) return 0;
+  if (isNaN(a)) return 1;
+  if (isNaN(b)) return -1;
+  return a - b;
+}
+
 function ArrayCellRenderer({ value }: { value: string[] }) {
   if (!value || value.length === 0) return <span className="text-gray-500">-</span>;
   if (value.length <= 2) {
@@ -98,11 +111,13 @@ export function PartLogTable() {
         case 'bytes_on_disk':
         case 'peak_memory_usage':
           def.valueFormatter = (params) => formatBytes(params.value as number);
+          def.comparator = numericComparator;
           def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
         case 'rows':
         case 'rows_where_condition':
           def.valueFormatter = (params) => formatNumber(params.value as number);
+          def.comparator = numericComparator;
           def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
         case 'duration_ms':
@@ -111,6 +126,7 @@ export function PartLogTable() {
             if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
             return ms + 'ms';
           };
+          def.comparator = numericComparator;
           def.cellStyle = { textAlign: 'right', color: '#86efac' };
           break;
       }
@@ -118,6 +134,7 @@ export function PartLogTable() {
       // Format bytes for any _bytes field
       if (col.field.endsWith('_bytes') && !def.valueFormatter) {
         def.valueFormatter = (params) => formatBytes(params.value as number);
+        def.comparator = numericComparator;
         def.cellStyle = { textAlign: 'right', color: '#86efac' };
       }
 
@@ -141,6 +158,7 @@ export function PartLogTable() {
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   return (

@@ -171,6 +171,7 @@ export function IndexesTab({ filters, search }: IndexesTabProps) {
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   const onFirstDataRendered = useCallback((event: FirstDataRenderedEvent) => {

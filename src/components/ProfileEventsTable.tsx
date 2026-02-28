@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
-import type { ColDef, RowClassParams } from 'ag-grid-community';
-import { X } from 'lucide-react';
+import type { ColDef, RowClassParams, SortChangedEvent, ICellRendererParams } from 'ag-grid-community';
+import { Eye, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useQueryStore } from '../stores/queryStore';
 import { fetchProfileEvents } from '../services/api';
+import type { QueryLogEntry } from '../types/queryLog';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -84,6 +85,46 @@ const ALL_PROFILE_EVENTS = [
   'InitialQuery',
   'ConcurrencyControlSlotsGranted',
   'ConcurrencyControlSlotsAcquiredNonCompeting',
+  'CompressedReadBufferBlocks',
+  'CompressedReadBufferBytes',
+  'CreatedReadBufferOrdinary',
+  'DiskReadElapsedMicroseconds',
+  'FilteringMarksWithPrimaryKeyMicroseconds',
+  'FilteringMarksWithSecondaryKeysMicroseconds',
+  'IndexBinarySearchAlgorithm',
+  'LoadedMarksCount',
+  'LoadedMarksFiles',
+  'LoadedMarksMemoryBytes',
+  'MarkCacheHits',
+  'MarkCacheMisses',
+  'OpenedFileCacheMicroseconds',
+  'OpenedFileCacheMisses',
+  'OSReadBytes',
+  'QueriesWithSubqueries',
+  'QueryConditionCacheMisses',
+  'QueryProfilerRuns',
+  'ReadBufferFromFileDescriptorReadBytes',
+  'ReadCompressedBytes',
+  'RowsReadByMainReader',
+  'RowsReadByPrewhereReaders',
+  'SelectQuery',
+  'SelectQueriesWithPrimaryKeyUsage',
+  'SelectQueriesWithSubqueries',
+  'SelectedMarks',
+  'SelectedMarksTotal',
+  'SelectedParts',
+  'SelectedPartsTotal',
+  'SelectedRanges',
+  'SynchronousReadWaitMicroseconds',
+  'ThreadPoolReaderPageCacheHit',
+  'ThreadPoolReaderPageCacheHitBytes',
+  'ThreadPoolReaderPageCacheHitElapsedMicroseconds',
+  'ThreadPoolReaderPageCacheMiss',
+  'ThreadPoolReaderPageCacheMissBytes',
+  'ThreadPoolReaderPageCacheMissElapsedMicroseconds',
+  'UncompressedCacheMisses',
+  'UncompressedCacheWeightLost',
+  'WaitMarksLoadMicroseconds',
 ];
 
 // Most important profile events to show by default
@@ -150,9 +191,62 @@ function formatChartValue(value: number, columnName: string): string {
   return formatValue(value, columnName);
 }
 
+function formatQueryForTooltip(query: string): string {
+  if (!query) return '';
+  return query
+    .replace(/\s+/g, ' ')
+    .replace(/(SELECT|FROM|WHERE|AND|OR|JOIN|LEFT|RIGHT|INNER|OUTER|GROUP BY|ORDER BY|LIMIT|HAVING|UNION|INSERT|UPDATE|DELETE|SET|INTO|VALUES)/gi, '\n$1')
+    .trim();
+}
+
+function formatEventTime(value: string): string {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const pad2 = (num: number) => String(num).padStart(2, '0');
+  const pad3 = (num: number) => String(num).padStart(3, '0');
+
+  const month = months[date.getMonth()];
+  const day = date.getDate();
+  const hours = pad2(date.getHours());
+  const minutes = pad2(date.getMinutes());
+  const seconds = pad2(date.getSeconds());
+  const millis = pad3(date.getMilliseconds());
+
+  return `${month} ${day} ${hours}:${minutes}:${seconds}.${millis}`;
+}
+
+function toNumberOrUndefined(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  const num = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(num) ? num : undefined;
+}
+
+function normalizeProfileEventRow(row: Record<string, unknown>): ProfileEventRow {
+  const normalized: ProfileEventRow = {
+    event_time: String(row.event_time ?? ''),
+    query_id: String(row.query_id ?? ''),
+    query_text: row.query_text ? String(row.query_text) : '',
+    query_duration_ms: toNumberOrUndefined(row.query_duration_ms),
+  };
+
+  ALL_PROFILE_EVENTS.forEach((eventName) => {
+    const value = toNumberOrUndefined(row[eventName]);
+    if (value !== undefined) {
+      normalized[eventName] = value;
+    }
+  });
+
+  return normalized;
+}
+
 interface ProfileEventRow {
   event_time: string;
   query_id: string;
+  query_text?: string;
+  query_duration_ms?: number;
   [key: string]: string | number;
 }
 
@@ -170,7 +264,7 @@ export interface ProfileEventsTableRef {
 }
 
 export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(function ProfileEventsTable(_props, ref) {
-  const { timeRange, fieldFilters, search, pinnedEntries } = useQueryStore();
+  const { timeRange, fieldFilters, rangeFilters, search, pinnedEntries, sortField, sortOrder, pageSize, currentPage, setSortField, setSortOrder, setSelectedEntry } = useQueryStore();
   const [apiData, setApiData] = useState<ProfileEventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleEvents, setVisibleEvents] = useState<Set<string>>(new Set(DEFAULT_VISIBLE_EVENTS));
@@ -183,22 +277,30 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
       const row: ProfileEventRow = {
         event_time: String(entry.event_time),
         query_id: String(entry.query_id),
+        query_text: String(entry.query || ''),
+        query_duration_ms: toNumberOrUndefined(entry.query_duration_ms),
       };
       // Add ProfileEvents data
       const profileEvents = (entry.ProfileEvents || {}) as Record<string, number>;
       Object.entries(profileEvents).forEach(([key, value]) => {
-        row[key] = value;
+        const numericValue = toNumberOrUndefined(value);
+        if (numericValue !== undefined) {
+          row[key] = numericValue;
+        }
       });
       return row;
     });
   }, [pinnedEntries]);
 
-  // Combine pinned data with API data, pinned at top, no duplicates
-  const data = useMemo(() => {
+  // Split pinned data from API data, avoiding duplicates
+  const unpinnedData = useMemo(() => {
     const pinnedIds = new Set(pinnedData.map(p => p.query_id));
-    const unpinnedApiData = apiData.filter(row => !pinnedIds.has(row.query_id));
-    return [...pinnedData, ...unpinnedApiData];
+    return apiData.filter(row => !pinnedIds.has(row.query_id));
   }, [pinnedData, apiData]);
+
+  const combinedData = useMemo(() => {
+    return [...pinnedData, ...unpinnedData];
+  }, [pinnedData, unpinnedData]);
 
   const toggleEventVisibility = useCallback((eventName: string) => {
     setVisibleEvents(prev => {
@@ -225,23 +327,85 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      const offset = currentPage * pageSize;
       // Always fetch all columns so we have data for charting
-      const result = await fetchProfileEvents(timeRange, fieldFilters, ALL_PROFILE_EVENTS, search);
-      setApiData(result as ProfileEventRow[]);
+      const result = await fetchProfileEvents(
+        timeRange,
+        fieldFilters,
+        ALL_PROFILE_EVENTS,
+        search,
+        sortField,
+        sortOrder,
+        rangeFilters,
+        pageSize,
+        offset
+      );
+      const normalized = (result as Record<string, unknown>[]).map(normalizeProfileEventRow);
+      setApiData(normalized);
     } catch (err) {
       console.error('Failed to load profile events:', err);
     } finally {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange.start.getTime(), timeRange.end.getTime(), fieldFilters, search]);
+  }, [
+    timeRange.start.getTime(),
+    timeRange.end.getTime(),
+    fieldFilters,
+    rangeFilters,
+    search,
+    sortField,
+    sortOrder,
+    pageSize,
+    currentPage,
+  ]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  const ActionCellRenderer = useCallback((params: ICellRendererParams<ProfileEventRow>) => {
+    const row = params.data;
+    if (!row) return null;
+
+    const profileEvents: Record<string, number> = {};
+    ALL_PROFILE_EVENTS.forEach((eventName) => {
+      const value = toNumberOrUndefined(row[eventName]);
+      if (value !== undefined) {
+        profileEvents[eventName] = value;
+      }
+    });
+
+    const entry: QueryLogEntry = {
+      event_time: row.event_time,
+      query_id: row.query_id,
+      query: row.query_text,
+      query_duration_ms: row.query_duration_ms,
+      ProfileEvents: profileEvents,
+    };
+
+    return (
+      <button
+        onClick={() => setSelectedEntry(entry)}
+        className="p-1 hover:bg-gray-600 rounded"
+        title="View details (read-only)"
+      >
+        <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
+      </button>
+    );
+  }, [setSelectedEntry]);
+
   const columnDefs = useMemo((): ColDef[] => {
     const cols: ColDef[] = [
+      {
+        headerName: '',
+        field: 'query_id',
+        width: 40,
+        sortable: false,
+        pinned: 'left',
+        cellRenderer: ActionCellRenderer,
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
+      },
       {
         headerName: 'Event Time',
         field: 'event_time',
@@ -250,24 +414,39 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
         pinned: 'left',
         cellStyle: { color: '#fca5a5' },
         valueFormatter: (params) => {
-          if (!params.value) return '-';
-          const date = new Date(params.value);
-          return date.toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-          });
+          return formatEventTime(String(params.value || ''));
         },
       },
       {
-        headerName: 'Query ID',
-        field: 'query_id',
-        width: 280,
+        headerName: 'Duration',
+        field: 'query_duration_ms',
+        width: 90,
         sortable: true,
-        pinned: 'left',
+        cellStyle: { textAlign: 'right', color: '#86efac' },
+        valueFormatter: (params) => {
+          const ms = Number(params.value);
+          if (isNaN(ms)) return '-';
+          if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
+          return ms + 'ms';
+        },
+      },
+      {
+        headerName: 'Query',
+        field: 'query_text',
+        width: 420,
+        sortable: true,
         cellStyle: { color: '#93c5fd' },
+        valueFormatter: (params) => {
+          const q = (params.value as string) || (params.data?.query_id as string) || '';
+          return q.length > 80 ? q.substring(0, 80) + '...' : q;
+        },
+        tooltipValueGetter: (params) => {
+          const q = (params.value as string) || (params.data?.query_id as string) || '';
+          if (!q) return '';
+          const formatted = formatQueryForTooltip(q);
+          const maxLen = 1000;
+          return formatted.length > maxLen ? formatted.substring(0, maxLen) + '\n...(truncated)' : formatted;
+        },
       },
     ];
 
@@ -285,11 +464,12 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
     });
 
     return cols;
-  }, [visibleEvents]);
+  }, [visibleEvents, ActionCellRenderer]);
 
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   // Check if a row is from pinned entries
@@ -302,9 +482,20 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
     return '';
   }, [pinnedQueryIds]);
 
+  const onSortChanged = useCallback(
+    (event: SortChangedEvent) => {
+      const sortModel = event.api.getColumnState().find((col) => col.sort);
+      if (sortModel) {
+        setSortField(sortModel.colId);
+        setSortOrder(sortModel.sort === 'asc' ? 'ASC' : 'DESC');
+      }
+    },
+    [setSortField, setSortOrder]
+  );
+
   // Prepare chart data - sorted by time
   const chartData = useMemo(() => {
-    return [...data].sort((a, b) =>
+    return [...combinedData].sort((a, b) =>
       new Date(a.event_time).getTime() - new Date(b.event_time).getTime()
     ).map(row => ({
       ...row,
@@ -316,7 +507,7 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
         hour12: false,
       }),
     }));
-  }, [data]);
+  }, [combinedData]);
 
   const visibleEventsList = useMemo(() =>
     ALL_PROFILE_EVENTS.filter(e => visibleEvents.has(e)),
@@ -336,9 +527,19 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
       <div className="flex-1">
         <AgGridReact
           theme={darkTheme}
-          rowData={data}
+          rowData={unpinnedData}
+          pinnedTopRowData={pinnedData}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}
+          initialState={{
+            sort: {
+              sortModel: [{
+                colId: sortField,
+                sort: sortOrder === 'ASC' ? 'asc' : 'desc',
+              }],
+            },
+          }}
+          onSortChanged={onSortChanged}
           loading={loading}
           getRowClass={getRowClass}
           animateRows={false}

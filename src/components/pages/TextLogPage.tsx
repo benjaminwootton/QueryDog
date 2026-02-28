@@ -202,6 +202,7 @@ export function TextLogPage() {
 
   const defaultColDef = useMemo(() => ({
     resizable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   const onSortChanged = useCallback((event: SortChangedEvent) => {

@@ -152,6 +152,7 @@ export function ProjectionsTab({ filters, search }: ProjectionsTabProps) {
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   const onFirstDataRendered = useCallback((event: FirstDataRenderedEvent) => {

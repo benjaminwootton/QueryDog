@@ -106,6 +106,13 @@ const ARRAY_FIELDS = [
 function buildFilterCondition(field, values, params, paramIndex) {
   const paramName = `filter_${paramIndex}`;
 
+  // Special case: primary_table filters by the first element of tables array
+  // This is useful for finding queries WHERE a table is the primary target (e.g., INSERT INTO target)
+  if (field === 'primary_table') {
+    params[paramName] = values;
+    return `tables[1] IN {${paramName}:Array(String)}`;
+  }
+
   if (ARRAY_FIELDS.includes(field)) {
     // For array fields, use hasAny to check if array contains any of the values
     params[paramName] = values;
@@ -136,6 +143,33 @@ function buildRangeFilterConditions(rangeFilters, whereConditions, params) {
   }
 }
 
+function applyQueryLogSearch(search, whereConditions, params) {
+  if (!search) return;
+  const searchText = String(search);
+  // If search looks like a query_id (UUID-like hex string), only search query_id
+  const isQueryIdSearch = /^[0-9a-f-]+$/i.test(searchText) && searchText.length >= 8;
+  if (isQueryIdSearch) {
+    whereConditions.push('query_id ILIKE {search:String}');
+    params.search = `${searchText}%`;
+    return;
+  }
+
+  const normalizedSearch = searchText.replace(/[`"]/g, '');
+  if (normalizedSearch !== searchText) {
+    whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String} OR replaceAll(query, \'`\', \'\') ILIKE {search_normalized:String})');
+    params.search = `%${searchText}%`;
+    params.search_normalized = `%${normalizedSearch}%`;
+  } else {
+    whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
+    params.search = `%${searchText}%`;
+  }
+
+  // Exclude internal query-log queries unless the user explicitly searches for query_log
+  if (!/query_log/i.test(searchText)) {
+    whereConditions.push("query NOT ILIKE '%system.query_log%'");
+  }
+}
+
 // Get effective end time - if start and end are the same, extend end to include the full minute
 function getEffectiveEndTime(start, end) {
   if (!start || !end || start !== end) return end;
@@ -161,17 +195,7 @@ app.get('/api/query-log', async (req, res) => {
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
-    if (search) {
-      // If search looks like a query_id (UUID-like hex string), only search query_id
-      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
-      if (isQueryIdSearch) {
-        whereConditions.push('query_id ILIKE {search:String}');
-        params.search = `${search}%`;
-      } else {
-        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-        params.search = `%${search}%`;
-      }
-    }
+    applyQueryLogSearch(search, whereConditions, params);
 
     // Parse and apply field filters with array support
     if (filters) {
@@ -261,17 +285,7 @@ app.get('/api/query-log/timeseries', async (req, res) => {
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
-    if (search) {
-      // If search looks like a query_id (UUID-like hex string), only search query_id
-      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
-      if (isQueryIdSearch) {
-        whereConditions.push('query_id ILIKE {search:String}');
-        params.search = `${search}%`;
-      } else {
-        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-        params.search = `%${search}%`;
-      }
-    }
+    applyQueryLogSearch(search, whereConditions, params);
 
     if (filters) {
       const parsedFilters = JSON.parse(filters);
@@ -364,17 +378,7 @@ app.get('/api/query-log/timeseries-stacked', async (req, res) => {
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
-    if (search) {
-      // If search looks like a query_id (UUID-like hex string), only search query_id
-      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
-      if (isQueryIdSearch) {
-        whereConditions.push('query_id ILIKE {search:String}');
-        params.search = `${search}%`;
-      } else {
-        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-        params.search = `%${search}%`;
-      }
-    }
+    applyQueryLogSearch(search, whereConditions, params);
 
     if (filters) {
       const parsedFilters = JSON.parse(filters);
@@ -433,10 +437,10 @@ app.get('/api/query-log/timeseries-stacked', async (req, res) => {
 // Get profile events from query_log
 app.get('/api/query-log/profile-events', async (req, res) => {
   try {
-    const { start, end, limit = 1000, filters, eventColumns, search } = req.query;
+    const { start, end, limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters, rangeFilters, eventColumns, search } = req.query;
 
     let whereConditions = [];
-    const params = { limit: parseInt(limit) };
+    const params = {};
 
     if (start) {
       whereConditions.push('event_time >= {start:DateTime}');
@@ -446,17 +450,7 @@ app.get('/api/query-log/profile-events', async (req, res) => {
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
-    if (search) {
-      // If search looks like a query_id (UUID-like hex string), only search query_id
-      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
-      if (isQueryIdSearch) {
-        whereConditions.push('query_id ILIKE {search:String}');
-        params.search = `${search}%`;
-      } else {
-        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-        params.search = `%${search}%`;
-      }
-    }
+    applyQueryLogSearch(search, whereConditions, params);
 
     // Apply field filters
     if (filters) {
@@ -464,14 +458,19 @@ app.get('/api/query-log/profile-events', async (req, res) => {
       let paramIndex = 0;
       for (const [field, values] of Object.entries(parsedFilters)) {
         if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
         }
       }
     }
 
+    // Apply range filters
+    buildRangeFilterConditions(rangeFilters, whereConditions, params);
+
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Allow sorting by most columns (alphanumeric only for safety)
+    const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField) ? sortField : 'event_time';
+    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
 
     // Parse the event columns to extract from ProfileEvents map
     const eventColumnsList = eventColumns ? eventColumns.split(',') : [];
@@ -485,12 +484,18 @@ app.get('/api/query-log/profile-events', async (req, res) => {
       SELECT
         event_time,
         query_id,
+        query as query_text,
+        query_duration_ms,
         ${eventSelects}
       FROM ${getSystemTable('query_log')}
       ${whereClause}
-      ORDER BY event_time DESC
+      ORDER BY ${safeSortField} ${safeSortOrder}
       LIMIT {limit:UInt32}
+      OFFSET {offset:UInt32}
     `;
+
+    params.limit = parseInt(limit);
+    params.offset = parseInt(offset);
 
     const result = await client.query({
       query,
@@ -528,17 +533,7 @@ app.get('/api/query-log/histogram/:field', async (req, res) => {
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
-    if (search) {
-      // If search looks like a query_id (UUID-like hex string), only search query_id
-      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
-      if (isQueryIdSearch) {
-        whereConditions.push('query_id ILIKE {search:String}');
-        params.search = `${search}%`;
-      } else {
-        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-        params.search = `%${search}%`;
-      }
-    }
+    applyQueryLogSearch(search, whereConditions, params);
 
     if (filters) {
       const parsedFilters = JSON.parse(filters);
@@ -881,14 +876,14 @@ app.get('/api/table-compression/:database/:table', async (req, res) => {
 
     const query = `
       SELECT
-        column AS name,
-        any(type) AS type,
+        name,
+        type,
         sum(data_compressed_bytes) AS compressed_bytes,
         sum(data_uncompressed_bytes) AS uncompressed_bytes,
         round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) AS savings_pct
-      FROM ${getSystemTable('parts_columns')}
-      WHERE database = {database:String} AND table = {table:String} AND active = 1
-      GROUP BY column
+      FROM ${getSystemTable('columns')}
+      WHERE database = {database:String} AND table = {table:String}
+      GROUP BY name, type
       ORDER BY compressed_bytes DESC
     `;
 
@@ -1302,8 +1297,8 @@ app.get('/api/table-mergetree-index/:database/:table', async (req, res) => {
     const safeDatabase = database.replace(/'/g, "''");
     const safeTable = table.replace(/'/g, "''");
 
-    // Query mergeTreeIndex table function for granule boundaries
-    const query = `SELECT * FROM mergeTreeIndex('${safeDatabase}', '${safeTable}')`;
+    // Query mergeTreeIndex table function for granule boundaries (limit 5 for performance)
+    const query = `SELECT * FROM mergeTreeIndex('${safeDatabase}', '${safeTable}') LIMIT 5`;
 
     console.log('MergeTree index query:', query);
 
@@ -3491,10 +3486,7 @@ app.get('/api/query-log/grouped', async (req, res) => {
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
-    if (search) {
-      whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-      params.search = `%${search}%`;
-    }
+    applyQueryLogSearch(search, whereConditions, params);
 
     // Parse and apply field filters
     if (filters) {
@@ -3566,6 +3558,90 @@ app.get('/api/query-log/grouped', async (req, res) => {
   }
 });
 
+// Get query statistics grouped by table
+app.get('/api/query-log/by-table', async (req, res) => {
+  try {
+    const { start, end, search, limit = 500, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    if (start) {
+      whereConditions.push('event_time >= {start:DateTime}');
+      params.start = start;
+    }
+    if (end) {
+      whereConditions.push('event_time <= {end:DateTime}');
+      params.end = getEffectiveEndTime(start, end);
+    }
+    applyQueryLogSearch(search, whereConditions, params);
+
+    // Parse and apply field filters
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
+        }
+      }
+    }
+
+    // Apply range filters
+    buildRangeFilterConditions(rangeFilters, whereConditions, params);
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Define valid sort fields for by-table view
+    const validSortFields = ['count', 'total_duration', 'avg_duration', 'max_duration', 'min_duration',
+      'total_memory', 'avg_memory', 'max_memory', 'total_read_rows', 'avg_read_rows',
+      'total_read_bytes', 'first_seen', 'last_seen', 'error_count', 'error_rate'];
+    const safeSortField = validSortFields.includes(sortField) ? sortField : 'count';
+    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+    // Use arrayJoin to expand the tables array and group by each table
+    const query = `
+      SELECT
+        arrayJoin(tables) as table_name,
+        count() as count,
+        sum(query_duration_ms) as total_duration,
+        avg(query_duration_ms) as avg_duration,
+        max(query_duration_ms) as max_duration,
+        min(query_duration_ms) as min_duration,
+        sum(memory_usage) as total_memory,
+        avg(memory_usage) as avg_memory,
+        max(memory_usage) as max_memory,
+        sum(read_rows) as total_read_rows,
+        avg(read_rows) as avg_read_rows,
+        sum(read_bytes) as total_read_bytes,
+        countIf(exception_code != 0) as error_count,
+        round(countIf(exception_code != 0) * 100.0 / count(), 2) as error_rate,
+        min(event_time) as first_seen,
+        max(event_time) as last_seen
+      FROM ${getSystemTable('query_log')}
+      ${whereClause}
+      GROUP BY table_name
+      HAVING table_name != ''
+      ORDER BY ${safeSortField} ${safeSortOrder}
+      LIMIT {limit:UInt32}
+    `;
+
+    params.limit = parseInt(limit);
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching by-table query stats:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get total count
 app.get('/api/query-log/count', async (req, res) => {
   try {
@@ -3582,17 +3658,7 @@ app.get('/api/query-log/count', async (req, res) => {
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
-    if (search) {
-      // If search looks like a query_id (UUID-like hex string), only search query_id
-      const isQueryIdSearch = /^[0-9a-f-]+$/i.test(search) && search.length >= 8;
-      if (isQueryIdSearch) {
-        whereConditions.push('query_id ILIKE {search:String}');
-        params.search = `${search}%`;
-      } else {
-        whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-        params.search = `%${search}%`;
-      }
-    }
+    applyQueryLogSearch(search, whereConditions, params);
 
     if (filters) {
       const parsedFilters = JSON.parse(filters);
@@ -3964,7 +4030,7 @@ app.use((req, res, next) => {
   }
 });
 
-const PORT = process.env.PORT || 8001;
+const PORT = process.env.PORT || 9001;
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`QueryDog running on http://0.0.0.0:${PORT}`);
 });

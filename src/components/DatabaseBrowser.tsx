@@ -537,8 +537,8 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
     const newNodes: Node[] = [];
     const newEdges: Edge[] = [];
 
-    const columnX = [20, 200, 380, 560, 740, 920, 1100, 1280];
-    const nodeSpacing = 55;
+    const columnX = [20, 230, 440, 650, 860, 1070, 1280, 1490];
+    const nodeSpacing = 75;
 
     // Root nodes (always visible)
     newNodes.push({

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, SelectionChangedEvent } from 'ag-grid-community';
-import { Play, RotateCcw, Loader2, Eye, X, Copy, Check, Search, PlayCircle, ExternalLink, BarChart2, GitCompare } from 'lucide-react';
+import { Play, RotateCcw, Loader2, Eye, X, Copy, Check, Search, PlayCircle, ExternalLink, BarChart2, GitCompare, Pencil } from 'lucide-react';
 import { QueryCompareModal } from '../QueryCompareModal';
 import type { QueryLogEntry } from '../../types/queryLog';
 
@@ -345,15 +345,42 @@ export function MyQueriesPage() {
     );
   }, [runningQuery, runQuery]);
 
-  const EyeButtonRenderer = useCallback((params: ICellRendererParams<MyQuery>) => {
+  const ActionCellRenderer = useCallback((params: ICellRendererParams<MyQuery>) => {
+    const handleView = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (params.data) {
+        setSelectedQuery(params.data);
+        setIsEditMode(false);
+      }
+    };
+
+    const handleEdit = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (params.data) {
+        setSelectedQuery(params.data);
+        setEditedQuery(params.data.query);
+        setEditedExperiment(params.data.experiment || '');
+        setIsEditMode(true);
+      }
+    };
+
     return (
-      <button
-        onClick={() => params.data && setSelectedQuery(params.data)}
-        className="p-1.5 hover:bg-gray-700 rounded text-gray-300 hover:text-blue-400 transition-colors"
-        title="View query details"
-      >
-        <Eye className="w-4 h-4" />
-      </button>
+      <div className="flex items-center gap-0.5">
+        <button
+          onClick={handleView}
+          className="p-1 hover:bg-gray-600 rounded"
+          title="View query (read-only)"
+        >
+          <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
+        </button>
+        <button
+          onClick={handleEdit}
+          className="p-1 hover:bg-gray-600 rounded"
+          title="Edit query"
+        >
+          <Pencil className="w-3.5 h-3.5 text-gray-400 hover:text-white" />
+        </button>
+      </div>
     );
   }, []);
 
@@ -406,13 +433,6 @@ export function MyQueriesPage() {
       handleCloseModal();
     }
   }, [selectedQuery, handleCloseModal]);
-
-  const handleEditQuery = useCallback(() => {
-    if (!selectedQuery) return;
-    setEditedQuery(selectedQuery.query);
-    setEditedExperiment(selectedQuery.experiment || '');
-    setIsEditMode(true);
-  }, [selectedQuery]);
 
   const handleSaveQuery = useCallback(async () => {
     if (!selectedQuery) return;
@@ -572,9 +592,9 @@ export function MyQueriesPage() {
       {
         headerName: '',
         field: 'filename',
-        width: 50,
+        width: 70,
         sortable: false,
-        cellRenderer: EyeButtonRenderer,
+        cellRenderer: ActionCellRenderer,
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
         rowGroup: false,
       },
@@ -692,12 +712,13 @@ export function MyQueriesPage() {
       },
     ];
     return defs;
-  }, [PlayButtonRenderer, EyeButtonRenderer, StatusRenderer, timeComparator]);
+  }, [PlayButtonRenderer, ActionCellRenderer, StatusRenderer, timeComparator]);
 
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: true,
     suppressAutoSize: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   return (
@@ -994,22 +1015,13 @@ export function MyQueriesPage() {
                         </button>
                       </>
                     ) : (
-                      <>
-                        <button
-                          onClick={handleEditQuery}
-                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 rounded text-white"
-                        >
-                          <Copy className="w-3 h-3" />
-                          Edit
-                        </button>
-                        <button
-                          onClick={handleAnalyseQuery}
-                          className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 rounded text-white"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          Analyse Query
-                        </button>
-                      </>
+                      <button
+                        onClick={handleAnalyseQuery}
+                        className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 rounded text-white"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Analyse Query
+                      </button>
                     )}
                   </div>
                 </div>

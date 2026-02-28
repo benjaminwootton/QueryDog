@@ -137,7 +137,7 @@ interface QueryState {
   selectedEntry: QueryLogEntry | null;
   selectedEntries: QueryLogEntry[];
   pinnedEntries: QueryLogEntry[];
-  activeTab: 'queries' | 'grouped' | 'histograms' | 'profileEvents';
+  activeTab: 'queries' | 'grouped' | 'histograms' | 'profileEvents' | 'byTable';
 
   // Global refresh trigger - increment to trigger refresh on all pages
   globalRefreshTrigger: number;
@@ -171,7 +171,7 @@ interface QueryState {
   pinEntry: (entry: QueryLogEntry) => void;
   unpinEntry: (queryId: string, eventTime: string) => void;
   clearPinnedEntries: () => void;
-  setActiveTab: (tab: 'queries' | 'grouped' | 'histograms' | 'profileEvents') => void;
+  setActiveTab: (tab: 'queries' | 'grouped' | 'histograms' | 'profileEvents' | 'byTable') => void;
   // Grouped Query Actions
   setGroupedEntries: (entries: GroupedQueryEntry[]) => void;
   setGroupedLoading: (loading: boolean) => void;
@@ -205,7 +205,7 @@ interface QueryState {
 }
 
 const now = new Date();
-const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
 
 export const useQueryStore = create<QueryState>((set) => ({
   entries: [],
@@ -236,7 +236,7 @@ export const useQueryStore = create<QueryState>((set) => ({
   chartAggregation: 'avg',
   partLogChartMetric: 'count',
 
-  timeRange: { start: oneHourAgo, end: now },
+  timeRange: { start: fifteenMinutesAgo, end: now },
   bucketSize: 'minute',
   search: '',
   fieldFilters: { type: ['QueryFinish'] },
@@ -244,7 +244,7 @@ export const useQueryStore = create<QueryState>((set) => ({
 
   columns: FALLBACK_COLUMNS,
   columnsLoaded: false,
-  sortField: 'event_time',
+  sortField: 'query_duration_ms',
   sortOrder: 'DESC',
 
   pageSize: 1000,

@@ -50,6 +50,19 @@ function formatNumber(num: number): string {
   return num.toLocaleString();
 }
 
+// Numeric comparator for AG Grid sorting - handles null values and ensures numeric sorting
+function numericComparator(valueA: unknown, valueB: unknown): number {
+  const a = valueA === null || valueA === undefined ? null : Number(valueA);
+  const b = valueB === null || valueB === undefined ? null : Number(valueB);
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;  // nulls go to bottom
+  if (b === null) return -1;
+  if (isNaN(a) && isNaN(b)) return 0;
+  if (isNaN(a)) return 1;
+  if (isNaN(b)) return -1;
+  return a - b;
+}
+
 function formatDateTime(dateStr: string): string {
   if (!dateStr) return 'N/A';
   const date = new Date(dateStr);
@@ -100,6 +113,7 @@ export function GroupedQueriesTable() {
     setGroupedSortField,
     setGroupedSortOrder,
     setSearch,
+    setFieldFilter,
     setActiveTab,
     pinnedEntries,
   } = useQueryStore();
@@ -196,6 +210,7 @@ export function GroupedQueriesTable() {
       width: 80,
       sortable: true,
       valueFormatter: (params) => formatNumber(params.value),
+      comparator: numericComparator,
       cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
@@ -204,6 +219,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatDuration(params.value),
+      comparator: numericComparator,
       cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
@@ -212,6 +228,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatDuration(params.value),
+      comparator: numericComparator,
       cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
@@ -220,6 +237,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatDuration(params.value),
+      comparator: numericComparator,
       cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
@@ -228,6 +246,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatBytes(params.value),
+      comparator: numericComparator,
       cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
@@ -236,6 +255,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatBytes(params.value),
+      comparator: numericComparator,
       cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
@@ -244,6 +264,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatNumber(params.value),
+      comparator: numericComparator,
       cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
@@ -252,6 +273,7 @@ export function GroupedQueriesTable() {
       width: 110,
       sortable: true,
       valueFormatter: (params) => formatNumber(params.value),
+      comparator: numericComparator,
       cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
@@ -260,6 +282,7 @@ export function GroupedQueriesTable() {
       width: 100,
       sortable: true,
       valueFormatter: (params) => formatBytes(params.value),
+      comparator: numericComparator,
       cellStyle: { textAlign: 'right', color: '#86efac' } as CellStyle,
     },
     {
@@ -281,6 +304,7 @@ export function GroupedQueriesTable() {
 
   const defaultColDef = useMemo(() => ({
     resizable: true,
+    sortingOrder: ['desc', 'asc'],
   }), []);
 
   const onSortChanged = useCallback((event: SortChangedEvent) => {
@@ -361,9 +385,14 @@ export function GroupedQueriesTable() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => {
-                        // Extract first 50 chars of query for search (enough to be unique)
-                        const searchTerm = selectedEntry.example_query.substring(0, 80).trim();
-                        setSearch(searchTerm);
+                        // Filter by normalized_query_hash if using normalization, otherwise by exact query
+                        if (normalizeQueries && selectedEntry.normalized_query_hash) {
+                          setFieldFilter('normalized_query_hash', [selectedEntry.normalized_query_hash]);
+                        } else {
+                          // Use exact query match via filter (not search which is ILIKE)
+                          setFieldFilter('query', [selectedEntry.example_query]);
+                        }
+                        setSearch(''); // Clear search to avoid conflicts
                         setActiveTab('queries');
                         setSelectedEntry(null);
                       }}
