@@ -161,7 +161,7 @@ export function QueryTable() {
       const def: ColDef<QueryLogEntry> = {
         headerName: col.headerName,
         field: col.field as keyof QueryLogEntry,
-        width: col.width,
+        width: col.field === 'event_time' ? Math.max(col.width, 210) : col.width,
         sortable: col.sortable,
         resizable: true,
         headerTooltip: col.comment || col.headerName,

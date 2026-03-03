@@ -5,6 +5,13 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import figlet from 'figlet';
+import https from 'https';
+import http from 'http';
+import dns from 'dns';
+
+// Force IPv4 to avoid Docker Desktop networking issues
+dns.setDefaultResultOrder('ipv4first');
 
 dotenv.config();
 
@@ -20,6 +27,15 @@ app.use(express.static(path.join(__dirname, '../dist')));
 
 const protocol = process.env.CLICKHOUSE_SECURE === '1' ? 'https' : 'http';
 const isSecure = process.env.CLICKHOUSE_SECURE === '1';
+const clickhousePort = process.env.CLICKHOUSE_PORT;
+
+// Force IPv4 to avoid Docker Desktop IPv6 issues
+const httpAgent = new http.Agent({ family: 4 });
+const httpsAgent = new https.Agent({
+  family: 4,
+  rejectUnauthorized: process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0',
+});
+const clickhouseAgent = isSecure ? httpsAgent : httpAgent;
 
 // TLS options for secure connections
 const tlsOptions = isSecure ? {
@@ -27,12 +43,12 @@ const tlsOptions = isSecure ? {
     rejectUnauthorized: process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0', // Default: verify certs, set to '0' to allow self-signed
   },
   keep_alive: {
-    enabled: true,
+    enabled: false, // Disable keep-alive for Docker compatibility
   },
 } : {};
 
 const client = createClient({
-  url: `${protocol}://${process.env.CLICKHOUSE_HOST}:${process.env.CLICKHOUSE_PORT_HTTP}`,
+  url: `${protocol}://${process.env.CLICKHOUSE_HOST}:${clickhousePort}`,
   username: process.env.CLICKHOUSE_USER,
   password: process.env.CLICKHOUSE_PASSWORD,
   database: process.env.CLICKHOUSE_DATABASE,
@@ -40,10 +56,11 @@ const client = createClient({
   clickhouse_settings: {
     max_execution_time: 0, // No query execution timeout
   },
+  http_agent: clickhouseAgent,
   ...tlsOptions,
 });
 
-console.log(`Connecting to ClickHouse: ${protocol}://${process.env.CLICKHOUSE_HOST}:${process.env.CLICKHOUSE_PORT_HTTP} as user '${process.env.CLICKHOUSE_USER}' on database '${process.env.CLICKHOUSE_DATABASE}'${isSecure ? ` (TLS: rejectUnauthorized=${process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0'})` : ''}`);
+console.log(`Connecting to ClickHouse: ${protocol}://${process.env.CLICKHOUSE_HOST}:${clickhousePort} as user '${process.env.CLICKHOUSE_USER}' on database '${process.env.CLICKHOUSE_DATABASE}'${isSecure ? ` (TLS: rejectUnauthorized=${process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0'})` : ''}`);
 
 // Cluster support - if CLICKHOUSE_CLUSTER is set, wrap system table queries with clusterAllReplicas()
 const CLICKHOUSE_CLUSTER = process.env.CLICKHOUSE_CLUSTER;
@@ -85,7 +102,7 @@ app.get('/api/connection-info', async (req, res) => {
     await client.ping();
     res.json({
       host: process.env.CLICKHOUSE_HOST,
-      port: process.env.CLICKHOUSE_PORT_HTTP,
+      port: clickhousePort,
       secure: process.env.CLICKHOUSE_SECURE === '1',
       user: process.env.CLICKHOUSE_USER,
       cluster: CLICKHOUSE_CLUSTER || null,
@@ -95,7 +112,7 @@ app.get('/api/connection-info', async (req, res) => {
     console.error('ClickHouse connection failed:', error.message);
     res.status(503).json({
       host: process.env.CLICKHOUSE_HOST,
-      port: process.env.CLICKHOUSE_PORT_HTTP,
+      port: clickhousePort,
       secure: process.env.CLICKHOUSE_SECURE === '1',
       user: process.env.CLICKHOUSE_USER,
       cluster: CLICKHOUSE_CLUSTER || null,
@@ -367,8 +384,6 @@ app.get('/api/query-log/timeseries', async (req, res) => {
       GROUP BY time
       ORDER BY time ASC
     `;
-
-    console.log('Time series query:', query.substring(0, 200) + '...', 'params:', params);
 
     const result = await client.query({
       query,
@@ -4366,22 +4381,53 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 9001;
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`QueryDog running on http://0.0.0.0:${PORT}`);
-});
+let server;
+
+// Startup function - validates connection before starting server
+async function startup() {
+  // Display banner
+  console.log('\n' + figlet.textSync('QueryDog', { font: 'Standard' }) + '\n');
+
+  // Test ClickHouse connection
+  console.log('Testing ClickHouse connection...');
+  try {
+    await client.ping();
+    console.log('ClickHouse connection successful!\n');
+  } catch (error) {
+    console.error('\n╔══════════════════════════════════════════════════════════════╗');
+    console.error('║  ERROR: Failed to connect to ClickHouse                      ║');
+    console.error('╚══════════════════════════════════════════════════════════════╝\n');
+    console.error(`Host: ${process.env.CLICKHOUSE_HOST}:${clickhousePort}`);
+    console.error(`User: ${process.env.CLICKHOUSE_USER}`);
+    console.error(`Database: ${process.env.CLICKHOUSE_DATABASE}`);
+    console.error(`Secure: ${process.env.CLICKHOUSE_SECURE === '1' ? 'Yes' : 'No'}\n`);
+    console.error('Error details:', error.message);
+    console.error('\nPlease check your .env configuration and ensure ClickHouse is reachable.\n');
+    process.exit(1);
+  }
+
+  // Start HTTP server
+  server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`QueryDog running on http://0.0.0.0:${PORT}`);
+  });
+}
 
 // Graceful shutdown handler
 function shutdown(signal) {
   console.log(`\n${signal} received, shutting down gracefully...`);
-  server.close(() => {
-    console.log('HTTP server closed');
-    client.close().then(() => {
-      console.log('ClickHouse connection closed');
-      process.exit(0);
-    }).catch(() => {
-      process.exit(0);
+  if (server) {
+    server.close(() => {
+      console.log('HTTP server closed');
+      client.close().then(() => {
+        console.log('ClickHouse connection closed');
+        process.exit(0);
+      }).catch(() => {
+        process.exit(0);
+      });
     });
-  });
+  } else {
+    process.exit(0);
+  }
 
   // Force exit after 10 seconds if graceful shutdown fails
   setTimeout(() => {
@@ -4392,3 +4438,6 @@ function shutdown(signal) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Start the application
+startup();
