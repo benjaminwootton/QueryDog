@@ -11,9 +11,20 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
 - Node.js 22+ if running from source
 - Docker if running via container
 
-## Configuration
+## Running
 
-Create a `.env` file in the root directory:
+Clone the repository:
+
+```bash
+git clone https://github.com/benjaminwootton/querydog
+cd querydog
+```
+
+Copy `.env.example` to `.env` and configure your ClickHouse connection:
+
+```bash
+cp .env.example .env
+```
 
 ```env
 CLICKHOUSE_HOST=your-clickhouse-host
@@ -24,15 +35,13 @@ CLICKHOUSE_SECURE=1
 CLICKHOUSE_PORT_HTTP=8443
 ```
 
-## Running with Docker Compose
+### Docker Compose
 
 ```bash
 docker compose up --build
 ```
 
-Access at http://localhost:3001
-
-## Running from Source
+### From Source
 
 ```bash
 npm install
