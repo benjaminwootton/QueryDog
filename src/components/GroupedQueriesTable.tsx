@@ -317,9 +317,9 @@ export function GroupedQueriesTable() {
     },
   ], [ActionCellRenderer]);
 
-  const defaultColDef = useMemo(() => ({
+  const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
-    sortingOrder: ['desc', 'asc'],
+    sortingOrder: ['desc', 'asc'] as const,
   }), []);
 
   const onSortChanged = useCallback((event: SortChangedEvent) => {

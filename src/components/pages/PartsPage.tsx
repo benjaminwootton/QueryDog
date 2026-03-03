@@ -131,9 +131,11 @@ export function PartsPage() {
   const [partitionDetailsLoading, setPartitionDetailsLoading] = useState(false);
   const [tableDetailsTab, setTableDetailsTab] = useState<'definition' | 'partitions' | 'sample' | 'index' | 'compression' | 'stats'>('definition');
 
-  // Schema state for table details modal
-  const [schemaColumns, setSchemaColumns] = useState<BrowserColumn[]>([]);
-  const [schemaLoading, setSchemaLoading] = useState(false);
+  // Schema state for table details modal (setters used for data loading)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_schemaColumns, setSchemaColumns] = useState<BrowserColumn[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_schemaLoading, setSchemaLoading] = useState(false);
 
   // Table definition state
   const [tableDefinition, setTableDefinition] = useState<string>('');

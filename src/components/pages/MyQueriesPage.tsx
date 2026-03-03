@@ -33,6 +33,7 @@ interface MyQuery {
   lastDuration: number | null;
   lastRowCount: number | null;
   avgRunTime: number | null;
+  avgRowCount: number | null;
   slowestRunTime: number | null;
   fastestRunTime: number | null;
   runCount: number;

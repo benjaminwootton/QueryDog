@@ -247,7 +247,7 @@ interface ProfileEventRow {
   query_id: string;
   query_text?: string;
   query_duration_ms?: number;
-  [key: string]: string | number;
+  [key: string]: string | number | undefined;
 }
 
 // Export constants for use in parent

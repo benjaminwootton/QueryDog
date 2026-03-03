@@ -72,7 +72,7 @@ function numericComparator(valueA: unknown, valueB: unknown): number {
 }
 
 export function QueryViewsLogTable() {
-  const { timeRange, search, fieldFilters, rangeFilters, globalRefreshTrigger } = useQueryStore();
+  const { search, fieldFilters, globalRefreshTrigger } = useQueryStore();
   const [data, setData] = useState<QueryViewsLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);

@@ -120,7 +120,7 @@ export function ByTableTable() {
     }
   }, []);
 
-  const columnDefs: ColDef<ByTableEntry>[] = useMemo(() => [
+  const columnDefs = useMemo((): ColDef<ByTableEntry>[] => [
     {
       headerName: '',
       field: 'table_name',
