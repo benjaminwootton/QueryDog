@@ -23,7 +23,8 @@ export function TimeRangeSelector({ usePartLogMetric = false }: TimeRangeSelecto
   const effectiveChartType = isCountMetric && chartType === 'scatter' ? 'line' : chartType;
 
   const formatForInput = (date: Date) => {
-    return date.toISOString().slice(0, 16);
+    // Include seconds: YYYY-MM-DDTHH:MM:SS
+    return date.toISOString().slice(0, 19);
   };
 
   const handleStartChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -50,6 +51,7 @@ export function TimeRangeSelector({ usePartLogMetric = false }: TimeRangeSelecto
         <label className="text-gray-400">From:</label>
         <input
           type="datetime-local"
+          step="1"
           value={formatForInput(timeRange.start)}
           onChange={handleStartChange}
           className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
@@ -59,6 +61,7 @@ export function TimeRangeSelector({ usePartLogMetric = false }: TimeRangeSelecto
         <label className="text-gray-400">To:</label>
         <input
           type="datetime-local"
+          step="1"
           value={formatForInput(timeRange.end)}
           onChange={handleEndChange}
           className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"

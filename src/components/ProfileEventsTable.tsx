@@ -411,7 +411,7 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
       {
         headerName: 'Event Time',
         field: 'event_time',
-        width: 150,
+        width: 195,
         sortable: true,
         pinned: 'left',
         cellStyle: { color: '#fca5a5' },

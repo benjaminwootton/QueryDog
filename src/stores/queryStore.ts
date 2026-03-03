@@ -248,7 +248,7 @@ export const useQueryStore = create<QueryState>((set) => ({
 
   columns: FALLBACK_COLUMNS,
   columnsLoaded: false,
-  sortField: 'query_duration_ms',
+  sortField: 'event_time',
   sortOrder: 'DESC',
 
   pageSize: 1000,
