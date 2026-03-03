@@ -4380,7 +4380,18 @@ app.use((req, res, next) => {
   }
 });
 
-const PORT = process.env.PORT || 9001;
+function isRunningInDocker() {
+  if (fs.existsSync('/.dockerenv')) return true;
+  try {
+    const cgroup = fs.readFileSync('/proc/1/cgroup', 'utf-8');
+    return /docker|containerd|kubepods/i.test(cgroup);
+  } catch {
+    return false;
+  }
+}
+
+const DEFAULT_PORT = isRunningInDocker() ? 3001 : 9001;
+const PORT = process.env.PORT || DEFAULT_PORT;
 let server;
 
 // Startup function - validates connection before starting server

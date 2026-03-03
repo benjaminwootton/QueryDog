@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText, Layers, FileCode, Table } from 'lucide-react';
+import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
 import { PartsPage } from './components/pages/PartsPage';
@@ -57,7 +57,7 @@ function App() {
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [hasQueriesFolder, setHasQueriesFolder] = useState(false);
-  const { loading, error, hasPartLogAccess, hasPartsAccess, setActiveTab, setChartMetric, setTimeRange, setFieldFilter, clearAllFilters } = useQueryStore();
+  const { loading, error, hasPartLogAccess, hasPartsAccess, setActiveTab, setChartMetric, setTimeRange, setFieldFilter, clearAllFilters, setError } = useQueryStore();
   const { refresh } = useQueryData();
 
   // Fetch connection info on mount
@@ -149,6 +149,7 @@ function App() {
         setBrowserOpen(false);
         setDataExplorerOpen(false);
         setQueryEditorOpen(false);
+        setError(null);
       }
     };
     document.addEventListener('keydown', handleEscape);
@@ -207,7 +208,6 @@ function App() {
         </div>
 
         <div className="flex items-center gap-3">
-          {error && <span className="text-xs text-red-400">{error}</span>}
           {connectionInfo && (
             <span className="text-xs text-gray-400 font-mono">
               {connectionInfo.user}@{connectionInfo.host}:{connectionInfo.port}
@@ -270,7 +270,7 @@ function App() {
           <button
             onClick={() => {
               setBackendError(null);
-              fetch('http://localhost:3001/api/connection-info')
+              fetch('/api/connection-info')
                 .then(async res => {
                   const data = await res.json();
                   if (!res.ok) {
@@ -370,6 +370,34 @@ function App() {
               >
                 By @BenjaminWootton
               </a>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Error Modal */}
+      {error && (
+        <>
+          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => setError(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-950 border border-red-700 rounded-lg shadow-xl z-50 p-6 min-w-[300px] max-w-[80vw]">
+            <button
+              onClick={() => setError(null)}
+              className="absolute top-3 right-3 text-red-200 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex flex-col items-center gap-3">
+              <AlertTriangle className="w-10 h-10 text-red-300" />
+              <h2 className="text-lg font-semibold text-red-100">Error</h2>
+              <p className="text-sm text-red-100 text-center whitespace-pre-wrap break-words">
+                {error}
+              </p>
+              <button
+                onClick={() => setError(null)}
+                className="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-xs"
+              >
+                Dismiss
+              </button>
             </div>
           </div>
         </>

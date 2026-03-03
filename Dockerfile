@@ -38,9 +38,5 @@ COPY --from=builder /app/dist ./dist
 # Expose port
 EXPOSE 3001
 
-# Set environment variable for production
-ENV NODE_ENV=production
-ENV PORT=3001
-
 # Start the server
 CMD ["node", "server/index.js"]
