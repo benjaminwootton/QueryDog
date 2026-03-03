@@ -12,7 +12,7 @@ import {
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { X, Database, Table, Layers, Box, ChevronRight, Loader2, Users, User, Columns, FileText, Sparkles, Zap, Info } from 'lucide-react';
+import { X, Database, Table, Layers, Box, ChevronRight, Loader2, Users, User, Columns, FileText, Sparkles, Zap, Info, Key, Shield, HardDrive } from 'lucide-react';
 import {
   fetchBrowserDatabases,
   fetchBrowserTables,
@@ -23,6 +23,11 @@ import {
   fetchBrowserProjectionParts,
   fetchBrowserIndexes,
   fetchUsers,
+  fetchRoles,
+  fetchGrants,
+  fetchRoleGrants,
+  fetchDisks,
+  fetchStoragePolicies,
   type BrowserDatabase,
   type BrowserTable,
   type BrowserPartition,
@@ -50,6 +55,47 @@ interface BrowserUser {
   grantees_list: string[];
   grantees_except: string[];
   default_database: string;
+}
+
+interface BrowserRole {
+  name: string;
+  id: string;
+  storage: string;
+}
+
+interface BrowserGrant {
+  user_name: string;
+  role_name: string;
+  access_type: string;
+  database: string;
+  table: string;
+  column: string;
+  is_partial_revoke: number;
+  grant_option: number;
+}
+
+interface BrowserRoleGrant {
+  user_name: string;
+  role_name: string;
+  granted_role_name: string;
+  with_admin_option: number;
+}
+
+interface BrowserDisk {
+  name: string;
+  path: string;
+  free_space: number;
+  total_space: number;
+  type: string;
+}
+
+interface BrowserStoragePolicy {
+  policy_name: string;
+  volume_name: string;
+  volume_priority: number;
+  disks: string[];
+  max_data_part_size: number;
+  move_factor: number;
 }
 
 function formatBytes(bytes: number): string {
@@ -83,27 +129,29 @@ function InfoButton({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
   );
 }
 
-// Root category node (Databases, Users)
-function RootNode({ data }: { data: { label: string; icon: 'databases' | 'users'; selected: boolean; onClick: () => void } }) {
-  const Icon = data.icon === 'databases' ? Database : Users;
-  const isDatabases = data.icon === 'databases';
+// Root category node (Databases, Users, Roles, Storage)
+function RootNode({ data }: { data: { label: string; icon: 'databases' | 'users' | 'roles' | 'storage'; selected: boolean; onClick: () => void } }) {
+  const Icon = data.icon === 'databases' ? Database : data.icon === 'users' ? Users : data.icon === 'roles' ? Key : HardDrive;
+  const colorMap = {
+    databases: { bg: 'bg-blue-600', border: 'border-blue-400', hoverBorder: 'hover:border-blue-500', handle: '!bg-blue-500', text: 'text-blue-400' },
+    users: { bg: 'bg-amber-600', border: 'border-amber-400', hoverBorder: 'hover:border-amber-500', handle: '!bg-amber-500', text: 'text-amber-400' },
+    roles: { bg: 'bg-violet-600', border: 'border-violet-400', hoverBorder: 'hover:border-violet-500', handle: '!bg-violet-500', text: 'text-violet-400' },
+    storage: { bg: 'bg-teal-600', border: 'border-teal-400', hoverBorder: 'hover:border-teal-500', handle: '!bg-teal-500', text: 'text-teal-400' },
+  };
+  const colors = colorMap[data.icon];
 
   return (
     <div
       onClick={data.onClick}
       className={`${nodeWidth} px-2 py-1.5 rounded border cursor-pointer transition-all ${
         data.selected
-          ? isDatabases
-            ? 'bg-blue-600 border-blue-400 text-white'
-            : 'bg-amber-600 border-amber-400 text-white'
-          : isDatabases
-            ? 'bg-gray-800 border-gray-600 text-gray-200 hover:border-blue-500'
-            : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-amber-500'
+          ? `${colors.bg} ${colors.border} text-white`
+          : `bg-gray-800 border-gray-600 text-gray-200 ${colors.hoverBorder}`
       }`}
     >
-      <Handle type="source" position={Position.Right} className={isDatabases ? '!bg-blue-500' : '!bg-amber-500'} />
+      <Handle type="source" position={Position.Right} className={colors.handle} />
       <div className="flex items-center gap-1.5">
-        <Icon className={`w-3 h-3 shrink-0 ${isDatabases ? 'text-blue-400' : 'text-amber-400'}`} />
+        <Icon className={`w-3 h-3 shrink-0 ${colors.text}`} />
         <span className="text-[9px] font-semibold uppercase tracking-wide">{data.label}</span>
       </div>
     </div>
@@ -111,16 +159,100 @@ function RootNode({ data }: { data: { label: string; icon: 'databases' | 'users'
 }
 
 // User node
-function UserNode({ data }: { data: { label: string; authType: string; storage: string } }) {
+function UserNode({ data }: { data: { label: string; authType: string; storage: string; selected: boolean; onClick: () => void } }) {
   const tooltip = `Auth: ${data.authType} | Storage: ${data.storage}`;
+  return (
+    <div
+      onClick={data.onClick}
+      title={tooltip}
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border cursor-pointer transition-all ${
+        data.selected
+          ? 'bg-amber-600 border-amber-400 text-white'
+          : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-amber-500'
+      }`}
+    >
+      <Handle type="target" position={Position.Left} className="!bg-amber-500" />
+      <Handle type="source" position={Position.Right} className="!bg-amber-500" />
+      <div className="flex items-center gap-1">
+        <User className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+        <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
+      </div>
+    </div>
+  );
+}
+
+// Role node
+function RoleNode({ data }: { data: { label: string; storage: string; selected: boolean; onClick: () => void } }) {
+  const tooltip = `Storage: ${data.storage}`;
+  return (
+    <div
+      onClick={data.onClick}
+      title={tooltip}
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border cursor-pointer transition-all ${
+        data.selected
+          ? 'bg-violet-600 border-violet-400 text-white'
+          : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-violet-500'
+      }`}
+    >
+      <Handle type="target" position={Position.Left} className="!bg-violet-500" />
+      <Handle type="source" position={Position.Right} className="!bg-violet-500" />
+      <div className="flex items-center gap-1">
+        <Key className="w-2.5 h-2.5 text-violet-400 shrink-0" />
+        <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
+      </div>
+    </div>
+  );
+}
+
+// Grant node
+function GrantNode({ data }: { data: { label: string; accessType: string; database: string; table: string; grantOption: boolean } }) {
+  const scope = data.database ? (data.table ? `${data.database}.${data.table}` : data.database) : '*';
+  const tooltip = `${data.accessType} ON ${scope}${data.grantOption ? ' (WITH GRANT OPTION)' : ''}`;
   return (
     <div
       title={tooltip}
       className={`${nodeWidth} px-2 ${nodeHeight} rounded border bg-gray-800 border-gray-600 text-gray-200`}
     >
-      <Handle type="target" position={Position.Left} className="!bg-amber-500" />
+      <Handle type="target" position={Position.Left} className="!bg-emerald-500" />
       <div className="flex items-center gap-1">
-        <User className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+        <Shield className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+        <span className="text-[8px] font-medium tracking-wide truncate">{data.label}</span>
+        {data.grantOption && <span className="text-[7px] text-yellow-400 ml-auto">GO</span>}
+      </div>
+    </div>
+  );
+}
+
+// Disk node
+function DiskNode({ data }: { data: { label: string; path: string; freeSpace: number; totalSpace: number; diskType: string } }) {
+  const usedPercent = data.totalSpace > 0 ? Math.round((1 - data.freeSpace / data.totalSpace) * 100) : 0;
+  const tooltip = `Path: ${data.path} | Type: ${data.diskType} | Used: ${usedPercent}%`;
+  return (
+    <div
+      title={tooltip}
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border bg-gray-800 border-gray-600 text-gray-200`}
+    >
+      <Handle type="target" position={Position.Left} className="!bg-teal-500" />
+      <div className="flex items-center gap-1">
+        <HardDrive className="w-2.5 h-2.5 text-teal-400 shrink-0" />
+        <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
+        <span className="text-[7px] text-gray-500 ml-auto">{usedPercent}%</span>
+      </div>
+    </div>
+  );
+}
+
+// Storage Policy node
+function StoragePolicyNode({ data }: { data: { label: string; volumeName: string; disks: string[] } }) {
+  const tooltip = `Volume: ${data.volumeName} | Disks: ${data.disks.join(', ')}`;
+  return (
+    <div
+      title={tooltip}
+      className={`${nodeWidth} px-2 ${nodeHeight} rounded border bg-gray-800 border-gray-600 text-gray-200`}
+    >
+      <Handle type="target" position={Position.Left} className="!bg-teal-500" />
+      <div className="flex items-center gap-1">
+        <Layers className="w-2.5 h-2.5 text-teal-400 shrink-0" />
         <span className="text-[8px] font-medium uppercase tracking-wide truncate">{data.label}</span>
       </div>
     </div>
@@ -332,6 +464,10 @@ const nodeTypes = {
   part: PartNode,
   column: ColumnNode,
   user: UserNode,
+  role: RoleNode,
+  grant: GrantNode,
+  disk: DiskNode,
+  storagePolicy: StoragePolicyNode,
   projection: ProjectionNode,
   projectionPart: ProjectionPartNode,
   index: IndexNode,
@@ -344,6 +480,11 @@ interface DatabaseBrowserProps {
 export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
   const [databases, setDatabases] = useState<BrowserDatabase[]>([]);
   const [users, setUsers] = useState<BrowserUser[]>([]);
+  const [roles, setRoles] = useState<BrowserRole[]>([]);
+  const [grants, setGrants] = useState<BrowserGrant[]>([]);
+  const [roleGrants, setRoleGrants] = useState<BrowserRoleGrant[]>([]);
+  const [disks, setDisks] = useState<BrowserDisk[]>([]);
+  const [storagePolicies, setStoragePolicies] = useState<BrowserStoragePolicy[]>([]);
   const [tables, setTables] = useState<BrowserTable[]>([]);
   const [partitions, setPartitions] = useState<BrowserPartition[]>([]);
   const [parts, setParts] = useState<BrowserPart[]>([]);
@@ -352,7 +493,9 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
   const [projectionParts, setProjectionParts] = useState<BrowserProjectionPart[]>([]);
   const [indexes, setIndexes] = useState<BrowserIndex[]>([]);
 
-  const [selectedRoot, setSelectedRoot] = useState<'databases' | 'users' | null>(null);
+  const [selectedRoot, setSelectedRoot] = useState<'databases' | 'users' | 'roles' | 'storage' | null>(null);
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [selectedDatabase, setSelectedDatabase] = useState<string | null>(null);
   const [selectedDatabaseCategory, setSelectedDatabaseCategory] = useState<'tables' | 'views' | null>(null);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
@@ -406,11 +549,81 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
   useEffect(() => {
     if (selectedRoot !== 'users') {
       setUsers([]);
+      setSelectedUser(null);
+      setGrants([]);
       return;
     }
     setLoading(true);
+    setSelectedUser(null);
+    setGrants([]);
     fetchUsers()
       .then((data) => setUsers(data as unknown as BrowserUser[]))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [selectedRoot]);
+
+  // Load grants when a user is selected
+  useEffect(() => {
+    if (!selectedUser) {
+      setGrants([]);
+      return;
+    }
+    fetchGrants()
+      .then((data) => {
+        const userGrants = (data as unknown as BrowserGrant[]).filter(
+          g => g.user_name === selectedUser
+        );
+        setGrants(userGrants);
+      })
+      .catch(console.error);
+  }, [selectedUser]);
+
+  // Load roles when Roles root is selected
+  useEffect(() => {
+    if (selectedRoot !== 'roles') {
+      setRoles([]);
+      setSelectedRole(null);
+      setRoleGrants([]);
+      return;
+    }
+    setLoading(true);
+    setSelectedRole(null);
+    setRoleGrants([]);
+    fetchRoles()
+      .then((data) => setRoles(data as unknown as BrowserRole[]))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [selectedRoot]);
+
+  // Load role grants when a role is selected
+  useEffect(() => {
+    if (!selectedRole) {
+      setRoleGrants([]);
+      return;
+    }
+    fetchRoleGrants()
+      .then((data) => {
+        const filteredGrants = (data as unknown as BrowserRoleGrant[]).filter(
+          g => g.role_name === selectedRole || g.granted_role_name === selectedRole
+        );
+        setRoleGrants(filteredGrants);
+      })
+      .catch(console.error);
+  }, [selectedRole]);
+
+  // Load storage (disks and policies) when Storage root is selected
+  useEffect(() => {
+    if (selectedRoot !== 'storage') {
+      setDisks([]);
+      setStoragePolicies([]);
+      return;
+    }
+    setLoading(true);
+    Promise.all([fetchDisks(), fetchStoragePolicies()])
+      .then(([disksData, policiesData]) => {
+        setDisks(disksData as unknown as BrowserDisk[]);
+        setStoragePolicies(policiesData as unknown as BrowserStoragePolicy[]);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [selectedRoot]);
@@ -565,6 +778,30 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
       },
     });
 
+    newNodes.push({
+      id: 'root-roles',
+      type: 'root',
+      position: { x: columnX[0], y: 50 + nodeSpacing * 2 },
+      data: {
+        label: 'Roles',
+        icon: 'roles',
+        selected: selectedRoot === 'roles',
+        onClick: () => setSelectedRoot(selectedRoot === 'roles' ? null : 'roles'),
+      },
+    });
+
+    newNodes.push({
+      id: 'root-storage',
+      type: 'root',
+      position: { x: columnX[0], y: 50 + nodeSpacing * 3 },
+      data: {
+        label: 'Storage',
+        icon: 'storage',
+        selected: selectedRoot === 'storage',
+        onClick: () => setSelectedRoot(selectedRoot === 'storage' ? null : 'storage'),
+      },
+    });
+
     // Database nodes (when Databases root is selected)
     if (selectedRoot === 'databases' && databases.length > 0) {
       databases.forEach((db, i) => {
@@ -614,6 +851,8 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
             label: user.name,
             authType: user.auth_type || 'N/A',
             storage: user.storage || 'N/A',
+            selected: selectedUser === user.name,
+            onClick: () => setSelectedUser(selectedUser === user.name ? null : user.name),
           },
         });
         newEdges.push({
@@ -624,6 +863,178 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
           style: { stroke: '#4b5563' },
         });
       });
+    }
+
+    // Grant nodes (when a user is selected)
+    if (selectedUser && grants.length > 0) {
+      grants.forEach((grant, i) => {
+        const scope = grant.database ? (grant.table ? `${grant.database}.${grant.table}` : grant.database) : '*';
+        const label = `${grant.access_type} on ${scope}`;
+        newNodes.push({
+          id: `grant-${i}`,
+          type: 'grant',
+          position: { x: columnX[2], y: 50 + i * nodeSpacing },
+          data: {
+            label: label.length > 25 ? label.substring(0, 22) + '...' : label,
+            accessType: grant.access_type,
+            database: grant.database || '',
+            table: grant.table || '',
+            grantOption: grant.grant_option === 1,
+          },
+        });
+        newEdges.push({
+          id: `edge-user-grant-${i}`,
+          source: `user-${selectedUser}`,
+          target: `grant-${i}`,
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+      });
+    }
+
+    // Role nodes (when Roles root is selected)
+    if (selectedRoot === 'roles' && roles.length > 0) {
+      roles.forEach((role, i) => {
+        newNodes.push({
+          id: `role-${role.name}`,
+          type: 'role',
+          position: { x: columnX[1], y: 50 + i * nodeSpacing },
+          data: {
+            label: role.name,
+            storage: role.storage || 'N/A',
+            selected: selectedRole === role.name,
+            onClick: () => setSelectedRole(selectedRole === role.name ? null : role.name),
+          },
+        });
+        newEdges.push({
+          id: `edge-root-role-${role.name}`,
+          source: 'root-roles',
+          target: `role-${role.name}`,
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+      });
+    }
+
+    // Role grant nodes (when a role is selected - show granted roles)
+    if (selectedRole && roleGrants.length > 0) {
+      roleGrants.forEach((rg, i) => {
+        const label = rg.granted_role_name === selectedRole
+          ? `← ${rg.role_name || rg.user_name}`
+          : `→ ${rg.granted_role_name}`;
+        newNodes.push({
+          id: `role-grant-${i}`,
+          type: 'grant',
+          position: { x: columnX[2], y: 50 + i * nodeSpacing },
+          data: {
+            label: label,
+            accessType: 'ROLE',
+            database: '',
+            table: '',
+            grantOption: rg.with_admin_option === 1,
+          },
+        });
+        newEdges.push({
+          id: `edge-role-grant-${i}`,
+          source: `role-${selectedRole}`,
+          target: `role-grant-${i}`,
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+      });
+    }
+
+    // Storage nodes (when Storage root is selected)
+    if (selectedRoot === 'storage') {
+      // Disks category
+      if (disks.length > 0) {
+        newNodes.push({
+          id: 'cat-disks',
+          type: 'category',
+          position: { x: columnX[1], y: 50 },
+          data: {
+            label: 'Disks',
+            category: 'columns',
+            count: disks.length,
+            selected: false,
+            onClick: () => {},
+          },
+        });
+        newEdges.push({
+          id: 'edge-storage-disks',
+          source: 'root-storage',
+          target: 'cat-disks',
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+
+        disks.forEach((disk, i) => {
+          newNodes.push({
+            id: `disk-${disk.name}`,
+            type: 'disk',
+            position: { x: columnX[2], y: 50 + i * nodeSpacing },
+            data: {
+              label: disk.name,
+              path: disk.path || '',
+              freeSpace: disk.free_space || 0,
+              totalSpace: disk.total_space || 0,
+              diskType: disk.type || 'local',
+            },
+          });
+          newEdges.push({
+            id: `edge-disks-${disk.name}`,
+            source: 'cat-disks',
+            target: `disk-${disk.name}`,
+            animated: false,
+            style: { stroke: '#4b5563' },
+          });
+        });
+      }
+
+      // Storage Policies category
+      if (storagePolicies.length > 0) {
+        const uniquePolicies = [...new Set(storagePolicies.map(p => p.policy_name))];
+        newNodes.push({
+          id: 'cat-policies',
+          type: 'category',
+          position: { x: columnX[1], y: 50 + nodeSpacing },
+          data: {
+            label: 'Policies',
+            category: 'projections',
+            count: uniquePolicies.length,
+            selected: false,
+            onClick: () => {},
+          },
+        });
+        newEdges.push({
+          id: 'edge-storage-policies',
+          source: 'root-storage',
+          target: 'cat-policies',
+          animated: false,
+          style: { stroke: '#4b5563' },
+        });
+
+        storagePolicies.forEach((policy, i) => {
+          const policyDisks = Array.isArray(policy.disks) ? policy.disks : [];
+          newNodes.push({
+            id: `policy-${policy.policy_name}-${policy.volume_name}`,
+            type: 'storagePolicy',
+            position: { x: columnX[2], y: 50 + nodeSpacing + i * nodeSpacing },
+            data: {
+              label: `${policy.policy_name}/${policy.volume_name}`,
+              volumeName: policy.volume_name,
+              disks: policyDisks,
+            },
+          });
+          newEdges.push({
+            id: `edge-policies-${policy.policy_name}-${policy.volume_name}`,
+            source: 'cat-policies',
+            target: `policy-${policy.policy_name}-${policy.volume_name}`,
+            animated: false,
+            style: { stroke: '#4b5563' },
+          });
+        });
+      }
     }
 
     // Tables and Views category nodes (when database is selected)
@@ -956,7 +1367,7 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
 
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [databases, users, tables, partitions, parts, columns, projections, projectionParts, indexes, selectedRoot, selectedDatabase, selectedDatabaseCategory, selectedTable, selectedTableCategory, selectedPartition, selectedProjection, selectedPartitionsCategory, selectedPartCategory, setNodes, setEdges]);
+  }, [databases, users, roles, grants, roleGrants, disks, storagePolicies, tables, partitions, parts, columns, projections, projectionParts, indexes, selectedRoot, selectedDatabase, selectedDatabaseCategory, selectedTable, selectedTableCategory, selectedPartition, selectedProjection, selectedPartitionsCategory, selectedPartCategory, selectedUser, selectedRole, setNodes, setEdges]);
 
   const isLoading = loading || loadingTables || loadingPartitions || loadingParts || loadingColumns || loadingProjections || loadingProjectionParts || loadingIndexes;
 
@@ -1013,7 +1424,7 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
         </div>
 
         {/* Legend */}
-        <div className="px-4 py-2 border-b border-gray-700 flex items-center gap-4 text-xs shrink-0">
+        <div className="px-4 py-2 border-b border-gray-700 flex items-center gap-4 text-xs shrink-0 flex-wrap">
           <div className="flex items-center gap-1">
             <Database className="w-3 h-3 text-blue-400" />
             <span className="text-gray-400">Database</span>
@@ -1045,6 +1456,18 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
           <div className="flex items-center gap-1">
             <User className="w-3 h-3 text-amber-400" />
             <span className="text-gray-400">User</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Key className="w-3 h-3 text-violet-400" />
+            <span className="text-gray-400">Role</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Shield className="w-3 h-3 text-emerald-400" />
+            <span className="text-gray-400">Grant</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <HardDrive className="w-3 h-3 text-teal-400" />
+            <span className="text-gray-400">Disk</span>
           </div>
         </div>
 

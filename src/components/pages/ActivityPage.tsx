@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { Activity, GitMerge, Zap, RefreshCw, Settings, X, HardDrive } from 'lucide-react';
+import { Activity, GitMerge, Zap, RefreshCw, Settings, X, HardDrive, Clock, Upload, Network } from 'lucide-react';
 import { SystemTable, type SystemTableRef } from '../SystemTable';
 import { ActivityFilterPanel } from '../ActivityFilterPanel';
 import { ProfileEventsModal } from '../ProfileEventsModal';
@@ -20,9 +20,18 @@ import {
   fetchViewRefreshesDistinct,
   fetchQueryCache,
   fetchQueryCacheColumns,
+  fetchBackgroundJobs,
+  fetchBackgroundJobsColumns,
+  fetchBackgroundJobsDistinct,
+  fetchAsyncInserts,
+  fetchAsyncInsertsColumns,
+  fetchAsyncInsertsDistinct,
+  fetchDistributedDDL,
+  fetchDistributedDDLColumns,
+  fetchDistributedDDLDistinct,
 } from '../../services/api';
 
-type ActivityTab = 'processes' | 'merges' | 'mutations' | 'refreshes' | 'queryCache';
+type ActivityTab = 'processes' | 'merges' | 'mutations' | 'refreshes' | 'queryCache' | 'backgroundJobs' | 'asyncInserts' | 'distributedDDL';
 
 const PROCESSES_DEFAULT_VISIBLE_FIELDS = [
   'query_id',
@@ -86,6 +95,51 @@ const VIEW_REFRESHES_FILTERABLE_FIELDS = [
   { field: 'status', label: 'Status' },
 ];
 
+const BACKGROUND_JOBS_DEFAULT_VISIBLE_FIELDS = [
+  'event_time',
+  'status',
+  'name',
+  'error',
+  'start_time',
+  'end_time',
+];
+
+const BACKGROUND_JOBS_FILTERABLE_FIELDS = [
+  { field: 'status', label: 'Status' },
+  { field: 'name', label: 'Name' },
+];
+
+const ASYNC_INSERTS_DEFAULT_VISIBLE_FIELDS = [
+  'database',
+  'table',
+  'format',
+  'first_update',
+  'total_bytes',
+  'total_rows',
+  'entries',
+];
+
+const ASYNC_INSERTS_FILTERABLE_FIELDS = [
+  { field: 'database', label: 'Database' },
+  { field: 'table', label: 'Table' },
+  { field: 'format', label: 'Format' },
+];
+
+const DISTRIBUTED_DDL_DEFAULT_VISIBLE_FIELDS = [
+  'entry',
+  'host_name',
+  'status',
+  'query',
+  'initiator',
+  'entry_version',
+];
+
+const DISTRIBUTED_DDL_FILTERABLE_FIELDS = [
+  { field: 'status', label: 'Status' },
+  { field: 'host_name', label: 'Host' },
+  { field: 'cluster', label: 'Cluster' },
+];
+
 export function ActivityPage() {
   const [activeTab, setActiveTab] = useState<ActivityTab>('processes');
   const { selectedEntry, setSelectedEntry } = useQueryStore();
@@ -96,6 +150,9 @@ export function ActivityPage() {
   const mutationsTableRef = useRef<SystemTableRef>(null);
   const refreshesTableRef = useRef<SystemTableRef>(null);
   const queryCacheTableRef = useRef<SystemTableRef>(null);
+  const backgroundJobsTableRef = useRef<SystemTableRef>(null);
+  const asyncInsertsTableRef = useRef<SystemTableRef>(null);
+  const distributedDDLTableRef = useRef<SystemTableRef>(null);
 
   // Column state for each table type (synced from SystemTable via callback)
   const [processesColumns, setProcessesColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
@@ -103,6 +160,9 @@ export function ActivityPage() {
   const [mutationsColumns, setMutationsColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
   const [refreshesColumns, setRefreshesColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
   const [queryCacheColumns, setQueryCacheColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
+  const [backgroundJobsColumns, setBackgroundJobsColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
+  const [asyncInsertsColumns, setAsyncInsertsColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
+  const [distributedDDLColumns, setDistributedDDLColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
 
   // Column selector state
   const [columnSelectorOpen, setColumnSelectorOpen] = useState(false);
@@ -115,6 +175,9 @@ export function ActivityPage() {
       case 'mutations': return mutationsColumns;
       case 'refreshes': return refreshesColumns;
       case 'queryCache': return queryCacheColumns;
+      case 'backgroundJobs': return backgroundJobsColumns;
+      case 'asyncInserts': return asyncInsertsColumns;
+      case 'distributedDDL': return distributedDDLColumns;
     }
   };
 
@@ -125,6 +188,9 @@ export function ActivityPage() {
       case 'mutations': mutationsTableRef.current?.toggleColumnVisibility(field); break;
       case 'refreshes': refreshesTableRef.current?.toggleColumnVisibility(field); break;
       case 'queryCache': queryCacheTableRef.current?.toggleColumnVisibility(field); break;
+      case 'backgroundJobs': backgroundJobsTableRef.current?.toggleColumnVisibility(field); break;
+      case 'asyncInserts': asyncInsertsTableRef.current?.toggleColumnVisibility(field); break;
+      case 'distributedDDL': distributedDDLTableRef.current?.toggleColumnVisibility(field); break;
     }
   };
 
@@ -233,10 +299,70 @@ export function ActivityPage() {
     []
   );
 
+  // Background Jobs filters
+  const [backgroundJobsFilters, setBackgroundJobsFilters] = useState<Record<string, string[]>>({});
+  const handleBackgroundJobsFilterChange = useCallback((field: string, values: string[]) => {
+    setBackgroundJobsFilters((prev) => ({ ...prev, [field]: values }));
+  }, []);
+  const handleClearBackgroundJobsFilter = useCallback((field: string) => {
+    setBackgroundJobsFilters((prev) => {
+      const { [field]: _, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+  const handleClearAllBackgroundJobsFilters = useCallback(() => {
+    setBackgroundJobsFilters({});
+  }, []);
+  const fetchBackgroundJobsWithFilters = useCallback(
+    () => fetchBackgroundJobs(backgroundJobsFilters),
+    [backgroundJobsFilters]
+  );
+
+  // Async Inserts filters
+  const [asyncInsertsFilters, setAsyncInsertsFilters] = useState<Record<string, string[]>>({});
+  const handleAsyncInsertsFilterChange = useCallback((field: string, values: string[]) => {
+    setAsyncInsertsFilters((prev) => ({ ...prev, [field]: values }));
+  }, []);
+  const handleClearAsyncInsertsFilter = useCallback((field: string) => {
+    setAsyncInsertsFilters((prev) => {
+      const { [field]: _, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+  const handleClearAllAsyncInsertsFilters = useCallback(() => {
+    setAsyncInsertsFilters({});
+  }, []);
+  const fetchAsyncInsertsWithFilters = useCallback(
+    () => fetchAsyncInserts(asyncInsertsFilters),
+    [asyncInsertsFilters]
+  );
+
+  // Distributed DDL filters
+  const [distributedDDLFilters, setDistributedDDLFilters] = useState<Record<string, string[]>>({});
+  const handleDistributedDDLFilterChange = useCallback((field: string, values: string[]) => {
+    setDistributedDDLFilters((prev) => ({ ...prev, [field]: values }));
+  }, []);
+  const handleClearDistributedDDLFilter = useCallback((field: string) => {
+    setDistributedDDLFilters((prev) => {
+      const { [field]: _, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+  const handleClearAllDistributedDDLFilters = useCallback(() => {
+    setDistributedDDLFilters({});
+  }, []);
+  const fetchDistributedDDLWithFilters = useCallback(
+    () => fetchDistributedDDL(distributedDDLFilters),
+    [distributedDDLFilters]
+  );
+
   const processesFilterCount = Object.values(processesFilters).filter((v) => v.length > 0).length;
   const mergesFilterCount = Object.values(mergesFilters).filter((v) => v.length > 0).length;
   const mutationsFilterCount = Object.values(mutationsFilters).filter((v) => v.length > 0).length;
   const refreshesFilterCount = Object.values(refreshesFilters).filter((v) => v.length > 0).length;
+  const backgroundJobsFilterCount = Object.values(backgroundJobsFilters).filter((v) => v.length > 0).length;
+  const asyncInsertsFilterCount = Object.values(asyncInsertsFilters).filter((v) => v.length > 0).length;
+  const distributedDDLFilterCount = Object.values(distributedDDLFilters).filter((v) => v.length > 0).length;
 
   const tabs: { id: ActivityTab; label: string; icon: typeof Activity }[] = [
     { id: 'processes', label: 'Processes', icon: Activity },
@@ -244,6 +370,9 @@ export function ActivityPage() {
     { id: 'mutations', label: 'Mutations', icon: Zap },
     { id: 'refreshes', label: 'View Refreshes', icon: RefreshCw },
     { id: 'queryCache', label: 'Query Cache', icon: HardDrive },
+    { id: 'backgroundJobs', label: 'Background Jobs', icon: Clock },
+    { id: 'asyncInserts', label: 'Async Inserts', icon: Upload },
+    { id: 'distributedDDL', label: 'DDL Queue', icon: Network },
   ];
 
   return (
@@ -291,6 +420,36 @@ export function ActivityPage() {
               filterableFields={VIEW_REFRESHES_FILTERABLE_FIELDS}
             />
           )}
+          {activeTab === 'backgroundJobs' && (
+            <ActivityFilterPanel
+              filters={backgroundJobsFilters}
+              onFilterChange={handleBackgroundJobsFilterChange}
+              onClearFilter={handleClearBackgroundJobsFilter}
+              onClearAll={handleClearAllBackgroundJobsFilters}
+              fetchDistinct={fetchBackgroundJobsDistinct}
+              filterableFields={BACKGROUND_JOBS_FILTERABLE_FIELDS}
+            />
+          )}
+          {activeTab === 'asyncInserts' && (
+            <ActivityFilterPanel
+              filters={asyncInsertsFilters}
+              onFilterChange={handleAsyncInsertsFilterChange}
+              onClearFilter={handleClearAsyncInsertsFilter}
+              onClearAll={handleClearAllAsyncInsertsFilters}
+              fetchDistinct={fetchAsyncInsertsDistinct}
+              filterableFields={ASYNC_INSERTS_FILTERABLE_FIELDS}
+            />
+          )}
+          {activeTab === 'distributedDDL' && (
+            <ActivityFilterPanel
+              filters={distributedDDLFilters}
+              onFilterChange={handleDistributedDDLFilterChange}
+              onClearFilter={handleClearDistributedDDLFilter}
+              onClearAll={handleClearAllDistributedDDLFilters}
+              fetchDistinct={fetchDistributedDDLDistinct}
+              filterableFields={DISTRIBUTED_DDL_FILTERABLE_FIELDS}
+            />
+          )}
         </div>
         <div className="flex items-center gap-4 text-xs">
           {activeTab === 'processes' && processesFilterCount > 0 && (
@@ -311,6 +470,21 @@ export function ActivityPage() {
           {activeTab === 'refreshes' && refreshesFilterCount > 0 && (
             <span className="text-blue-400">
               {refreshesFilterCount} filter{refreshesFilterCount > 1 ? 's' : ''} active
+            </span>
+          )}
+          {activeTab === 'backgroundJobs' && backgroundJobsFilterCount > 0 && (
+            <span className="text-blue-400">
+              {backgroundJobsFilterCount} filter{backgroundJobsFilterCount > 1 ? 's' : ''} active
+            </span>
+          )}
+          {activeTab === 'asyncInserts' && asyncInsertsFilterCount > 0 && (
+            <span className="text-blue-400">
+              {asyncInsertsFilterCount} filter{asyncInsertsFilterCount > 1 ? 's' : ''} active
+            </span>
+          )}
+          {activeTab === 'distributedDDL' && distributedDDLFilterCount > 0 && (
+            <span className="text-blue-400">
+              {distributedDDLFilterCount} filter{distributedDDLFilterCount > 1 ? 's' : ''} active
             </span>
           )}
         </div>
@@ -432,6 +606,45 @@ export function ActivityPage() {
             fetchColumns={fetchQueryCacheColumns}
             getRowId={(data) => String(data.key_hash || data.query || JSON.stringify(data))}
             onColumnsChange={setQueryCacheColumns}
+            hideTitle
+            hideHeader={false}
+          />
+        )}
+        {activeTab === 'backgroundJobs' && (
+          <SystemTable
+            ref={backgroundJobsTableRef}
+            fetchData={fetchBackgroundJobsWithFilters}
+            fetchColumns={fetchBackgroundJobsColumns}
+            defaultVisibleFields={BACKGROUND_JOBS_DEFAULT_VISIBLE_FIELDS}
+            filters={backgroundJobsFilters}
+            getRowId={(data) => `${data.event_time}-${data.name}-${data.id || Math.random()}`}
+            onColumnsChange={setBackgroundJobsColumns}
+            hideTitle
+            hideHeader={false}
+          />
+        )}
+        {activeTab === 'asyncInserts' && (
+          <SystemTable
+            ref={asyncInsertsTableRef}
+            fetchData={fetchAsyncInsertsWithFilters}
+            fetchColumns={fetchAsyncInsertsColumns}
+            defaultVisibleFields={ASYNC_INSERTS_DEFAULT_VISIBLE_FIELDS}
+            filters={asyncInsertsFilters}
+            getRowId={(data) => `${data.database}-${data.table}-${data.query_id || Math.random()}`}
+            onColumnsChange={setAsyncInsertsColumns}
+            hideTitle
+            hideHeader={false}
+          />
+        )}
+        {activeTab === 'distributedDDL' && (
+          <SystemTable
+            ref={distributedDDLTableRef}
+            fetchData={fetchDistributedDDLWithFilters}
+            fetchColumns={fetchDistributedDDLColumns}
+            defaultVisibleFields={DISTRIBUTED_DDL_DEFAULT_VISIBLE_FIELDS}
+            filters={distributedDDLFilters}
+            getRowId={(data) => `${data.entry}-${data.host_name || ''}`}
+            onColumnsChange={setDistributedDDLColumns}
             hideTitle
             hideHeader={false}
           />
