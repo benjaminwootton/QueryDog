@@ -1857,6 +1857,378 @@ app.get('/api/query-cache/columns', async (req, res) => {
   }
 });
 
+// ==================== BACKGROUND JOBS ENDPOINTS ====================
+
+// Get system.background_schedule_pool_log
+app.get('/api/background-jobs', async (req, res) => {
+  try {
+    const { filters } = req.query;
+    let whereConditions = [];
+    const params = {};
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    const query = `SELECT * FROM ${getSystemTable('backup_log')} ${whereClause} ORDER BY event_time DESC LIMIT 1000`;
+    const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching background jobs:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get system.background_schedule_pool_log columns
+app.get('/api/background-jobs/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'backup_log'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching background jobs columns:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get distinct values for background jobs
+app.get('/api/background-jobs/distinct/:field', async (req, res) => {
+  try {
+    const { field } = req.params;
+    const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'status';
+    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('backup_log')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data.map(row => row.value).filter(v => v !== ''));
+  } catch (error) {
+    console.error('Error fetching background jobs distinct:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// ==================== ASYNC INSERTS ENDPOINTS ====================
+
+// Get system.asynchronous_inserts (current pending inserts)
+app.get('/api/async-inserts', async (req, res) => {
+  try {
+    const { filters } = req.query;
+    let whereConditions = [];
+    const params = {};
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    const query = `SELECT * FROM ${getSystemTable('asynchronous_inserts')} ${whereClause} ORDER BY first_update DESC`;
+    const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching async inserts:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get system.asynchronous_inserts columns
+app.get('/api/async-inserts/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'asynchronous_inserts'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching async inserts columns:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get distinct values for async inserts
+app.get('/api/async-inserts/distinct/:field', async (req, res) => {
+  try {
+    const { field } = req.params;
+    const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
+    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('asynchronous_inserts')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data.map(row => row.value).filter(v => v !== ''));
+  } catch (error) {
+    console.error('Error fetching async inserts distinct:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get system.asynchronous_insert_log (historical insert log)
+app.get('/api/async-insert-log', async (req, res) => {
+  try {
+    const { filters } = req.query;
+    let whereConditions = [];
+    const params = {};
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    const query = `SELECT * FROM ${getSystemTable('asynchronous_insert_log')} ${whereClause} ORDER BY event_time DESC LIMIT 1000`;
+    const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching async insert log:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get system.asynchronous_insert_log columns
+app.get('/api/async-insert-log/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'asynchronous_insert_log'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching async insert log columns:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get distinct values for async insert log
+app.get('/api/async-insert-log/distinct/:field', async (req, res) => {
+  try {
+    const { field } = req.params;
+    const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
+    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('asynchronous_insert_log')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data.map(row => row.value).filter(v => v !== ''));
+  } catch (error) {
+    console.error('Error fetching async insert log distinct:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// ==================== DISTRIBUTED DDL QUEUE ENDPOINTS ====================
+
+// Get system.distributed_ddl_queue
+app.get('/api/distributed-ddl', async (req, res) => {
+  try {
+    const { filters } = req.query;
+    let whereConditions = [];
+    const params = {};
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    const query = `SELECT * FROM ${getSystemTable('distributed_ddl_queue')} ${whereClause} ORDER BY entry_version DESC LIMIT 1000`;
+    const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching distributed DDL:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get system.distributed_ddl_queue columns
+app.get('/api/distributed-ddl/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'distributed_ddl_queue'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching distributed DDL columns:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get distinct values for distributed DDL
+app.get('/api/distributed-ddl/distinct/:field', async (req, res) => {
+  try {
+    const { field } = req.params;
+    const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'status';
+    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('distributed_ddl_queue')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data.map(row => row.value).filter(v => v !== ''));
+  } catch (error) {
+    console.error('Error fetching distributed DDL distinct:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// ==================== DISKS ENDPOINTS ====================
+
+// Get system.disks
+app.get('/api/disks', async (req, res) => {
+  try {
+    const query = `SELECT * FROM ${getSystemTable('disks')} ORDER BY name`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching disks:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.disks columns
+app.get('/api/disks/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'disks'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching disks columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== STORAGE POLICIES ENDPOINTS ====================
+
+// Get system.storage_policies
+app.get('/api/storage-policies', async (req, res) => {
+  try {
+    const query = `SELECT * FROM ${getSystemTable('storage_policies')} ORDER BY policy_name, volume_name`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching storage policies:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.storage_policies columns
+app.get('/api/storage-policies/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'storage_policies'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching storage policies columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== DATABASE BROWSER ENDPOINTS ====================
 
 // Get all databases
@@ -2517,6 +2889,287 @@ app.get('/api/settings/columns', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching settings columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== USERS & SECURITY ENDPOINTS ====================
+
+// Get system.grants
+app.get('/api/grants', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.grants ORDER BY user_name, role_name, access_type`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching grants:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.grants columns
+app.get('/api/grants/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'grants'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching grants columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.roles
+app.get('/api/roles', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.roles ORDER BY name`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching roles:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.roles columns
+app.get('/api/roles/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'roles'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching roles columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.role_grants (role hierarchy)
+app.get('/api/role-grants', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.role_grants ORDER BY user_name, role_name, granted_role_name`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching role grants:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.role_grants columns
+app.get('/api/role-grants/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'role_grants'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching role grants columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.current_roles
+app.get('/api/current-roles', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.current_roles`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching current roles:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.enabled_roles
+app.get('/api/enabled-roles', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.enabled_roles`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching enabled roles:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.quotas
+app.get('/api/quotas', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.quotas ORDER BY name`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching quotas:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.quotas columns
+app.get('/api/quotas/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'quotas'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching quotas columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.quota_usage
+app.get('/api/quota-usage', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.quota_usage ORDER BY quota_name`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching quota usage:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.quota_usage columns
+app.get('/api/quota-usage/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'quota_usage'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching quota usage columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.quota_limits
+app.get('/api/quota-limits', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.quota_limits ORDER BY quota_name`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching quota limits:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.quota_limits columns
+app.get('/api/quota-limits/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'quota_limits'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching quota limits columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.row_policies
+app.get('/api/row-policies', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.row_policies ORDER BY short_name, database, table_name`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching row policies:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.row_policies columns
+app.get('/api/row-policies/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'row_policies'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching row policies columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.session_log
+app.get('/api/session-log', async (req, res) => {
+  try {
+    const query = `
+      SELECT *
+      FROM system.session_log
+      ORDER BY event_time DESC
+      LIMIT 1000
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching session log:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.session_log columns
+app.get('/api/session-log/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'session_log'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching session log columns:', error);
     res.status(500).json({ error: error.message });
   }
 });

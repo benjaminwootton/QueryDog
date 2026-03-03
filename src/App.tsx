@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle } from 'lucide-react';
+import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
 import { PartsPage } from './components/pages/PartsPage';
@@ -7,6 +7,7 @@ import { PartLogPage } from './components/pages/PartLogPage';
 import { ActivityPage } from './components/pages/ActivityPage';
 import { MetricsPage } from './components/pages/MetricsPage';
 import { InstancePage } from './components/pages/InstancePage';
+import { UsersPage } from './components/pages/UsersPage';
 import { TextLogPage } from './components/pages/TextLogPage';
 import { MyQueriesPage } from './components/pages/MyQueriesPage';
 import { DataExplorerPage } from './components/pages/DataExplorerPage';
@@ -16,7 +17,7 @@ import { QueryEditor } from './components/QueryEditor';
 import { useQueryStore } from './stores/queryStore';
 import { useQueryData } from './hooks/useQueryData';
 
-type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'metrics' | 'instance' | 'myqueries';
+type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'metrics' | 'users' | 'instance' | 'myqueries';
 type RefreshInterval = 'off' | 10 | 30 | 60;
 
 interface ConnectionInfo {
@@ -163,6 +164,7 @@ function App() {
     { id: 'activity', label: 'Activity', icon: Activity },
     { id: 'metrics', label: 'Metrics', icon: BarChart2 },
     { id: 'textlog', label: 'Text Log', icon: FileText },
+    { id: 'users', label: 'Users', icon: Users },
     { id: 'instance', label: 'Instance', icon: Server },
     ...(hasQueriesFolder ? [{ id: 'myqueries' as const, label: 'My Queries', icon: FileCode }] : []),
   ];
@@ -301,6 +303,7 @@ function App() {
         {navItem === 'parts' && <PartsPage />}
         {navItem === 'activity' && <ActivityPage />}
         {navItem === 'metrics' && <MetricsPage />}
+        {navItem === 'users' && <UsersPage />}
         {navItem === 'instance' && <InstancePage />}
         {navItem === 'myqueries' && <MyQueriesPage />}
       </main>

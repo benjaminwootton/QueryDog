@@ -1016,6 +1016,132 @@ export async function fetchQueryCacheColumns(): Promise<ColumnMetadata[]> {
   return response.json();
 }
 
+// ==================== BACKGROUND JOBS API ====================
+
+export async function fetchBackgroundJobs(filters: Record<string, string[]> = {}): Promise<Record<string, unknown>[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  const url = Object.keys(filters).length > 0 ? `${API_BASE}/background-jobs?${params}` : `${API_BASE}/background-jobs`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch background jobs: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchBackgroundJobsColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/background-jobs/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch background jobs columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchBackgroundJobsDistinct(field: string): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/background-jobs/distinct/${field}`);
+  if (!response.ok) throw new Error(`Failed to fetch background jobs distinct: ${response.statusText}`);
+  return response.json();
+}
+
+// ==================== ASYNC INSERTS API ====================
+
+export async function fetchAsyncInserts(filters: Record<string, string[]> = {}): Promise<Record<string, unknown>[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  const url = Object.keys(filters).length > 0 ? `${API_BASE}/async-inserts?${params}` : `${API_BASE}/async-inserts`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch async inserts: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchAsyncInsertsColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/async-inserts/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch async inserts columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchAsyncInsertsDistinct(field: string): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/async-inserts/distinct/${field}`);
+  if (!response.ok) throw new Error(`Failed to fetch async inserts distinct: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchAsyncInsertLog(filters: Record<string, string[]> = {}): Promise<Record<string, unknown>[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  const url = Object.keys(filters).length > 0 ? `${API_BASE}/async-insert-log?${params}` : `${API_BASE}/async-insert-log`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch async insert log: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchAsyncInsertLogColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/async-insert-log/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch async insert log columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchAsyncInsertLogDistinct(field: string): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/async-insert-log/distinct/${field}`);
+  if (!response.ok) throw new Error(`Failed to fetch async insert log distinct: ${response.statusText}`);
+  return response.json();
+}
+
+// ==================== DISTRIBUTED DDL API ====================
+
+export async function fetchDistributedDDL(filters: Record<string, string[]> = {}): Promise<Record<string, unknown>[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  const url = Object.keys(filters).length > 0 ? `${API_BASE}/distributed-ddl?${params}` : `${API_BASE}/distributed-ddl`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch distributed DDL: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchDistributedDDLColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/distributed-ddl/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch distributed DDL columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchDistributedDDLDistinct(field: string): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/distributed-ddl/distinct/${field}`);
+  if (!response.ok) throw new Error(`Failed to fetch distributed DDL distinct: ${response.statusText}`);
+  return response.json();
+}
+
+// ==================== DISKS API ====================
+
+export async function fetchDisks(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/disks`);
+  if (!response.ok) throw new Error(`Failed to fetch disks: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchDisksColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/disks/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch disks columns: ${response.statusText}`);
+  return response.json();
+}
+
+// ==================== STORAGE POLICIES API ====================
+
+export async function fetchStoragePolicies(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/storage-policies`);
+  if (!response.ok) throw new Error(`Failed to fetch storage policies: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchStoragePoliciesColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/storage-policies/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch storage policies columns: ${response.statusText}`);
+  return response.json();
+}
+
 // ==================== METRICS API ====================
 
 export async function fetchMetrics(): Promise<Record<string, unknown>[]> {
@@ -1479,6 +1605,116 @@ export async function fetchSettings(): Promise<Record<string, unknown>[]> {
 export async function fetchSettingsColumns(): Promise<ColumnMetadata[]> {
   const response = await fetch(`${API_BASE}/settings/columns`);
   if (!response.ok) throw new Error(`Failed to fetch settings columns: ${response.statusText}`);
+  return response.json();
+}
+
+// ==================== USERS & SECURITY API ====================
+
+export async function fetchGrants(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/grants`);
+  if (!response.ok) throw new Error(`Failed to fetch grants: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchGrantsColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/grants/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch grants columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchRoles(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/roles`);
+  if (!response.ok) throw new Error(`Failed to fetch roles: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchRolesColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/roles/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch roles columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchRoleGrants(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/role-grants`);
+  if (!response.ok) throw new Error(`Failed to fetch role grants: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchRoleGrantsColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/role-grants/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch role grants columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchCurrentRoles(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/current-roles`);
+  if (!response.ok) throw new Error(`Failed to fetch current roles: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchEnabledRoles(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/enabled-roles`);
+  if (!response.ok) throw new Error(`Failed to fetch enabled roles: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchQuotas(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/quotas`);
+  if (!response.ok) throw new Error(`Failed to fetch quotas: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchQuotasColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/quotas/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch quotas columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchQuotaUsage(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/quota-usage`);
+  if (!response.ok) throw new Error(`Failed to fetch quota usage: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchQuotaUsageColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/quota-usage/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch quota usage columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchQuotaLimits(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/quota-limits`);
+  if (!response.ok) throw new Error(`Failed to fetch quota limits: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchQuotaLimitsColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/quota-limits/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch quota limits columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchRowPolicies(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/row-policies`);
+  if (!response.ok) throw new Error(`Failed to fetch row policies: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchRowPoliciesColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/row-policies/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch row policies columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchSessionLog(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/session-log`);
+  if (!response.ok) throw new Error(`Failed to fetch session log: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchSessionLogColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/session-log/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch session log columns: ${response.statusText}`);
   return response.json();
 }
 
