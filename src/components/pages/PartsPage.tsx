@@ -918,31 +918,33 @@ export function PartsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-700 mx-4 flex items-center gap-1 shrink-0">
-        {tabs.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => {
-              setActiveTab(id);
-              setPartsColumnSelectorOpen(false);
-              setPartitionsColumnSelectorOpen(false);
-              // Set active=1 filter when switching to Parts tab
-              if (id === 'parts' && !partsFilters.active?.includes('1')) {
-                setPartsFilters({ ...partsFilters, active: ['1'] });
-              }
-            }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === id
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            <Icon className="w-3 h-3" />
-            {label}
-          </button>
-        ))}
-        {/* Column selector and pagination on the right */}
-        <div className="ml-auto flex items-center gap-3">
+      <div className="border-b border-gray-700 mx-4 flex flex-col gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-1">
+          {tabs.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => {
+                setActiveTab(id);
+                setPartsColumnSelectorOpen(false);
+                setPartitionsColumnSelectorOpen(false);
+                // Set active=1 filter when switching to Parts tab
+                if (id === 'parts' && !partsFilters.active?.includes('1')) {
+                  setPartsFilters({ ...partsFilters, active: ['1'] });
+                }
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                activeTab === id
+                  ? 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              <Icon className="w-3 h-3" />
+              {label}
+            </button>
+          ))}
+        </div>
+        {/* Column selector and pagination */}
+        <div className="flex items-center gap-3 justify-end">
           {databaseFilter && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-blue-400">Database: {databaseFilter}</span>

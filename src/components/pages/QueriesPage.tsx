@@ -65,147 +65,151 @@ export function QueriesPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-700 mx-4 flex items-center gap-1 shrink-0">
-        <button
-          onClick={() => setActiveTab('queries')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'queries'
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          <Database className="w-3 h-3" />
-          Queries
-        </button>
-        <button
-          onClick={() => setActiveTab('grouped')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'grouped'
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          <Layers className="w-3 h-3" />
-          Grouped
-        </button>
-        <button
-          onClick={() => setActiveTab('profileEvents')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'profileEvents'
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          <Activity className="w-3 h-3" />
-          Profile Events
-        </button>
-        <button
-          onClick={() => setActiveTab('byTable')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'byTable'
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          <Table className="w-3 h-3" />
-          By Table
-        </button>
-        <button
-          onClick={() => setActiveTab('histograms')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'histograms'
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          <BarChart3 className="w-3 h-3" />
-          Histograms
-        </button>
-        <button
-          onClick={() => setActiveTab('queryViewsLog')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'queryViewsLog'
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          <Eye className="w-3 h-3" />
-          Views Log
-        </button>
-        {activeTab === 'queries' && (
-          <div className="ml-auto flex items-center gap-4">
-            {selectedEntries.length >= 2 && (
-              <button
-                onClick={() => setCompareModalOpen(true)}
-                className="flex items-center gap-1.5 px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-xs"
-              >
-                <GitCompare className="w-3.5 h-3.5" />
-                Compare ({selectedEntries.length})
-              </button>
-            )}
-            {selectedEntries.length === 1 && (
-              <span className="text-xs text-gray-400">Select 1 more to compare</span>
-            )}
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-gray-400">
-                  {startRow.toLocaleString()}-{endRow.toLocaleString()} of {totalCount.toLocaleString()}
-                </span>
-                <div className="flex items-center gap-1">
+      <div className="border-b border-gray-700 mx-4 flex flex-col gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-1">
+          <button
+            onClick={() => setActiveTab('queries')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'queries'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            <Database className="w-3 h-3" />
+            Queries
+          </button>
+          <button
+            onClick={() => setActiveTab('grouped')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'grouped'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            <Layers className="w-3 h-3" />
+            Grouped
+          </button>
+          <button
+            onClick={() => setActiveTab('profileEvents')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'profileEvents'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            <Activity className="w-3 h-3" />
+            Profile Events
+          </button>
+          <button
+            onClick={() => setActiveTab('byTable')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'byTable'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            <Table className="w-3 h-3" />
+            By Table
+          </button>
+          <button
+            onClick={() => setActiveTab('histograms')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'histograms'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            <BarChart3 className="w-3 h-3" />
+            Histograms
+          </button>
+          <button
+            onClick={() => setActiveTab('queryViewsLog')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'queryViewsLog'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            <Eye className="w-3 h-3" />
+            Views Log
+          </button>
+        </div>
+        {(activeTab === 'queries' || activeTab === 'grouped' || activeTab === 'profileEvents') && (
+          <div className="flex items-center gap-4 justify-end">
+            {activeTab === 'queries' && (
+              <>
+                {selectedEntries.length >= 2 && (
                   <button
-                    onClick={() => setCurrentPage(currentPage - 1)}
-                    disabled={currentPage === 0}
-                    className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Previous page"
+                    onClick={() => setCompareModalOpen(true)}
+                    className="flex items-center gap-1.5 px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-xs"
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    <GitCompare className="w-3.5 h-3.5" />
+                    Compare ({selectedEntries.length})
                   </button>
-                  <span className="text-gray-300 px-2">
-                    {currentPage + 1} / {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setCurrentPage(currentPage + 1)}
-                    disabled={currentPage >= totalPages - 1}
-                    className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Next page"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+                )}
+                {selectedEntries.length === 1 && (
+                  <span className="text-xs text-gray-400">Select 1 more to compare</span>
+                )}
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-gray-400">
+                      {startRow.toLocaleString()}-{endRow.toLocaleString()} of {totalCount.toLocaleString()}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setCurrentPage(currentPage - 1)}
+                        disabled={currentPage === 0}
+                        className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Previous page"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <span className="text-gray-300 px-2">
+                        {currentPage + 1} / {totalPages}
+                      </span>
+                      <button
+                        onClick={() => setCurrentPage(currentPage + 1)}
+                        disabled={currentPage >= totalPages - 1}
+                        className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Next page"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <ColumnSelector />
+              </>
             )}
-            <ColumnSelector />
-          </div>
-        )}
-        {activeTab === 'grouped' && (
-          <div className="ml-auto flex items-center gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={normalizeQueries}
-                onChange={(e) => setNormalizeQueries(e.target.checked)}
-                className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
-              />
-              <span className="text-xs text-gray-300">Normalise queries</span>
-            </label>
-          </div>
-        )}
-        {activeTab === 'profileEvents' && (
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={() => profileEventsRef.current?.openChart()}
-              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
-              title="Chart profile events"
-            >
-              <BarChart2 className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => profileEventsRef.current?.openColumnSelector()}
-              className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
-              title="Select columns"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
+            {activeTab === 'grouped' && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={normalizeQueries}
+                  onChange={(e) => setNormalizeQueries(e.target.checked)}
+                  className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+                />
+                <span className="text-xs text-gray-300">Normalise queries</span>
+              </label>
+            )}
+            {activeTab === 'profileEvents' && (
+              <>
+                <button
+                  onClick={() => profileEventsRef.current?.openChart()}
+                  className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+                  title="Chart profile events"
+                >
+                  <BarChart2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => profileEventsRef.current?.openColumnSelector()}
+                  className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+                  title="Select columns"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

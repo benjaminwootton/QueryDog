@@ -224,9 +224,9 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
         </div>
 
         {/* Results and Explain Panels */}
-        <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 overflow-hidden flex flex-col">
           {/* Results Panel */}
-          <div className="flex-1 flex flex-col border-r border-gray-700 overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col border-b border-gray-700 overflow-hidden">
             <button
               onClick={() => setShowResults(!showResults)}
               className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-gray-300 text-xs font-medium hover:bg-gray-750 shrink-0"
@@ -298,7 +298,11 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
           </div>
 
           {/* Explain Panel */}
-          <div className="w-[500px] flex flex-col overflow-hidden">
+          <div
+            className={`flex flex-col overflow-hidden border-t border-gray-700 ${
+              showExplain ? 'h-[30vh] min-h-[220px] max-h-[420px]' : ''
+            }`}
+          >
             <button
               onClick={() => setShowExplain(!showExplain)}
               className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-gray-300 text-xs font-medium hover:bg-gray-750 shrink-0"

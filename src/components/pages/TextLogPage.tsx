@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { FileText, ChevronLeft, ChevronRight, Filter, X, Search, Activity, AlertTriangle } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
-import type { ColDef, ICellRendererParams, RowClickedEvent, SortChangedEvent } from 'ag-grid-community';
+import type { ColDef, ICellRendererParams, RowClickedEvent, SortChangedEvent, SortDirection } from 'ag-grid-community';
 import { useQueryStore } from '../../stores/queryStore';
 import {
   fetchTextLog,
@@ -200,9 +200,9 @@ export function TextLogPage() {
     },
   ], []);
 
-  const defaultColDef = useMemo(() => ({
+  const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
-    sortingOrder: ['desc', 'asc'],
+    sortingOrder: ['desc', 'asc'] as SortDirection[],
   }), []);
 
   const onSortChanged = useCallback((event: SortChangedEvent) => {
