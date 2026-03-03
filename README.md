@@ -9,7 +9,7 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
 
 - A ClickHouse database with query logs
 - Node.js 22+ if running from source
-- Docker if running via container
+- Docker if running via containers
 
 ## Running
 
@@ -26,6 +26,8 @@ Copy `.env.example` to `.env` and configure your ClickHouse connection:
 cp .env.example .env
 ```
 
+Populate .env with your connection details:
+
 ```env
 CLICKHOUSE_HOST=your-clickhouse-host
 CLICKHOUSE_USER=your-username
@@ -35,13 +37,13 @@ CLICKHOUSE_SECURE=1
 CLICKHOUSE_PORT_HTTP=8443
 ```
 
-### Docker Compose
+### Run With Docker Compose (Preferred)
 
 ```bash
 docker compose up --build
 ```
 
-### From Source
+### Run From Source
 
 ```bash
 npm install
@@ -50,4 +52,7 @@ npm run dev:all
 
 Access at http://localhost:3001
 
+### Next Steps
+
+Please visit https://benjaminwootton.com for more details on the project and my ClickHouse consulting services.
 
