@@ -19,6 +19,18 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
 
 const protocol = process.env.CLICKHOUSE_SECURE === '1' ? 'https' : 'http';
+const isSecure = process.env.CLICKHOUSE_SECURE === '1';
+
+// TLS options for secure connections
+const tlsOptions = isSecure ? {
+  tls: {
+    rejectUnauthorized: process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0', // Default: verify certs, set to '0' to allow self-signed
+  },
+  keep_alive: {
+    enabled: true,
+  },
+} : {};
+
 const client = createClient({
   url: `${protocol}://${process.env.CLICKHOUSE_HOST}:${process.env.CLICKHOUSE_PORT_HTTP}`,
   username: process.env.CLICKHOUSE_USER,
@@ -28,9 +40,10 @@ const client = createClient({
   clickhouse_settings: {
     max_execution_time: 0, // No query execution timeout
   },
+  ...tlsOptions,
 });
 
-console.log(`Connecting to ClickHouse: ${protocol}://${process.env.CLICKHOUSE_HOST}:${process.env.CLICKHOUSE_PORT_HTTP} as user '${process.env.CLICKHOUSE_USER}' on database '${process.env.CLICKHOUSE_DATABASE}'`);
+console.log(`Connecting to ClickHouse: ${protocol}://${process.env.CLICKHOUSE_HOST}:${process.env.CLICKHOUSE_PORT_HTTP} as user '${process.env.CLICKHOUSE_USER}' on database '${process.env.CLICKHOUSE_DATABASE}'${isSecure ? ` (TLS: rejectUnauthorized=${process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0'})` : ''}`);
 
 // Cluster support - if CLICKHOUSE_CLUSTER is set, wrap system table queries with clusterAllReplicas()
 const CLICKHOUSE_CLUSTER = process.env.CLICKHOUSE_CLUSTER;
