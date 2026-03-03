@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Database, BarChart3, ChevronLeft, ChevronRight, Activity, Layers, Settings, BarChart2, GitCompare, Pin, X, Table } from 'lucide-react';
+import { Database, BarChart3, ChevronLeft, ChevronRight, Activity, Layers, Settings, BarChart2, GitCompare, Pin, X, Table, Eye } from 'lucide-react';
 import { TimeRangeSelector } from '../TimeRangeSelector';
 import { SearchBar } from '../SearchBar';
 import { TimelineChart } from '../TimelineChart';
@@ -8,6 +8,7 @@ import { GroupedQueriesTable } from '../GroupedQueriesTable';
 import { HistogramsTab } from '../HistogramsTab';
 import { ProfileEventsTable, type ProfileEventsTableRef } from '../ProfileEventsTable';
 import { ByTableTable } from '../ByTableTable';
+import { QueryViewsLogTable } from '../QueryViewsLogTable';
 import { ColumnSelector } from '../ColumnSelector';
 import { FilterPanel } from '../FilterPanel';
 import { QueryCompareModal } from '../QueryCompareModal';
@@ -120,6 +121,17 @@ export function QueriesPage() {
           <BarChart3 className="w-3 h-3" />
           Histograms
         </button>
+        <button
+          onClick={() => setActiveTab('queryViewsLog')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'queryViewsLog'
+              ? 'border-blue-500 text-blue-400'
+              : 'border-transparent text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          <Eye className="w-3 h-3" />
+          Views Log
+        </button>
         {activeTab === 'queries' && (
           <div className="ml-auto flex items-center gap-4">
             {selectedEntries.length >= 2 && (
@@ -205,6 +217,7 @@ export function QueriesPage() {
         {activeTab === 'profileEvents' && <ProfileEventsTable ref={profileEventsRef} />}
         {activeTab === 'byTable' && <ByTableTable />}
         {activeTab === 'histograms' && <HistogramsTab />}
+        {activeTab === 'queryViewsLog' && <QueryViewsLogTable />}
       </div>
 
       {/* Compare Modal */}

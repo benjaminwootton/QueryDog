@@ -99,6 +99,7 @@ interface QueryState {
 
   // Filters
   timeRange: TimeRange;
+  relativeTimeMinutes: number | null; // null = custom range, number = relative range in minutes
   bucketSize: BucketSize;
   search: string;
   fieldFilters: Record<string, string[]>;
@@ -137,7 +138,7 @@ interface QueryState {
   selectedEntry: QueryLogEntry | null;
   selectedEntries: QueryLogEntry[];
   pinnedEntries: QueryLogEntry[];
-  activeTab: 'queries' | 'grouped' | 'histograms' | 'profileEvents' | 'byTable';
+  activeTab: 'queries' | 'grouped' | 'histograms' | 'profileEvents' | 'byTable' | 'queryViewsLog';
 
   // Global refresh trigger - increment to trigger refresh on all pages
   globalRefreshTrigger: number;
@@ -154,6 +155,8 @@ interface QueryState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setTimeRange: (range: TimeRange) => void;
+  setRelativeTimeRange: (minutes: number) => void;
+  refreshTimeRange: () => void;
   setBucketSize: (size: BucketSize) => void;
   setSearch: (search: string) => void;
   setFieldFilter: (field: string, values: string[]) => void;
@@ -171,7 +174,7 @@ interface QueryState {
   pinEntry: (entry: QueryLogEntry) => void;
   unpinEntry: (queryId: string, eventTime: string) => void;
   clearPinnedEntries: () => void;
-  setActiveTab: (tab: 'queries' | 'grouped' | 'histograms' | 'profileEvents' | 'byTable') => void;
+  setActiveTab: (tab: 'queries' | 'grouped' | 'histograms' | 'profileEvents' | 'byTable' | 'queryViewsLog') => void;
   // Grouped Query Actions
   setGroupedEntries: (entries: GroupedQueryEntry[]) => void;
   setGroupedLoading: (loading: boolean) => void;
@@ -237,6 +240,7 @@ export const useQueryStore = create<QueryState>((set) => ({
   partLogChartMetric: 'count',
 
   timeRange: { start: fifteenMinutesAgo, end: now },
+  relativeTimeMinutes: 15, // Default to 15 minutes relative range
   bucketSize: 'minute',
   search: '',
   fieldFilters: { type: ['QueryFinish'] },
@@ -287,9 +291,23 @@ export const useQueryStore = create<QueryState>((set) => ({
   setTotalCount: (totalCount) => set({ totalCount }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
-  setTimeRange: (timeRange) => set({ timeRange, currentPage: 0 }),
+  setTimeRange: (timeRange) => set({ timeRange, relativeTimeMinutes: null, currentPage: 0 }),
+  setRelativeTimeRange: (minutes) => {
+    const end = new Date();
+    const start = new Date(end.getTime() - minutes * 60 * 1000);
+    set({ timeRange: { start, end }, relativeTimeMinutes: minutes, currentPage: 0 });
+  },
+  refreshTimeRange: () => set((state) => {
+    if (state.relativeTimeMinutes === null) {
+      // Custom range - don't modify
+      return state;
+    }
+    const end = new Date();
+    const start = new Date(end.getTime() - state.relativeTimeMinutes * 60 * 1000);
+    return { timeRange: { start, end } };
+  }),
   setBucketSize: (bucketSize) => set({ bucketSize }),
-  setSearch: (search) => set({ search, currentPage: 0 }),
+  setSearch: (search) => set({ search, currentPage: 0, selectedEntry: null, selectedEntries: [] }),
   setFieldFilter: (field, values) =>
     set((state) => ({
       fieldFilters: { ...state.fieldFilters, [field]: values },

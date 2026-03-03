@@ -69,8 +69,21 @@ function ArrayCellRenderer({ value }: { value: string[] }) {
 }
 
 export function QueryTable() {
-  const { entries, columns, sortField, sortOrder, setSortField, setSortOrder, setSelectedEntry, setSelectedEntries, pinnedEntries, pinEntry, unpinEntry, loading } = useQueryStore();
+  const { entries, columns, sortField, sortOrder, search, setSortField, setSortOrder, setSelectedEntry, setSelectedEntries, pinnedEntries, pinEntry, unpinEntry, loading } = useQueryStore();
   const gridRef = useRef<AgGridReact<QueryLogEntry>>(null);
+
+  const normalizedSearch = useMemo(() => search.trim().toLowerCase(), [search]);
+
+  const matchesSearch = useCallback((entry: QueryLogEntry) => {
+    if (!normalizedSearch) return true;
+    const queryText = String(entry.query ?? '').toLowerCase();
+    const queryId = String(entry.query_id ?? '').toLowerCase();
+    return queryText.includes(normalizedSearch) || queryId.includes(normalizedSearch);
+  }, [normalizedSearch]);
+
+  const visiblePinnedEntries = useMemo(() => {
+    return pinnedEntries.filter(matchesSearch);
+  }, [pinnedEntries, matchesSearch]);
 
   // Keep pinned entries at the top while sorting the rest
   const unpinnedEntries = useMemo(() => {
@@ -290,7 +303,7 @@ export function QueryTable() {
         ref={gridRef}
         theme={darkTheme}
         rowData={unpinnedEntries}
-        pinnedTopRowData={pinnedEntries}
+        pinnedTopRowData={visiblePinnedEntries}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
         initialState={{

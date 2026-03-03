@@ -264,7 +264,7 @@ export interface ProfileEventsTableRef {
 }
 
 export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(function ProfileEventsTable(_props, ref) {
-  const { timeRange, fieldFilters, rangeFilters, search, pinnedEntries, sortField, sortOrder, pageSize, currentPage, setSortField, setSortOrder, setSelectedEntry } = useQueryStore();
+  const { timeRange, bucketSize, fieldFilters, rangeFilters, search, pinnedEntries, sortField, sortOrder, pageSize, currentPage, setSortField, setSortOrder, setSelectedEntry } = useQueryStore();
   const [apiData, setApiData] = useState<ProfileEventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleEvents, setVisibleEvents] = useState<Set<string>>(new Set(DEFAULT_VISIBLE_EVENTS));
@@ -338,7 +338,8 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
         sortOrder,
         rangeFilters,
         pageSize,
-        offset
+        offset,
+        bucketSize
       );
       const normalized = (result as Record<string, unknown>[]).map(normalizeProfileEventRow);
       setApiData(normalized);
@@ -351,6 +352,7 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
   }, [
     timeRange.start.getTime(),
     timeRange.end.getTime(),
+    bucketSize,
     fieldFilters,
     rangeFilters,
     search,

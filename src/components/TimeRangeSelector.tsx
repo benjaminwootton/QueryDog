@@ -14,7 +14,7 @@ interface TimeRangeSelectorProps {
 }
 
 export function TimeRangeSelector({ usePartLogMetric = false }: TimeRangeSelectorProps) {
-  const { timeRange, setTimeRange, bucketSize, setBucketSize, chartType, setChartType, chartMetric, partLogChartMetric, chartAggregation, setChartAggregation } = useQueryStore();
+  const { timeRange, setTimeRange, setRelativeTimeRange, relativeTimeMinutes, bucketSize, setBucketSize, chartType, setChartType, chartMetric, partLogChartMetric, chartAggregation, setChartAggregation } = useQueryStore();
 
   // When Count metric is selected, allow line and stacked but not scatter
   // Use partLogChartMetric when on the Part Log page
@@ -41,9 +41,7 @@ export function TimeRangeSelector({ usePartLogMetric = false }: TimeRangeSelecto
   };
 
   const setQuickRange = (minutes: number) => {
-    const end = new Date();
-    const start = new Date(end.getTime() - minutes * 60 * 1000);
-    setTimeRange({ start, end });
+    setRelativeTimeRange(minutes);
   };
 
   return (
@@ -69,25 +67,25 @@ export function TimeRangeSelector({ usePartLogMetric = false }: TimeRangeSelecto
       <div className="flex gap-1 ml-2">
         <button
           onClick={() => setQuickRange(15)}
-          className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+          className={`px-1.5 py-0.5 rounded ${relativeTimeMinutes === 15 ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
         >
           15m
         </button>
         <button
           onClick={() => setQuickRange(60)}
-          className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+          className={`px-1.5 py-0.5 rounded ${relativeTimeMinutes === 60 ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
         >
           1h
         </button>
         <button
           onClick={() => setQuickRange(360)}
-          className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+          className={`px-1.5 py-0.5 rounded ${relativeTimeMinutes === 360 ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
         >
           6h
         </button>
         <button
           onClick={() => setQuickRange(1440)}
-          className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+          className={`px-1.5 py-0.5 rounded ${relativeTimeMinutes === 1440 ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
         >
           24h
         </button>

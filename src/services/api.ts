@@ -15,7 +15,8 @@ export async function fetchQueryLog(
   filters: Record<string, string[]>,
   rangeFilters: Record<string, RangeFilter> = {},
   limit = 1000,
-  offset = 0
+  offset = 0,
+  bucketSize?: BucketSize
 ): Promise<QueryLogEntry[]> {
   const params = new URLSearchParams({
     start: formatDateTime(timeRange.start),
@@ -25,6 +26,10 @@ export async function fetchQueryLog(
     limit: limit.toString(),
     offset: offset.toString(),
   });
+
+  if (bucketSize) {
+    params.set('bucket', bucketSize);
+  }
 
   if (search) {
     params.set('search', search);
@@ -122,13 +127,18 @@ export async function fetchHistogram(
   timeRange: TimeRange,
   search: string,
   filters: Record<string, string[]>,
-  limit = 20
+  limit = 20,
+  bucketSize?: BucketSize
 ): Promise<HistogramData[]> {
   const params = new URLSearchParams({
     start: formatDateTime(timeRange.start),
     end: formatDateTime(timeRange.end),
     limit: limit.toString(),
   });
+
+  if (bucketSize) {
+    params.set('bucket', bucketSize);
+  }
 
   if (search) {
     params.set('search', search);
@@ -167,12 +177,17 @@ export async function fetchTotalCount(
   timeRange: TimeRange,
   search: string,
   filters: Record<string, string[]>,
-  rangeFilters: Record<string, RangeFilter> = {}
+  rangeFilters: Record<string, RangeFilter> = {},
+  bucketSize?: BucketSize
 ): Promise<number> {
   const params = new URLSearchParams({
     start: formatDateTime(timeRange.start),
     end: formatDateTime(timeRange.end),
   });
+
+  if (bucketSize) {
+    params.set('bucket', bucketSize);
+  }
 
   if (search) {
     params.set('search', search);
@@ -234,7 +249,8 @@ export async function fetchGroupedQueryLog(
   filters: Record<string, string[]>,
   rangeFilters: Record<string, RangeFilter> = {},
   limit = 1000,
-  normalize = false
+  normalize = false,
+  bucketSize?: BucketSize
 ): Promise<GroupedQueryEntry[]> {
   const params = new URLSearchParams({
     start: formatDateTime(timeRange.start),
@@ -243,6 +259,10 @@ export async function fetchGroupedQueryLog(
     sortOrder,
     limit: limit.toString(),
   });
+
+  if (bucketSize) {
+    params.set('bucket', bucketSize);
+  }
 
   if (search) {
     params.set('search', search);
@@ -295,7 +315,8 @@ export async function fetchByTableStats(
   sortOrder: 'ASC' | 'DESC',
   filters: Record<string, string[]>,
   rangeFilters: Record<string, RangeFilter> = {},
-  limit = 500
+  limit = 500,
+  bucketSize?: BucketSize
 ): Promise<ByTableEntry[]> {
   const params = new URLSearchParams({
     start: formatDateTime(timeRange.start),
@@ -304,6 +325,10 @@ export async function fetchByTableStats(
     sortOrder,
     limit: limit.toString(),
   });
+
+  if (bucketSize) {
+    params.set('bucket', bucketSize);
+  }
 
   if (search) {
     params.set('search', search);
@@ -322,6 +347,84 @@ export async function fetchByTableStats(
     throw new Error(`Failed to fetch by-table stats: ${response.statusText}`);
   }
   return response.json();
+}
+
+// ==================== QUERY VIEWS LOG API ====================
+
+export interface QueryViewsLogEntry {
+  event_time: string;
+  view_name: string;
+  view_type: string;
+  view_query: string;
+  view_target: string;
+  read_rows: number;
+  read_bytes: number;
+  written_rows: number;
+  written_bytes: number;
+  peak_memory_usage: number;
+  view_duration_ms: number;
+  status: string;
+  exception: string;
+  initial_query_id: string;
+}
+
+export async function fetchQueryViewsLog(
+  timeRange: TimeRange,
+  sortField: string,
+  sortOrder: 'ASC' | 'DESC',
+  filters: Record<string, string[]> = {},
+  search = '',
+  limit = 1000,
+  offset = 0
+): Promise<QueryViewsLogEntry[]> {
+  const params = new URLSearchParams({
+    start: formatDateTime(timeRange.start),
+    end: formatDateTime(timeRange.end),
+    sortField,
+    sortOrder,
+    limit: limit.toString(),
+    offset: offset.toString(),
+  });
+
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+
+  if (search) {
+    params.set('search', search);
+  }
+
+  const response = await fetch(`${API_BASE}/query-views-log?${params}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch query views log: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function fetchQueryViewsLogCount(
+  timeRange: TimeRange,
+  filters: Record<string, string[]> = {},
+  search = ''
+): Promise<number> {
+  const params = new URLSearchParams({
+    start: formatDateTime(timeRange.start),
+    end: formatDateTime(timeRange.end),
+  });
+
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+
+  if (search) {
+    params.set('search', search);
+  }
+
+  const response = await fetch(`${API_BASE}/query-views-log/count?${params}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch query views log count: ${response.statusText}`);
+  }
+  const data = await response.json();
+  return data.total;
 }
 
 // ==================== PART LOG API ====================
@@ -894,6 +997,25 @@ export async function fetchViewRefreshesDistinct(field: string): Promise<string[
   return response.json();
 }
 
+// ==================== QUERY CACHE API ====================
+
+export async function fetchQueryCache(filters: Record<string, string[]> = {}): Promise<Record<string, unknown>[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  const url = Object.keys(filters).length > 0 ? `${API_BASE}/query-cache?${params}` : `${API_BASE}/query-cache`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch query cache: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchQueryCacheColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/query-cache/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch query cache columns: ${response.statusText}`);
+  return response.json();
+}
+
 // ==================== METRICS API ====================
 
 export async function fetchMetrics(): Promise<Record<string, unknown>[]> {
@@ -1099,6 +1221,43 @@ export async function fetchProjectionParts(
   const response = await fetch(`${API_BASE}/projection-parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(projection)}`);
   if (!response.ok) throw new Error(`Failed to fetch projection parts: ${response.statusText}`);
   return response.json();
+}
+
+// System-wide views API
+export interface SystemView {
+  database: string;
+  name: string;
+  engine: string;
+  as_select: string;
+  metadata_modification_time: string;
+  create_table_query: string;
+}
+
+export async function fetchSystemViews(
+  filters: Record<string, string[]> = {},
+  search = ''
+): Promise<SystemView[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
+  }
+  const url = params.toString() ? `${API_BASE}/views?${params}` : `${API_BASE}/views`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch views: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchViewDefinition(
+  database: string,
+  view: string
+): Promise<string> {
+  const response = await fetch(`${API_BASE}/view-definition/${encodeURIComponent(database)}/${encodeURIComponent(view)}`);
+  if (!response.ok) throw new Error(`Failed to fetch view definition: ${response.statusText}`);
+  const data = await response.json();
+  return data.definition;
 }
 
 // System-wide data skipping indexes API
@@ -1380,7 +1539,8 @@ export async function fetchProfileEvents(
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   rangeFilters: Record<string, RangeFilter> = {},
   limit = 1000,
-  offset = 0
+  offset = 0,
+  bucketSize?: BucketSize
 ): Promise<Record<string, unknown>[]> {
   const params = new URLSearchParams({
     start: formatDateTime(timeRange.start),
@@ -1391,6 +1551,10 @@ export async function fetchProfileEvents(
     offset: offset.toString(),
     eventColumns: eventColumns.join(','),
   });
+
+  if (bucketSize) {
+    params.set('bucket', bucketSize);
+  }
 
   if (Object.keys(filters).length > 0) {
     params.set('filters', JSON.stringify(filters));

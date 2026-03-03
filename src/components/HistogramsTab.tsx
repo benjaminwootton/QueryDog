@@ -83,7 +83,7 @@ function HistogramCard({ field, label, data, loading, onFilterClick }: Histogram
 }
 
 export function HistogramsTab() {
-  const { timeRange, search, fieldFilters, setFieldFilter } = useQueryStore();
+  const { timeRange, bucketSize, search, fieldFilters, setFieldFilter } = useQueryStore();
   const [histogramData, setHistogramData] = useState<Record<string, HistogramData[]>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
 
@@ -98,7 +98,7 @@ export function HistogramsTab() {
       await Promise.all(
         HISTOGRAM_FIELDS.map(async ({ field }) => {
           try {
-            const data = await fetchHistogram(field, timeRange, search, fieldFilters);
+            const data = await fetchHistogram(field, timeRange, search, fieldFilters, 20, bucketSize);
             results[field] = data;
           } catch (error) {
             console.error(`Failed to load histogram for ${field}:`, error);
@@ -113,7 +113,7 @@ export function HistogramsTab() {
 
     loadHistograms();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange.start.getTime(), timeRange.end.getTime(), search, fieldFilters]);
+  }, [timeRange.start.getTime(), timeRange.end.getTime(), bucketSize, search, fieldFilters]);
 
   const handleFilterClick = (field: string, value: string) => {
     const current = fieldFilters[field] || [];

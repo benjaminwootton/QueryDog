@@ -145,24 +145,24 @@ function buildRangeFilterConditions(rangeFilters, whereConditions, params) {
 
 function applyQueryLogSearch(search, whereConditions, params) {
   if (!search) return;
-  const searchText = String(search);
-  // If search looks like a query_id (UUID-like hex string), only search query_id
-  const isQueryIdSearch = /^[0-9a-f-]+$/i.test(searchText) && searchText.length >= 8;
-  if (isQueryIdSearch) {
-    whereConditions.push('query_id ILIKE {search:String}');
-    params.search = `${searchText}%`;
-    return;
-  }
+  const searchText = String(search).trim();
+  if (!searchText) return;
 
   const normalizedSearch = searchText.replace(/[`"]/g, '');
+  params.search = searchText;
+
+  const clauses = [
+    'positionCaseInsensitive(query, {search:String}) > 0',
+    'positionCaseInsensitive(query_id, {search:String}) > 0',
+    'positionCaseInsensitive(initial_query_id, {search:String}) > 0',
+  ];
+
   if (normalizedSearch !== searchText) {
-    whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String} OR replaceAll(query, \'`\', \'\') ILIKE {search_normalized:String})');
-    params.search = `%${searchText}%`;
-    params.search_normalized = `%${normalizedSearch}%`;
-  } else {
-    whereConditions.push('(query ILIKE {search:String} OR query_id ILIKE {search:String})');
-    params.search = `%${searchText}%`;
+    clauses.push("positionCaseInsensitive(replaceAll(query, '`', ''), {search_normalized:String}) > 0");
+    params.search_normalized = normalizedSearch;
   }
+
+  whereConditions.push(`(${clauses.join(' OR ')})`);
 
   // Exclude internal query-log queries unless the user explicitly searches for query_log
   if (!/query_log/i.test(searchText)) {
@@ -170,19 +170,30 @@ function applyQueryLogSearch(search, whereConditions, params) {
   }
 }
 
-// Get effective end time - if start and end are the same, extend end to include the full minute
-function getEffectiveEndTime(start, end) {
+// Get effective end time - if start and end are the same, extend end to include the full bucket
+function getEffectiveEndTime(start, end, bucket = 'minute') {
   if (!start || !end || start !== end) return end;
-  // Parse the date and add 59 seconds to include the full minute
   const endDate = new Date(end);
-  endDate.setSeconds(59);
+  if (isNaN(endDate.getTime())) return end;
+
+  switch (bucket) {
+    case 'second':
+      return end;
+    case 'hour':
+      endDate.setMinutes(59, 59, 999);
+      break;
+    default:
+      endDate.setSeconds(59, 999);
+      break;
+  }
+
   return endDate.toISOString().replace('T', ' ').slice(0, 19);
 }
 
 // Get query log entries
 app.get('/api/query-log', async (req, res) => {
   try {
-    const { start, end, search, limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters, rangeFilters } = req.query;
+    const { start, end, bucket = 'minute', search, limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters, rangeFilters } = req.query;
 
     let whereConditions = [];
     const params = {};
@@ -193,7 +204,7 @@ app.get('/api/query-log', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
+      params.end = getEffectiveEndTime(start, end, bucket);
     }
     applyQueryLogSearch(search, whereConditions, params);
 
@@ -283,7 +294,7 @@ app.get('/api/query-log/timeseries', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
+      params.end = getEffectiveEndTime(start, end, bucket);
     }
     applyQueryLogSearch(search, whereConditions, params);
 
@@ -376,7 +387,7 @@ app.get('/api/query-log/timeseries-stacked', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
+      params.end = getEffectiveEndTime(start, end, bucket);
     }
     applyQueryLogSearch(search, whereConditions, params);
 
@@ -437,7 +448,7 @@ app.get('/api/query-log/timeseries-stacked', async (req, res) => {
 // Get profile events from query_log
 app.get('/api/query-log/profile-events', async (req, res) => {
   try {
-    const { start, end, limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters, rangeFilters, eventColumns, search } = req.query;
+    const { start, end, bucket = 'minute', limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters, rangeFilters, eventColumns, search } = req.query;
 
     let whereConditions = [];
     const params = {};
@@ -448,7 +459,7 @@ app.get('/api/query-log/profile-events', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
+      params.end = getEffectiveEndTime(start, end, bucket);
     }
     applyQueryLogSearch(search, whereConditions, params);
 
@@ -515,7 +526,7 @@ app.get('/api/query-log/profile-events', async (req, res) => {
 app.get('/api/query-log/histogram/:field', async (req, res) => {
   try {
     const { field } = req.params;
-    const { start, end, limit = 20, search, filters } = req.query;
+    const { start, end, bucket = 'minute', limit = 20, search, filters } = req.query;
 
     const scalarFields = [
       'client_name', 'user', 'type', 'query_kind', 'current_database',
@@ -531,7 +542,7 @@ app.get('/api/query-log/histogram/:field', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
+      params.end = getEffectiveEndTime(start, end, bucket);
     }
     applyQueryLogSearch(search, whereConditions, params);
 
@@ -594,7 +605,7 @@ app.get('/api/query-log/histogram/:field', async (req, res) => {
 app.get('/api/query-log/distinct/:field', async (req, res) => {
   try {
     const { field } = req.params;
-    const { start, end, limit = 100 } = req.query;
+    const { start, end, bucket = 'minute', limit = 100 } = req.query;
 
     const scalarFields = [
       'client_name', 'user', 'type', 'query_kind', 'current_database',
@@ -610,7 +621,7 @@ app.get('/api/query-log/distinct/:field', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
+      params.end = getEffectiveEndTime(start, end, bucket);
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -1752,6 +1763,64 @@ app.get('/api/view-refreshes/distinct/:field', async (req, res) => {
   }
 });
 
+// ==================== QUERY CACHE ENDPOINTS ====================
+
+// Get system.query_cache
+app.get('/api/query-cache', async (req, res) => {
+  try {
+    const { filters } = req.query;
+    let whereConditions = [];
+    const params = {};
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          const paramName = `filter_${paramIndex++}`;
+          params[paramName] = values;
+          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    const query = `SELECT * FROM ${getSystemTable('query_cache')} ${whereClause}`;
+    const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching query_cache:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get system.query_cache columns
+app.get('/api/query-cache/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'query_cache'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching query_cache columns:', error);
+    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
 // ==================== DATABASE BROWSER ENDPOINTS ====================
 
 // Get all databases
@@ -2098,6 +2167,75 @@ app.get('/api/browser/projection-parts/:database/:table/:projection', async (req
     res.json(data);
   } catch (error) {
     console.error('Error fetching projection parts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== VIEWS ENDPOINTS ====================
+
+// Get all views and materialized views (system-wide)
+app.get('/api/views', async (req, res) => {
+  try {
+    const { filters, search } = req.query;
+
+    let whereConditions = ["engine IN ('View', 'MaterializedView', 'LiveView', 'WindowView')"];
+    const params = {};
+
+    if (filters) {
+      const parsed = JSON.parse(filters);
+      Object.entries(parsed).forEach(([field, values], idx) => {
+        if (!values || !Array.isArray(values) || values.length === 0) return;
+        const condition = buildFilterCondition(field, values, params, idx);
+        whereConditions.push(condition);
+      });
+    }
+
+    if (search) {
+      params.search = `%${search}%`;
+      whereConditions.push(`(database ILIKE {search:String} OR name ILIKE {search:String})`);
+    }
+
+    const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+
+    const query = `
+      SELECT
+        database,
+        name,
+        engine,
+        as_select,
+        metadata_modification_time,
+        create_table_query
+      FROM system.tables
+      ${whereClause}
+      ORDER BY database, name
+    `;
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching views:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get view definition (CREATE statement)
+app.get('/api/view-definition/:database/:view', async (req, res) => {
+  try {
+    const { database, view } = req.params;
+    const query = `SHOW CREATE TABLE ${database}.${view}`;
+    const result = await client.query({
+      query,
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    const definition = data[0]?.statement || '';
+    res.json({ definition });
+  } catch (error) {
+    console.error('Error fetching view definition:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2571,6 +2709,190 @@ app.post('/api/explore', async (req, res) => {
   } catch (error) {
     console.error('Error exploring table data:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== QUERY VIEWS LOG ENDPOINTS ====================
+
+// Get query_views_log entries
+app.get('/api/query-views-log', async (req, res) => {
+  try {
+    const { start, end, search, limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    if (start) {
+      whereConditions.push('event_time >= {start:DateTime}');
+      params.start = start;
+    }
+    if (end) {
+      whereConditions.push('event_time <= {end:DateTime}');
+      params.end = getEffectiveEndTime(start, end);
+    }
+
+    if (search) {
+      whereConditions.push(`(view_name ILIKE {search:String} OR view_query ILIKE {search:String} OR initial_query_id ILIKE {search:String})`);
+      params.search = `%${search}%`;
+    }
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField) ? sortField : 'event_time';
+    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+    const query = `
+      SELECT
+        event_time,
+        view_name,
+        view_type,
+        view_query,
+        view_target,
+        read_rows,
+        read_bytes,
+        written_rows,
+        written_bytes,
+        peak_memory_usage,
+        view_duration_ms,
+        status,
+        exception,
+        initial_query_id
+      FROM ${getSystemTable('query_views_log')}
+      ${whereClause}
+      ORDER BY ${safeSortField} ${safeSortOrder}
+      LIMIT {limit:UInt32}
+      OFFSET {offset:UInt32}
+    `;
+
+    params.limit = parseInt(limit);
+    params.offset = parseInt(offset);
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching query_views_log:', error);
+    if (error.message?.includes('UNKNOWN_TABLE')) {
+      res.json([]); // Return empty array if table doesn't exist
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get query_views_log count
+app.get('/api/query-views-log/count', async (req, res) => {
+  try {
+    const { start, end, search, filters } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    if (start) {
+      whereConditions.push('event_time >= {start:DateTime}');
+      params.start = start;
+    }
+    if (end) {
+      whereConditions.push('event_time <= {end:DateTime}');
+      params.end = getEffectiveEndTime(start, end);
+    }
+
+    if (search) {
+      whereConditions.push(`(view_name ILIKE {search:String} OR view_query ILIKE {search:String} OR initial_query_id ILIKE {search:String})`);
+      params.search = `%${search}%`;
+    }
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+      let paramIndex = 0;
+      for (const [field, values] of Object.entries(parsedFilters)) {
+        if (values && values.length > 0) {
+          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
+        }
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `SELECT count() as total FROM ${getSystemTable('query_views_log')} ${whereClause}`;
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json({ total: data[0]?.total || 0 });
+  } catch (error) {
+    console.error('Error fetching query_views_log count:', error);
+    if (error.message?.includes('UNKNOWN_TABLE')) {
+      res.json({ total: 0 });
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Get distinct values for query_views_log field (for filters)
+app.get('/api/query-views-log/distinct/:field', async (req, res) => {
+  try {
+    const { field } = req.params;
+    const { start, end, limit = 100 } = req.query;
+
+    const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'view_name';
+
+    let whereConditions = [];
+    const params = {};
+
+    if (start) {
+      whereConditions.push('event_time >= {start:DateTime}');
+      params.start = start;
+    }
+    if (end) {
+      whereConditions.push('event_time <= {end:DateTime}');
+      params.end = getEffectiveEndTime(start, end);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT DISTINCT toString(${safeField}) as value
+      FROM ${getSystemTable('query_views_log')}
+      ${whereClause}
+      ORDER BY value
+      LIMIT {limit:UInt32}
+    `;
+
+    params.limit = parseInt(limit);
+
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data.map(row => row.value).filter(v => v !== '' && v !== null));
+  } catch (error) {
+    console.error('Error fetching query_views_log distinct:', error);
+    if (error.message?.includes('UNKNOWN_TABLE')) {
+      res.json([]);
+    } else {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -3472,7 +3794,7 @@ app.get('/api/text-log/distinct/:field', async (req, res) => {
 // Get grouped query log (aggregated by query or normalized_query_hash)
 app.get('/api/query-log/grouped', async (req, res) => {
   try {
-    const { start, end, search, limit = 1000, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters, normalize } = req.query;
+    const { start, end, bucket = 'minute', search, limit = 1000, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters, normalize } = req.query;
     const useNormalized = normalize === 'true';
 
     let whereConditions = [];
@@ -3484,7 +3806,7 @@ app.get('/api/query-log/grouped', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
+      params.end = getEffectiveEndTime(start, end, bucket);
     }
     applyQueryLogSearch(search, whereConditions, params);
 
@@ -3561,7 +3883,7 @@ app.get('/api/query-log/grouped', async (req, res) => {
 // Get query statistics grouped by table
 app.get('/api/query-log/by-table', async (req, res) => {
   try {
-    const { start, end, search, limit = 500, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters } = req.query;
+    const { start, end, bucket = 'minute', search, limit = 500, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters } = req.query;
 
     let whereConditions = [];
     const params = {};
@@ -3572,7 +3894,7 @@ app.get('/api/query-log/by-table', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
+      params.end = getEffectiveEndTime(start, end, bucket);
     }
     applyQueryLogSearch(search, whereConditions, params);
 
@@ -3645,7 +3967,7 @@ app.get('/api/query-log/by-table', async (req, res) => {
 // Get total count
 app.get('/api/query-log/count', async (req, res) => {
   try {
-    const { start, end, search, filters, rangeFilters } = req.query;
+    const { start, end, bucket = 'minute', search, filters, rangeFilters } = req.query;
 
     let whereConditions = [];
     const params = {};
@@ -3656,7 +3978,7 @@ app.get('/api/query-log/count', async (req, res) => {
     }
     if (end) {
       whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
+      params.end = getEffectiveEndTime(start, end, bucket);
     }
     applyQueryLogSearch(search, whereConditions, params);
 

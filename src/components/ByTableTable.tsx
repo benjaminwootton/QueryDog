@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent } from 'ag-grid-community';
@@ -76,6 +76,7 @@ function numericComparator(valueA: unknown, valueB: unknown): number {
 export function ByTableTable() {
   const {
     timeRange,
+    bucketSize,
     search,
     fieldFilters,
     rangeFilters,
@@ -88,15 +89,28 @@ export function ByTableTable() {
   const [sortField, setSortField] = useState('count');
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
   const [selectedEntry, setSelectedEntry] = useState<ByTableEntry | null>(null);
+  const requestIdRef = useRef(0);
 
   // Fetch data when dependencies change
   useEffect(() => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
-    fetchByTableStats(timeRange, search, sortField, sortOrder, fieldFilters, rangeFilters)
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [timeRange, search, sortField, sortOrder, fieldFilters, rangeFilters]);
+    fetchByTableStats(timeRange, search, sortField, sortOrder, fieldFilters, rangeFilters, 500, bucketSize)
+      .then((entries) => {
+        if (requestId !== requestIdRef.current) return;
+        setData(entries);
+      })
+      .catch((error) => {
+        if (requestId !== requestIdRef.current) return;
+        console.error(error);
+        setData([]);
+      })
+      .finally(() => {
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+        }
+      });
+  }, [timeRange, bucketSize, search, sortField, sortOrder, fieldFilters, rangeFilters]);
 
   const onSortChanged = useCallback((event: SortChangedEvent) => {
     const sortModel = event.api.getColumnState().find(c => c.sort);

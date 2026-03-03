@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { Activity, GitMerge, Zap, RefreshCw, Settings, X } from 'lucide-react';
+import { Activity, GitMerge, Zap, RefreshCw, Settings, X, HardDrive } from 'lucide-react';
 import { SystemTable, type SystemTableRef } from '../SystemTable';
 import { ActivityFilterPanel } from '../ActivityFilterPanel';
 import { ProfileEventsModal } from '../ProfileEventsModal';
@@ -18,9 +18,11 @@ import {
   fetchViewRefreshes,
   fetchViewRefreshesColumns,
   fetchViewRefreshesDistinct,
+  fetchQueryCache,
+  fetchQueryCacheColumns,
 } from '../../services/api';
 
-type ActivityTab = 'processes' | 'merges' | 'mutations' | 'refreshes';
+type ActivityTab = 'processes' | 'merges' | 'mutations' | 'refreshes' | 'queryCache';
 
 const PROCESSES_DEFAULT_VISIBLE_FIELDS = [
   'query_id',
@@ -93,12 +95,14 @@ export function ActivityPage() {
   const mergesTableRef = useRef<SystemTableRef>(null);
   const mutationsTableRef = useRef<SystemTableRef>(null);
   const refreshesTableRef = useRef<SystemTableRef>(null);
+  const queryCacheTableRef = useRef<SystemTableRef>(null);
 
   // Column state for each table type (synced from SystemTable via callback)
   const [processesColumns, setProcessesColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
   const [mergesColumns, setMergesColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
   const [mutationsColumns, setMutationsColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
   const [refreshesColumns, setRefreshesColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
+  const [queryCacheColumns, setQueryCacheColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
 
   // Column selector state
   const [columnSelectorOpen, setColumnSelectorOpen] = useState(false);
@@ -110,6 +114,7 @@ export function ActivityPage() {
       case 'merges': return mergesColumns;
       case 'mutations': return mutationsColumns;
       case 'refreshes': return refreshesColumns;
+      case 'queryCache': return queryCacheColumns;
     }
   };
 
@@ -119,6 +124,7 @@ export function ActivityPage() {
       case 'merges': mergesTableRef.current?.toggleColumnVisibility(field); break;
       case 'mutations': mutationsTableRef.current?.toggleColumnVisibility(field); break;
       case 'refreshes': refreshesTableRef.current?.toggleColumnVisibility(field); break;
+      case 'queryCache': queryCacheTableRef.current?.toggleColumnVisibility(field); break;
     }
   };
 
@@ -222,6 +228,11 @@ export function ActivityPage() {
     [refreshesFilters]
   );
 
+  const fetchQueryCacheData = useCallback(
+    () => fetchQueryCache(),
+    []
+  );
+
   const processesFilterCount = Object.values(processesFilters).filter((v) => v.length > 0).length;
   const mergesFilterCount = Object.values(mergesFilters).filter((v) => v.length > 0).length;
   const mutationsFilterCount = Object.values(mutationsFilters).filter((v) => v.length > 0).length;
@@ -232,6 +243,7 @@ export function ActivityPage() {
     { id: 'merges', label: 'Merges', icon: GitMerge },
     { id: 'mutations', label: 'Mutations', icon: Zap },
     { id: 'refreshes', label: 'View Refreshes', icon: RefreshCw },
+    { id: 'queryCache', label: 'Query Cache', icon: HardDrive },
   ];
 
   return (
@@ -409,6 +421,17 @@ export function ActivityPage() {
             filters={refreshesFilters}
             getRowId={(data) => `${data.database}-${data.view}`}
             onColumnsChange={setRefreshesColumns}
+            hideTitle
+            hideHeader={false}
+          />
+        )}
+        {activeTab === 'queryCache' && (
+          <SystemTable
+            ref={queryCacheTableRef}
+            fetchData={fetchQueryCacheData}
+            fetchColumns={fetchQueryCacheColumns}
+            getRowId={(data) => String(data.key_hash || data.query || JSON.stringify(data))}
+            onColumnsChange={setQueryCacheColumns}
             hideTitle
             hideHeader={false}
           />

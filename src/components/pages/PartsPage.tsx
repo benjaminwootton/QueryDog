@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { HardDrive, ChevronLeft, ChevronRight, Layers, Grid3X3, BarChart2, Settings, X, Eye, Search, Sparkles, Zap, Server, Loader2 } from 'lucide-react';
+import { HardDrive, ChevronLeft, ChevronRight, Layers, Grid3X3, BarChart2, Settings, X, Eye, Search, Sparkles, Zap, Server, Loader2, FileCode } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, FirstDataRenderedEvent } from 'ag-grid-community';
@@ -8,6 +8,7 @@ import { PartsFilterPanel } from '../PartsFilterPanel';
 import { PartsHistogramsTab } from '../PartsHistogramsTab';
 import { ProjectionsTab } from '../ProjectionsTab';
 import { DataSkippingIndexesTab } from '../DataSkippingIndexesTab';
+import { ViewsTab } from '../ViewsTab';
 import { fetchParts, fetchPartsColumns, fetchPartsCount, fetchPartitionsSummary, fetchPartitionsSummaryColumns, fetchPartitionsSummaryCount, fetchGroupedParts, fetchTablePartitions, fetchPartitionParts, fetchTableCompression, fetchBrowserColumns, fetchBrowserSampleData, fetchBrowserTables, fetchMergeTreeIndex, fetchTableDefinition, fetchDatabasesSummary, type GroupedPartsEntry, type TablePartitionEntry, type PartitionPartEntry, type ColumnCompressionEntry, type BrowserColumn, type BrowserTable, type MergeTreeIndexEntry, type DatabaseSummary } from '../../services/api';
 import { useQueryStore } from '../../stores/queryStore';
 
@@ -31,7 +32,7 @@ const darkTheme = themeAlpine.withParams({
   headerHeight: 30,
 });
 
-type PartsTab = 'databases' | 'parts' | 'partitions' | 'grouped' | 'projections' | 'secondary-indexes' | 'histograms';
+type PartsTab = 'databases' | 'parts' | 'partitions' | 'grouped' | 'views' | 'projections' | 'secondary-indexes' | 'histograms';
 
 const PARTS_DEFAULT_VISIBLE_FIELDS = [
   'database',
@@ -816,6 +817,7 @@ export function PartsPage() {
   const tabs: { id: PartsTab; label: string; icon: typeof HardDrive }[] = [
     { id: 'databases', label: 'Databases', icon: Server },
     { id: 'grouped', label: 'Tables', icon: Grid3X3 },
+    { id: 'views', label: 'Views', icon: FileCode },
     { id: 'partitions', label: 'Partitions', icon: Layers },
     { id: 'parts', label: 'Parts', icon: HardDrive },
     { id: 'projections', label: 'Projections', icon: Sparkles },
@@ -1188,6 +1190,12 @@ export function PartsPage() {
               { colId: 'table', sort: 'asc' },
               { colId: 'partition', sort: 'asc' }
             ]}
+          />
+        )}
+        {activeTab === 'views' && (
+          <ViewsTab
+            filters={partsFilters}
+            search={partsSearch}
           />
         )}
         {activeTab === 'projections' && (

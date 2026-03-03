@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent, ICellRendererParams, CellStyle } from 'ag-grid-community';
@@ -100,6 +100,7 @@ function CopyButton({ text }: { text: string }) {
 export function GroupedQueriesTable() {
   const {
     timeRange,
+    bucketSize,
     search,
     fieldFilters,
     rangeFilters,
@@ -119,6 +120,7 @@ export function GroupedQueriesTable() {
   } = useQueryStore();
 
   const [selectedEntry, setSelectedEntry] = useState<GroupedQueryEntry | null>(null);
+  const requestIdRef = useRef(0);
 
   // Close modal on Escape key
   useEffect(() => {
@@ -148,6 +150,7 @@ export function GroupedQueriesTable() {
 
   // Fetch grouped data
   useEffect(() => {
+    const requestId = ++requestIdRef.current;
     setGroupedLoading(true);
     fetchGroupedQueryLog(
       timeRange,
@@ -157,12 +160,24 @@ export function GroupedQueriesTable() {
       fieldFilters,
       rangeFilters,
       1000,
-      normalizeQueries
+      normalizeQueries,
+      bucketSize
     )
-      .then(setGroupedEntries)
-      .catch(console.error)
-      .finally(() => setGroupedLoading(false));
-  }, [timeRange, search, fieldFilters, rangeFilters, groupedSortField, groupedSortOrder, normalizeQueries, setGroupedEntries, setGroupedLoading]);
+      .then((data) => {
+        if (requestId !== requestIdRef.current) return;
+        setGroupedEntries(data);
+      })
+      .catch((error) => {
+        if (requestId !== requestIdRef.current) return;
+        console.error(error);
+        setGroupedEntries([]);
+      })
+      .finally(() => {
+        if (requestId === requestIdRef.current) {
+          setGroupedLoading(false);
+        }
+      });
+  }, [timeRange, bucketSize, search, fieldFilters, rangeFilters, groupedSortField, groupedSortOrder, normalizeQueries, setGroupedEntries, setGroupedLoading]);
 
   // Column definitions for AG Grid
   const columnDefs: ColDef<GroupedQueryEntry>[] = useMemo(() => [

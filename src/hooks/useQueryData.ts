@@ -49,6 +49,8 @@ export function useQueryData() {
 
   const columnsLoadedRef = useRef(false);
   const partLogColumnsLoadedRef = useRef(false);
+  const queryRequestIdRef = useRef(0);
+  const partLogRequestIdRef = useRef(0);
 
   // Load column metadata once on startup
   useEffect(() => {
@@ -85,22 +87,29 @@ export function useQueryData() {
   }, [setPartLogColumns]);
 
   const loadData = useCallback(async () => {
+    const requestId = ++queryRequestIdRef.current;
     setLoading(true);
     setError(null);
+
+    // Get latest state from store to ensure we have the most recent time range
+    const state = useQueryStore.getState();
+    const currentTimeRange = state.timeRange;
 
     const offset = currentPage * pageSize;
 
     try {
       const results = await Promise.allSettled([
-        fetchQueryLog(timeRange, search, sortField, sortOrder, fieldFilters, rangeFilters, pageSize, offset),
-        fetchTimeSeries(timeRange, bucketSize, search, fieldFilters, rangeFilters),
-        fetchStackedTimeSeries(timeRange, bucketSize, search, fieldFilters, rangeFilters),
-        fetchTotalCount(timeRange, search, fieldFilters, rangeFilters),
+        fetchQueryLog(currentTimeRange, search, sortField, sortOrder, fieldFilters, rangeFilters, pageSize, offset, bucketSize),
+        fetchTimeSeries(currentTimeRange, bucketSize, search, fieldFilters, rangeFilters),
+        fetchStackedTimeSeries(currentTimeRange, bucketSize, search, fieldFilters, rangeFilters),
+        fetchTotalCount(currentTimeRange, search, fieldFilters, rangeFilters, bucketSize),
       ]);
 
       // Process each result individually - set data if successful, show error if failed
       let hasAnyData = false;
       let errors: string[] = [];
+
+      if (requestId !== queryRequestIdRef.current) return;
 
       if (results[0].status === 'fulfilled') {
         setEntries(results[0].value);
@@ -162,9 +171,12 @@ export function useQueryData() {
         }
       }
     } catch (err) {
+      if (requestId !== queryRequestIdRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
-      setLoading(false);
+      if (requestId === queryRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -188,21 +200,28 @@ export function useQueryData() {
   ]);
 
   const loadPartLogData = useCallback(async () => {
+    const requestId = ++partLogRequestIdRef.current;
     setPartLogLoading(true);
+
+    // Get latest state from store to ensure we have the most recent time range
+    const state = useQueryStore.getState();
+    const currentTimeRange = state.timeRange;
 
     const offset = partLogCurrentPage * partLogPageSize;
 
     try {
       const results = await Promise.allSettled([
-        fetchPartLog(timeRange, partLogSortField, partLogSortOrder, partLogFieldFilters, partLogPageSize, offset),
-        fetchPartLogTimeSeries(timeRange, bucketSize, partLogFieldFilters),
-        fetchPartLogStackedTimeSeries(timeRange, bucketSize, partLogFieldFilters),
-        fetchPartLogCount(timeRange, partLogFieldFilters),
+        fetchPartLog(currentTimeRange, partLogSortField, partLogSortOrder, partLogFieldFilters, partLogPageSize, offset),
+        fetchPartLogTimeSeries(currentTimeRange, bucketSize, partLogFieldFilters),
+        fetchPartLogStackedTimeSeries(currentTimeRange, bucketSize, partLogFieldFilters),
+        fetchPartLogCount(currentTimeRange, partLogFieldFilters),
       ]);
 
       // Process each result individually - set data if successful, show error if failed
       let hasAnyData = false;
       let errors: string[] = [];
+
+      if (requestId !== partLogRequestIdRef.current) return;
 
       if (results[0].status === 'fulfilled') {
         setPartLogEntries(results[0].value);
@@ -271,9 +290,12 @@ export function useQueryData() {
         }
       }
     } catch (err) {
+      if (requestId !== partLogRequestIdRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load part log data');
     } finally {
-      setPartLogLoading(false);
+      if (requestId === partLogRequestIdRef.current) {
+        setPartLogLoading(false);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -302,13 +324,15 @@ export function useQueryData() {
     loadPartLogData();
   }, [loadPartLogData]);
 
-  const { triggerGlobalRefresh } = useQueryStore();
+  const { triggerGlobalRefresh, refreshTimeRange } = useQueryStore();
 
   const refresh = useCallback(() => {
+    // Update time range to current time if using a relative range (e.g., "last 15 minutes")
+    refreshTimeRange();
     loadData();
     loadPartLogData();
     triggerGlobalRefresh();
-  }, [loadData, loadPartLogData, triggerGlobalRefresh]);
+  }, [loadData, loadPartLogData, triggerGlobalRefresh, refreshTimeRange]);
 
   return { refresh };
 }
