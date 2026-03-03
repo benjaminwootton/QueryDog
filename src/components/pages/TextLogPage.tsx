@@ -371,7 +371,7 @@ export function TextLogPage() {
       )}
 
       {/* Timeline Chart */}
-      <div className="px-4 pt-4 pb-3 shrink-0">
+      <div className="px-4 pt-3 pb-2 shrink-0">
         <div className="flex gap-1 border-b border-gray-700 mb-2">
           <button
             onClick={() => handleChartTabChange('count')}
@@ -499,7 +499,7 @@ export function TextLogPage() {
       </div>
 
       {/* Log entries table - AG Grid */}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden px-4 pt-3 pb-4">
         <AgGridReact
           theme={darkTheme}
           rowData={entries}

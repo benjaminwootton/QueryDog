@@ -60,7 +60,7 @@ export function QueriesPage() {
       </div>
 
       {/* Timeline Chart */}
-      <div className="px-4 pt-4 pb-3 shrink-0">
+      <div className="px-4 pt-3 pb-2 shrink-0">
         <TimelineChart />
       </div>
 
@@ -215,7 +215,7 @@ export function QueriesPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden px-4 pt-3 pb-4">
         {activeTab === 'queries' && <QueryTable />}
         {activeTab === 'grouped' && <GroupedQueriesTable />}
         {activeTab === 'profileEvents' && <ProfileEventsTable ref={profileEventsRef} />}

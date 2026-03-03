@@ -32,7 +32,7 @@ export function InstancePage() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden px-4 pt-3 pb-4">
         {activeTab === 'users' && (
           <SystemTable
             fetchData={fetchUsers}

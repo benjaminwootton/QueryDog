@@ -1039,7 +1039,7 @@ export function PartsPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden px-4 pt-3 pb-4">
         {activeTab === 'databases' && (
           <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
             <AgGridReact<DatabaseSummary>

@@ -178,7 +178,7 @@ export function MetricsPage() {
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden px-4 pt-3 pb-4">
         <AgGridReact<MetricRow | EventRow>
           theme={darkTheme}
           rowData={filteredData}
