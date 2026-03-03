@@ -920,7 +920,7 @@ export function PartsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-700 mx-4 flex flex-col gap-2 shrink-0">
+      <div className="border-b border-gray-700 mx-4 flex items-center justify-between shrink-0">
         <div className="flex flex-wrap items-center gap-1">
           {tabs.map(({ id, label, icon: Icon }) => (
             <button
@@ -946,7 +946,7 @@ export function PartsPage() {
           ))}
         </div>
         {/* Column selector and pagination */}
-        <div className="flex items-center gap-3 justify-end">
+        <div className="flex items-center gap-3">
           {databaseFilter && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-blue-400">Database: {databaseFilter}</span>

@@ -65,7 +65,7 @@ export function QueriesPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-700 mx-4 flex flex-col gap-2 shrink-0">
+      <div className="border-b border-gray-700 mx-4 flex items-center justify-between shrink-0">
         <div className="flex flex-wrap items-center gap-1">
           <button
             onClick={() => setActiveTab('queries')}
@@ -135,7 +135,7 @@ export function QueriesPage() {
           </button>
         </div>
         {(activeTab === 'queries' || activeTab === 'grouped' || activeTab === 'profileEvents') && (
-          <div className="flex items-center gap-4 justify-end">
+          <div className="flex items-center gap-4">
             {activeTab === 'queries' && (
               <>
                 {selectedEntries.length >= 2 && (
