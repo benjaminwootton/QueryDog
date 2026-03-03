@@ -2,6 +2,8 @@
 
 A powerful tool for ClickHouse performance optimisation.  Visualise query performance and background activity, identify bottlenecks and optimise cluster performance with a single container.
 
+Implemented by [Benjamin Wootton](https://benjaminwootton.com).
+
 <img width="2054" height="1101" alt="Screenshot 2025-12-09 at 11 31 53 pm" src="https://github.com/user-attachments/assets/e1b52d42-028a-4c46-8631-7fdcaba44747" />
 <img width="2055" height="1101" alt="Screenshot 2025-12-09 at 11 32 10 pm" src="https://github.com/user-attachments/assets/81150e55-b47b-4feb-89cd-02bee733ad4b" />
 
@@ -20,7 +22,7 @@ git clone https://github.com/benjaminwootton/querydog
 cd querydog
 ```
 
-Copy `.env.example` to `.env` and configure your ClickHouse connection:
+Copy `.env.example` to `.env`:
 
 ```bash
 cp .env.example .env
@@ -49,7 +51,6 @@ docker compose up --build
 npm install
 npm run dev:all
 ```
-
 Access at http://localhost:3001
 
 ### Next Steps
