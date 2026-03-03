@@ -28,7 +28,7 @@ app.use(express.static(path.join(__dirname, '../dist')));
 
 const protocol = process.env.CLICKHOUSE_SECURE === '1' ? 'https' : 'http';
 const isSecure = process.env.CLICKHOUSE_SECURE === '1';
-const clickhousePort = process.env.CLICKHOUSE_PORT;
+const clickhousePort = process.env.CLICKHOUSE_PORT_HTTP;
 
 // Force IPv4 to avoid Docker Desktop IPv6 issues
 // Use the appropriate agent type based on protocol

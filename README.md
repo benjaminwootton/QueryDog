@@ -23,7 +23,7 @@ docker run -d \
   -e CLICKHOUSE_PASSWORD=your-password \
   -e CLICKHOUSE_DATABASE=your-database \
   -e CLICKHOUSE_SECURE=1 \
-  -e CLICKHOUSE_PORT=8443 \
+  -e CLICKHOUSE_PORT_HTTP=8443 \
   ghcr.io/benjaminwootton/querydog:latest
 ```
 
@@ -41,7 +41,7 @@ docker run -d \
   -e CLICKHOUSE_PASSWORD=your-password \
   -e CLICKHOUSE_DATABASE=your-database \
   -e CLICKHOUSE_SECURE=1 \
-  -e CLICKHOUSE_PORT=8443 \
+  -e CLICKHOUSE_PORT_HTTP=8443 \
   querydog:local
 ```
 
@@ -55,7 +55,7 @@ CLICKHOUSE_USER=your-username
 CLICKHOUSE_PASSWORD=your-password
 CLICKHOUSE_DATABASE=your-database
 CLICKHOUSE_SECURE=1
-CLICKHOUSE_PORT=8443
+CLICKHOUSE_PORT_HTTP=8443
 ```
 
 2. Build the application:
