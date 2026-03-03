@@ -35,7 +35,9 @@ const clickhousePort = process.env.CLICKHOUSE_PORT_HTTP;
 const agent = isSecure
   ? new https.Agent({
       family: 4,
-      keepAlive: false,
+      keepAlive: true, // Enable keep-alive to reduce TLS handshakes over VPN
+      keepAliveMsecs: 10000,
+      timeout: 60000, // 60s socket timeout for slow VPN connections
       rejectUnauthorized: process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0',
       servername: process.env.CLICKHOUSE_HOST,
       // Explicit secureContext fixes TLS handshake issues in Docker containers
@@ -44,7 +46,7 @@ const agent = isSecure
         maxVersion: 'TLSv1.3',
       }),
     })
-  : new http.Agent({ family: 4, keepAlive: false });
+  : new http.Agent({ family: 4, keepAlive: true, keepAliveMsecs: 10000, timeout: 60000 });
 
 // Client configuration with custom agent for Docker IPv4 compatibility
 const clientConfig = {
@@ -58,7 +60,7 @@ const clientConfig = {
     max_execution_time: 0, // No query execution timeout
   },
   keep_alive: {
-    enabled: false, // Disable keep-alive for Docker compatibility
+    enabled: true, // Enable keep-alive to reduce TLS handshakes over VPN
   },
 };
 
