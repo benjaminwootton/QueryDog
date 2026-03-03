@@ -1,4 +1,5 @@
 import express from 'express';
+import tls from 'tls';
 import cors from 'cors';
 import { createClient } from '@clickhouse/client';
 import dotenv from 'dotenv';
@@ -30,35 +31,38 @@ const isSecure = process.env.CLICKHOUSE_SECURE === '1';
 const clickhousePort = process.env.CLICKHOUSE_PORT;
 
 // Force IPv4 to avoid Docker Desktop IPv6 issues
-const httpAgent = new http.Agent({ family: 4 });
-const httpsAgent = new https.Agent({
-  family: 4,
-  rejectUnauthorized: process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0',
-});
-const clickhouseAgent = isSecure ? httpsAgent : httpAgent;
+// Use the appropriate agent type based on protocol
+const agent = isSecure
+  ? new https.Agent({
+      family: 4,
+      keepAlive: false,
+      rejectUnauthorized: process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0',
+      servername: process.env.CLICKHOUSE_HOST,
+      // Explicit secureContext fixes TLS handshake issues in Docker containers
+      secureContext: tls.createSecureContext({
+        minVersion: 'TLSv1.2',
+        maxVersion: 'TLSv1.3',
+      }),
+    })
+  : new http.Agent({ family: 4, keepAlive: false });
 
-// TLS options for secure connections
-const tlsOptions = isSecure ? {
-  tls: {
-    rejectUnauthorized: process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0', // Default: verify certs, set to '0' to allow self-signed
-  },
-  keep_alive: {
-    enabled: false, // Disable keep-alive for Docker compatibility
-  },
-} : {};
-
-const client = createClient({
+// Client configuration with custom agent for Docker IPv4 compatibility
+const clientConfig = {
   url: `${protocol}://${process.env.CLICKHOUSE_HOST}:${clickhousePort}`,
   username: process.env.CLICKHOUSE_USER,
   password: process.env.CLICKHOUSE_PASSWORD,
   database: process.env.CLICKHOUSE_DATABASE,
   request_timeout: 3600000, // 1 hour HTTP timeout
+  http_agent: agent, // Works for both HTTP and HTTPS connections
   clickhouse_settings: {
     max_execution_time: 0, // No query execution timeout
   },
-  http_agent: clickhouseAgent,
-  ...tlsOptions,
-});
+  keep_alive: {
+    enabled: false, // Disable keep-alive for Docker compatibility
+  },
+};
+
+const client = createClient(clientConfig);
 
 console.log(`Connecting to ClickHouse: ${protocol}://${process.env.CLICKHOUSE_HOST}:${clickhousePort} as user '${process.env.CLICKHOUSE_USER}' on database '${process.env.CLICKHOUSE_DATABASE}'${isSecure ? ` (TLS: rejectUnauthorized=${process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0'})` : ''}`);
 

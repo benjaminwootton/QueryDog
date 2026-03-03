@@ -1,0 +1,13 @@
+services:
+  querydog:
+    build: .
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
