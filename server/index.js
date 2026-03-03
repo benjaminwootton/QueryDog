@@ -4398,7 +4398,7 @@ function isRunningInDocker() {
   }
 }
 
-const DEFAULT_PORT = isRunningInDocker() ? 3001 : 9001;
+const DEFAULT_PORT = isRunningInDocker() ? 3001 : 3002;
 const PORT = process.env.PORT || DEFAULT_PORT;
 let server;
 

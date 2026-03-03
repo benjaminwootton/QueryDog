@@ -9,45 +9,11 @@ A powerful tool for ClickHouse performance optimisation.  Visualise query perfor
 
 - A ClickHouse database with query logs
 - Node.js 22+ if running from source
+- Docker if running via container
 
-### Running From Docker
+## Configuration
 
-Run the container from GitHub Container Registry:
-
-```bash
-# From GitHub Container Registry
-docker run -d \
-  -p 3001:3001 \
-  -e CLICKHOUSE_HOST=your-clickhouse-host \
-  -e CLICKHOUSE_USER=your-username \
-  -e CLICKHOUSE_PASSWORD=your-password \
-  -e CLICKHOUSE_DATABASE=your-database \
-  -e CLICKHOUSE_SECURE=1 \
-  -e CLICKHOUSE_PORT_HTTP=8443 \
-  ghcr.io/benjaminwootton/querydog:latest
-```
-
-3. Access the application at http://localhost:3001
-
-Build and run locally from the `Dockerfile`:
-
-```bash
-docker build -t querydog:local .
-
-docker run -d \
-  -p 3001:3001 \
-  -e CLICKHOUSE_HOST=your-clickhouse-host \
-  -e CLICKHOUSE_USER=your-username \
-  -e CLICKHOUSE_PASSWORD=your-password \
-  -e CLICKHOUSE_DATABASE=your-database \
-  -e CLICKHOUSE_SECURE=1 \
-  -e CLICKHOUSE_PORT_HTTP=8443 \
-  querydog:local
-```
-
-## Running From Source
-
-Create a `.env` file in the root directory and populate the following variables:
+Create a `.env` file in the root directory:
 
 ```env
 CLICKHOUSE_HOST=your-clickhouse-host
@@ -58,14 +24,21 @@ CLICKHOUSE_SECURE=1
 CLICKHOUSE_PORT_HTTP=8443
 ```
 
-2. Build the application:
-   ```bash
-   npm run build
-   ```
+## Running with Docker Compose
 
-3. Start the production server:
-   ```bash
-   npm start
-   ```
+```bash
+docker compose up --build
+```
 
-   
+Access at http://localhost:3001
+
+## Running from Source
+
+```bash
+npm install
+npm run dev:all
+```
+
+Access at http://localhost:3001
+
+
