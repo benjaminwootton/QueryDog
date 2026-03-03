@@ -38,6 +38,8 @@ const agent = isSecure
       keepAlive: true, // Enable keep-alive to reduce TLS handshakes over VPN
       keepAliveMsecs: 10000,
       timeout: 60000, // 60s socket timeout for slow VPN connections
+      maxSockets: 5, // Limit concurrent connections for VPN stability
+      maxFreeSockets: 2,
       rejectUnauthorized: process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0',
       servername: process.env.CLICKHOUSE_HOST,
       // Explicit secureContext fixes TLS handshake issues in Docker containers
@@ -46,7 +48,7 @@ const agent = isSecure
         maxVersion: 'TLSv1.3',
       }),
     })
-  : new http.Agent({ family: 4, keepAlive: true, keepAliveMsecs: 10000, timeout: 60000 });
+  : new http.Agent({ family: 4, keepAlive: true, keepAliveMsecs: 10000, timeout: 60000, maxSockets: 5 });
 
 // Client configuration with custom agent for Docker IPv4 compatibility
 const clientConfig = {

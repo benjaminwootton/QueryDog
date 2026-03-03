@@ -7,17 +7,4 @@ services:
       - .env
     volumes:
       - ./queries:/app/queries
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped
-    networks:
-      - querydog-net
-
-networks:
-  querydog-net:
-    driver: bridge
-    driver_opts:
-      com.docker.network.driver.mtu: 1400  # Lower MTU for VPN compatibility
