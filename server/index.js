@@ -5080,7 +5080,6 @@ async function startup() {
 
   // Start HTTP server
   server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`QueryDog running on http://0.0.0.0:${PORT}`);
   });
 }
 
