@@ -112,17 +112,6 @@ export function QueriesPage() {
             By Table
           </button>
           <button
-            onClick={() => setActiveTab('histograms')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === 'histograms'
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            <BarChart3 className="w-3 h-3" />
-            Histograms
-          </button>
-          <button
             onClick={() => setActiveTab('queryViewsLog')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
               activeTab === 'queryViewsLog'
@@ -132,6 +121,17 @@ export function QueriesPage() {
           >
             <Eye className="w-3 h-3" />
             Views Log
+          </button>
+          <button
+            onClick={() => setActiveTab('histograms')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'histograms'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            <BarChart3 className="w-3 h-3" />
+            Histograms
           </button>
         </div>
         {(activeTab === 'queries' || activeTab === 'grouped' || activeTab === 'profileEvents') && (
@@ -220,8 +220,8 @@ export function QueriesPage() {
         {activeTab === 'grouped' && <GroupedQueriesTable />}
         {activeTab === 'profileEvents' && <ProfileEventsTable ref={profileEventsRef} />}
         {activeTab === 'byTable' && <ByTableTable />}
-        {activeTab === 'histograms' && <HistogramsTab />}
         {activeTab === 'queryViewsLog' && <QueryViewsLogTable />}
+        {activeTab === 'histograms' && <HistogramsTab />}
       </div>
 
       {/* Compare Modal */}

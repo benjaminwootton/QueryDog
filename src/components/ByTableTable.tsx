@@ -26,25 +26,46 @@ const darkTheme = themeAlpine.withParams({
   headerHeight: 30,
 });
 
-function formatBytes(bytes: number): string {
-  if (bytes === null || bytes === undefined || bytes === 0) return '-';
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function formatBytes(value: unknown): string {
+  const bytes = toNumber(value);
+  if (bytes === null || bytes === 0) return '-';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-function formatNumber(num: number): string {
-  if (num === null || num === undefined) return '-';
+function formatNumber(value: unknown): string {
+  const num = toNumber(value);
+  if (num === null) return '-';
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
   if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
   return num.toLocaleString();
 }
 
-function formatDuration(ms: number): string {
-  if (ms === null || ms === undefined) return '-';
+function formatDuration(value: unknown): string {
+  const ms = toNumber(value);
+  if (ms === null) return '-';
   if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
   return ms.toFixed(0) + 'ms';
+}
+
+function formatPercent(value: unknown, digits = 1): string {
+  const num = toNumber(value);
+  if (num === null) return '-';
+  return `${num.toFixed(digits)}%`;
 }
 
 function formatDateTime(date: string): string {
@@ -237,7 +258,7 @@ export function ByTableTable() {
       field: 'error_rate',
       width: 80,
       sortable: true,
-      valueFormatter: (params) => params.value != null ? `${params.value.toFixed(1)}%` : '-',
+      valueFormatter: (params) => formatPercent(params.value, 1),
       comparator: numericComparator,
       cellStyle: (params) => ({
         textAlign: 'right',
@@ -334,7 +355,7 @@ export function ByTableTable() {
                 <div className="bg-gray-800 rounded p-3">
                   <div className="text-xs text-gray-400 mb-1">Error Rate</div>
                   <div className={`text-lg font-semibold ${selectedEntry.error_rate > 0 ? 'text-red-300' : 'text-green-300'}`}>
-                    {selectedEntry.error_rate.toFixed(1)}%
+                    {formatPercent(selectedEntry.error_rate, 1)}
                   </div>
                 </div>
               </div>
@@ -402,7 +423,7 @@ export function ByTableTable() {
                     <tr className="border-b border-gray-700/50 hover:bg-gray-700/30">
                       <td className="p-1.5 text-blue-300 font-mono">Error Rate</td>
                       <td className={`p-1.5 text-right font-mono ${selectedEntry.error_rate > 0 ? 'text-red-300' : 'text-green-300'}`}>
-                        {selectedEntry.error_rate.toFixed(2)}%
+                        {formatPercent(selectedEntry.error_rate, 2)}
                       </td>
                     </tr>
                     <tr className="border-b border-gray-700/50 hover:bg-gray-700/30">
