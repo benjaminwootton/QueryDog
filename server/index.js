@@ -457,7 +457,7 @@ app.get('/api/query-log/timeseries', async (req, res) => {
     let truncFunc;
     switch (bucket) {
       case 'second':
-        truncFunc = 'toStartOfSecond(event_time_microseconds)';
+        truncFunc = 'toDateTime(event_time_microseconds)';
         break;
       case 'hour':
         truncFunc = 'toStartOfHour(event_time)';
@@ -548,7 +548,7 @@ app.get('/api/query-log/timeseries-stacked', async (req, res) => {
     let truncFunc;
     switch (bucket) {
       case 'second':
-        truncFunc = 'toStartOfSecond(event_time_microseconds)';
+        truncFunc = 'toDateTime(event_time_microseconds)';
         break;
       case 'hour':
         truncFunc = 'toStartOfHour(event_time)';
@@ -4758,7 +4758,7 @@ app.get('/api/text-log/timeseries', async (req, res) => {
     let truncFunc;
     switch (bucket) {
       case 'second':
-        truncFunc = 'toStartOfSecond(event_time)';
+        truncFunc = 'toDateTime(event_time)';
         break;
       case 'hour':
         truncFunc = 'toStartOfHour(event_time)';
