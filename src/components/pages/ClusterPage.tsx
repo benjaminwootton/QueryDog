@@ -36,8 +36,8 @@ export function ClusterPage() {
 
   const tabs: { id: ClusterTab; label: string; icon: typeof Network }[] = [
     { id: 'clusters', label: 'Clusters', icon: Network },
-    { id: 'replication-queue', label: 'Replication Queue', icon: RefreshCw },
     { id: 'replicas', label: 'Replicas', icon: Server },
+    { id: 'replication-queue', label: 'Replication Queue', icon: RefreshCw },
     { id: 'fetches', label: 'Fetches', icon: GitBranch },
     { id: 'distributed-ddl', label: 'Distributed DDL', icon: Clock },
     { id: 'distribution-queue', label: 'Distribution Queue', icon: Send },
