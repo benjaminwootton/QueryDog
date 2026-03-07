@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Settings, RefreshCw, X, Check, BarChart2, Clock } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { Settings, RefreshCw, X, Check, BarChart2, Clock, Layers } from 'lucide-react';
 import {
   fetchMetricLogTimeSeries,
   fetchMetricLogColumns,
@@ -13,7 +13,20 @@ import {
   type AsyncMetricLogColumn,
 } from '../../services/api';
 
-type DashboardSource = 'metrics' | 'async';
+type DashboardSource = 'metrics' | 'async' | 'bgpool';
+type TimeRangeMinutes = 15 | 60 | 360 | 1440;
+
+// Background pool metrics (fixed set)
+const BACKGROUND_POOL_METRICS = [
+  'CurrentMetric_BackgroundMergesAndMutationsPoolSize',
+  'CurrentMetric_BackgroundMergesAndMutationsPoolTask',
+  'CurrentMetric_BackgroundFetchesPoolSize',
+  'CurrentMetric_BackgroundFetchesPoolTask',
+  'CurrentMetric_BackgroundMovePoolSize',
+  'CurrentMetric_BackgroundMovePoolTask',
+  'CurrentMetric_BackgroundCommonPoolSize',
+  'CurrentMetric_BackgroundCommonPoolTask',
+];
 
 // Format large numbers with K, M, B suffixes
 function formatValue(value: number | string | null | undefined): string {
@@ -29,7 +42,7 @@ function formatValue(value: number | string | null | undefined): string {
 
 // Format metric name for display
 function formatMetricName(name: string, source: DashboardSource): string {
-  if (source === 'metrics') {
+  if (source === 'metrics' || source === 'bgpool') {
     return name
       .replace(/^(CurrentMetric_|ProfileEvent_)/, '')
       .replace(/([A-Z])/g, ' $1')
@@ -126,6 +139,98 @@ function MetricChart({ metric, data, colorIndex, source }: MetricChartProps) {
   );
 }
 
+// Combined chart for background pool (Size vs Task for each pool type)
+interface PoolChartProps {
+  poolName: string;
+  sizeMetric: string;
+  taskMetric: string;
+  data: MetricLogTimeSeriesPoint[];
+  colorIndex: number;
+}
+
+function PoolChart({ poolName, sizeMetric, taskMetric, data, colorIndex }: PoolChartProps) {
+  const sizeColor = getMetricColor(colorIndex * 2);
+  const taskColor = getMetricColor(colorIndex * 2 + 1);
+
+  // Get the latest values
+  const latestSize = data.length > 0 ? Number(data[data.length - 1][sizeMetric]) || 0 : 0;
+  const latestTask = data.length > 0 ? Number(data[data.length - 1][taskMetric]) || 0 : 0;
+
+  return (
+    <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs text-gray-400 truncate flex-1" title={poolName}>
+          {poolName}
+        </div>
+        <div className="flex items-center gap-3 text-xs font-mono">
+          <span style={{ color: sizeColor }}>Size: {formatValue(latestSize)}</span>
+          <span style={{ color: taskColor }}>Tasks: {formatValue(latestTask)}</span>
+        </div>
+      </div>
+      <div className="h-28">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+            <XAxis
+              dataKey="time"
+              tick={false}
+              axisLine={{ stroke: '#374151' }}
+              tickLine={false}
+            />
+            <YAxis
+              tick={{ fontSize: 9, fill: '#6b7280' }}
+              tickFormatter={formatValue}
+              axisLine={{ stroke: '#374151' }}
+              tickLine={false}
+              width={40}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#1f2937',
+                border: '1px solid #374151',
+                borderRadius: '4px',
+                fontSize: '11px',
+              }}
+              labelStyle={{ color: '#9ca3af' }}
+              formatter={(value: number | string, name: string) => [
+                formatValue(value),
+                name.includes('Size') ? 'Pool Size' : 'Active Tasks',
+              ]}
+              labelFormatter={(label) => new Date(label).toLocaleTimeString()}
+            />
+            <Legend
+              verticalAlign="top"
+              height={20}
+              formatter={(value) => (
+                <span className="text-xs">
+                  {value.includes('Size') ? 'Pool Size' : 'Active Tasks'}
+                </span>
+              )}
+            />
+            <Line
+              type="monotone"
+              dataKey={sizeMetric}
+              stroke={sizeColor}
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+              name="Size"
+            />
+            <Line
+              type="monotone"
+              dataKey={taskMetric}
+              stroke={taskColor}
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+              name="Tasks"
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -149,7 +254,9 @@ function SettingsModal({
   onSaveMetricsLog,
   onSaveAsyncLog,
 }: SettingsModalProps) {
-  const [activeSettingsTab, setActiveSettingsTab] = useState<DashboardSource>(source);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'metrics' | 'async'>(
+    source === 'async' ? 'async' : 'metrics'
+  );
   const [localMetricsLog, setLocalMetricsLog] = useState<string[]>(selectedMetricsLog);
   const [localAsyncLog, setLocalAsyncLog] = useState<string[]>(selectedAsyncLog);
   const [search, setSearch] = useState('');
@@ -157,12 +264,12 @@ function SettingsModal({
   useEffect(() => {
     setLocalMetricsLog(selectedMetricsLog);
     setLocalAsyncLog(selectedAsyncLog);
-    setActiveSettingsTab(source);
+    setActiveSettingsTab(source === 'async' ? 'async' : 'metrics');
   }, [selectedMetricsLog, selectedAsyncLog, source, isOpen]);
 
   if (!isOpen) return null;
 
-  const toggleMetric = (name: string, tab: DashboardSource) => {
+  const toggleMetric = (name: string, tab: 'metrics' | 'async') => {
     if (tab === 'metrics') {
       setLocalMetricsLog(prev =>
         prev.includes(name) ? prev.filter(m => m !== name) : [...prev, name]
@@ -352,10 +459,35 @@ function SettingsModal({
   );
 }
 
+// Time range button component
+interface TimeRangeButtonProps {
+  minutes: TimeRangeMinutes;
+  label: string;
+  selected: TimeRangeMinutes;
+  onClick: (minutes: TimeRangeMinutes) => void;
+}
+
+function TimeRangeButton({ minutes, label, selected, onClick }: TimeRangeButtonProps) {
+  return (
+    <button
+      onClick={() => onClick(minutes)}
+      className={`px-1.5 py-0.5 rounded text-xs ${
+        selected === minutes
+          ? 'bg-blue-600 text-white'
+          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function DashboardTab() {
   const [activeSource, setActiveSource] = useState<DashboardSource>('metrics');
+  const [timeRangeMinutes, setTimeRangeMinutes] = useState<TimeRangeMinutes>(60);
   const [metricsData, setMetricsData] = useState<MetricLogTimeSeriesPoint[]>([]);
   const [asyncData, setAsyncData] = useState<MetricLogTimeSeriesPoint[]>([]);
+  const [bgPoolData, setBgPoolData] = useState<MetricLogTimeSeriesPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [columnsLoaded, setColumnsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -382,6 +514,7 @@ export function DashboardTab() {
         // Load saved metrics from localStorage or use defaults
         const savedMetrics = localStorage.getItem('dashboardMetricsLog');
         const savedAsync = localStorage.getItem('dashboardAsyncLog');
+        const savedTimeRange = localStorage.getItem('dashboardTimeRange');
 
         if (savedMetrics) {
           try {
@@ -410,6 +543,14 @@ export function DashboardTab() {
         } else {
           setSelectedAsyncLog(asyncDefaults);
         }
+
+        if (savedTimeRange) {
+          const parsed = parseInt(savedTimeRange, 10);
+          if ([15, 60, 360, 1440].includes(parsed)) {
+            setTimeRangeMinutes(parsed as TimeRangeMinutes);
+          }
+        }
+
         setColumnsLoaded(true);
       } catch (err) {
         console.error('Failed to load columns:', err);
@@ -420,21 +561,32 @@ export function DashboardTab() {
     loadColumns();
   }, []);
 
+  // Determine bucket size based on time range
+  const getBucketSize = useCallback((): 'second' | 'minute' | 'hour' => {
+    if (timeRangeMinutes <= 15) return 'second';
+    if (timeRangeMinutes <= 360) return 'minute';
+    return 'hour';
+  }, [timeRangeMinutes]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     const end = new Date();
-    const start = new Date(end.getTime() - 60 * 60 * 1000);
+    const start = new Date(end.getTime() - timeRangeMinutes * 60 * 1000);
+    const bucket = getBucketSize();
 
     try {
       // Load data based on active source
       if (activeSource === 'metrics' && selectedMetricsLog.length > 0) {
-        const result = await fetchMetricLogTimeSeries(start, end, 'minute', selectedMetricsLog);
+        const result = await fetchMetricLogTimeSeries(start, end, bucket, selectedMetricsLog);
         setMetricsData(result);
       } else if (activeSource === 'async' && selectedAsyncLog.length > 0) {
-        const result = await fetchAsyncMetricLogTimeSeries(start, end, 'minute', selectedAsyncLog);
+        const result = await fetchAsyncMetricLogTimeSeries(start, end, bucket, selectedAsyncLog);
         setAsyncData(result);
+      } else if (activeSource === 'bgpool') {
+        const result = await fetchMetricLogTimeSeries(start, end, bucket, BACKGROUND_POOL_METRICS);
+        setBgPoolData(result);
       }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -442,12 +594,14 @@ export function DashboardTab() {
     } finally {
       setLoading(false);
     }
-  }, [activeSource, selectedMetricsLog, selectedAsyncLog]);
+  }, [activeSource, selectedMetricsLog, selectedAsyncLog, timeRangeMinutes, getBucketSize]);
 
-  // Load data when source or metrics change
+  // Load data when source, metrics, or time range change
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (columnsLoaded) {
+      loadData();
+    }
+  }, [loadData, columnsLoaded]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -465,8 +619,31 @@ export function DashboardTab() {
     localStorage.setItem('dashboardAsyncLog', JSON.stringify(metrics));
   };
 
-  const currentData = activeSource === 'metrics' ? metricsData : asyncData;
-  const currentMetrics = activeSource === 'metrics' ? selectedMetricsLog : selectedAsyncLog;
+  const handleTimeRangeChange = (minutes: TimeRangeMinutes) => {
+    setTimeRangeMinutes(minutes);
+    localStorage.setItem('dashboardTimeRange', String(minutes));
+  };
+
+  const getTimeRangeLabel = () => {
+    switch (timeRangeMinutes) {
+      case 15: return '15 min';
+      case 60: return '1 hour';
+      case 360: return '6 hours';
+      case 1440: return '24 hours';
+      default: return `${timeRangeMinutes} min`;
+    }
+  };
+
+  const currentData = activeSource === 'metrics' ? metricsData : activeSource === 'async' ? asyncData : bgPoolData;
+  const currentMetrics = activeSource === 'metrics' ? selectedMetricsLog : activeSource === 'async' ? selectedAsyncLog : BACKGROUND_POOL_METRICS;
+
+  // Background pool pairs (Size + Task for each pool type)
+  const bgPoolPairs = [
+    { name: 'Merges & Mutations', size: 'CurrentMetric_BackgroundMergesAndMutationsPoolSize', task: 'CurrentMetric_BackgroundMergesAndMutationsPoolTask' },
+    { name: 'Fetches', size: 'CurrentMetric_BackgroundFetchesPoolSize', task: 'CurrentMetric_BackgroundFetchesPoolTask' },
+    { name: 'Move', size: 'CurrentMetric_BackgroundMovePoolSize', task: 'CurrentMetric_BackgroundMovePoolTask' },
+    { name: 'Common', size: 'CurrentMetric_BackgroundCommonPoolSize', task: 'CurrentMetric_BackgroundCommonPoolTask' },
+  ];
 
   if (error) {
     return (
@@ -513,9 +690,29 @@ export function DashboardTab() {
               <Clock className="w-3 h-3" />
               Async Log
             </button>
+            <button
+              onClick={() => setActiveSource('bgpool')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                activeSource === 'bgpool'
+                  ? 'bg-gray-700 text-white'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              <Layers className="w-3 h-3" />
+              Background Pool
+            </button>
           </div>
+
+          {/* Time Range Selector */}
+          <div className="flex items-center gap-1">
+            <TimeRangeButton minutes={15} label="15m" selected={timeRangeMinutes} onClick={handleTimeRangeChange} />
+            <TimeRangeButton minutes={60} label="1h" selected={timeRangeMinutes} onClick={handleTimeRangeChange} />
+            <TimeRangeButton minutes={360} label="6h" selected={timeRangeMinutes} onClick={handleTimeRangeChange} />
+            <TimeRangeButton minutes={1440} label="24h" selected={timeRangeMinutes} onClick={handleTimeRangeChange} />
+          </div>
+
           <span className="text-xs text-gray-500">
-            Last 60 min • {currentMetrics.length} metrics
+            Last {getTimeRangeLabel()} • {currentMetrics.length} metrics
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -527,13 +724,15 @@ export function DashboardTab() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
-            title="Settings"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
+          {activeSource !== 'bgpool' && (
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+              title="Settings"
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -546,8 +745,24 @@ export function DashboardTab() {
         ) : currentData.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-gray-400 text-sm">
-              No data available. Make sure {activeSource === 'metrics' ? 'metric_log' : 'asynchronous_metric_log'} is enabled.
+              {activeSource === 'bgpool'
+                ? 'No background pool data available. Make sure metric_log is enabled.'
+                : `No data available. Make sure ${activeSource === 'metrics' ? 'metric_log' : 'asynchronous_metric_log'} is enabled.`
+              }
             </div>
+          </div>
+        ) : activeSource === 'bgpool' ? (
+          <div className="grid grid-cols-2 gap-3">
+            {bgPoolPairs.map((pool, index) => (
+              <PoolChart
+                key={pool.name}
+                poolName={pool.name}
+                sizeMetric={pool.size}
+                taskMetric={pool.task}
+                data={bgPoolData}
+                colorIndex={index}
+              />
+            ))}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
