@@ -30,14 +30,14 @@ type ReplicationQueueSubTab = 'detailed' | 'grouped';
 type ZookeeperSubTab = 'zookeeper' | 'connection' | 'connection-log' | 'log';
 
 export function ClusterPage() {
-  const [activeTab, setActiveTab] = useState<ClusterTab>('replication-queue');
+  const [activeTab, setActiveTab] = useState<ClusterTab>('clusters');
   const [replicationSubTab, setReplicationSubTab] = useState<ReplicationQueueSubTab>('detailed');
   const [zookeeperSubTab, setZookeeperSubTab] = useState<ZookeeperSubTab>('zookeeper');
 
   const tabs: { id: ClusterTab; label: string; icon: typeof Network }[] = [
+    { id: 'clusters', label: 'Clusters', icon: Network },
     { id: 'replication-queue', label: 'Replication Queue', icon: RefreshCw },
     { id: 'replicas', label: 'Replicas', icon: Server },
-    { id: 'clusters', label: 'Clusters', icon: Network },
     { id: 'fetches', label: 'Fetches', icon: GitBranch },
     { id: 'distributed-ddl', label: 'Distributed DDL', icon: Clock },
     { id: 'distribution-queue', label: 'Distribution Queue', icon: Send },
@@ -133,6 +133,7 @@ export function ClusterPage() {
             fetchColumns={fetchClustersColumns}
             getRowId={(data) => `${data.cluster}-${data.shard_num}-${data.replica_num}`}
             hideHeader
+            defaultVisibleFields={['cluster', 'shard_num', 'replica_num', 'host_name', 'host_address', 'port', 'shard_weight', 'internal_replication', 'is_local']}
           />
         )}
 

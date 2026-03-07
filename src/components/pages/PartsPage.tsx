@@ -1305,25 +1305,25 @@ export function PartsPage() {
         )}
         {activeTab === 'views' && (
           <ViewsTab
-            filters={partsFilters}
+            filters={Object.fromEntries(Object.entries(partsFilters).filter(([k]) => k !== 'active'))}
             search={partsSearch}
           />
         )}
         {activeTab === 'dictionaries' && (
           <DictionariesTab
-            filters={partsFilters}
+            filters={Object.fromEntries(Object.entries(partsFilters).filter(([k]) => k !== 'active'))}
             search={partsSearch}
           />
         )}
         {activeTab === 'projections' && (
           <ProjectionsTab
-            filters={partsFilters}
+            filters={Object.fromEntries(Object.entries(partsFilters).filter(([k]) => k !== 'active'))}
             search={partsSearch}
           />
         )}
         {activeTab === 'secondary-indexes' && (
           <DataSkippingIndexesTab
-            filters={partsFilters}
+            filters={Object.fromEntries(Object.entries(partsFilters).filter(([k]) => k !== 'active'))}
             search={partsSearch}
           />
         )}
