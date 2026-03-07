@@ -21,13 +21,11 @@ import {
   fetchZookeeperConnectionColumns,
   fetchZookeeperConnectionLog,
   fetchZookeeperConnectionLogColumns,
-  fetchZookeeperLog,
-  fetchZookeeperLogColumns,
 } from '../../services/api';
 
 type ClusterTab = 'replication-queue' | 'replicas' | 'clusters' | 'fetches' | 'distributed-ddl' | 'distribution-queue' | 'zookeeper';
 type ReplicationQueueSubTab = 'detailed' | 'grouped';
-type ZookeeperSubTab = 'zookeeper' | 'connection' | 'connection-log' | 'log';
+type ZookeeperSubTab = 'zookeeper' | 'connection' | 'connection-log';
 
 export function ClusterPage() {
   const [activeTab, setActiveTab] = useState<ClusterTab>('clusters');
@@ -53,7 +51,6 @@ export function ClusterPage() {
     { id: 'zookeeper', label: 'ZooKeeper' },
     { id: 'connection', label: 'Connection' },
     { id: 'connection-log', label: 'Connection Log' },
-    { id: 'log', label: 'Log' },
   ];
 
   return (
@@ -203,14 +200,6 @@ export function ClusterPage() {
                   fetchData={fetchZookeeperConnectionLog}
                   fetchColumns={fetchZookeeperConnectionLogColumns}
                   getRowId={(data) => `${data.event_time}-${data.type}`}
-                  hideHeader
-                />
-              )}
-              {zookeeperSubTab === 'log' && (
-                <SystemTable
-                  fetchData={fetchZookeeperLog}
-                  fetchColumns={fetchZookeeperLogColumns}
-                  getRowId={(data) => `${data.event_time}-${data.address}`}
                   hideHeader
                 />
               )}
