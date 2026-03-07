@@ -171,24 +171,6 @@ export function InstancePage() {
     { id: 'storagePolicies', label: 'Storage Policies', icon: Database },
   ];
 
-  // Get dashboard metrics count from localStorage
-  const getDashboardMetricsCount = () => {
-    const source = localStorage.getItem('dashboardSource') || 'metrics';
-    const savedMetrics = localStorage.getItem('dashboardMetricsLog');
-    const savedAsync = localStorage.getItem('dashboardAsyncLog');
-
-    try {
-      if (source === 'async' && savedAsync) {
-        return JSON.parse(savedAsync).length;
-      }
-      if (savedMetrics) {
-        return JSON.parse(savedMetrics).length;
-      }
-    } catch {
-      // ignore
-    }
-    return 0;
-  };
 
   return (
     <div className="h-full flex flex-col">
