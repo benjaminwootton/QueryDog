@@ -91,6 +91,7 @@ interface SystemTableProps {
   columnWidthOverrides?: Record<string, number>;
   defaultSort?: Array<{ colId: string; sort: 'asc' | 'desc' }>;
   onCellClick?: (field: string, value: unknown, data: Record<string, unknown>) => void;
+  search?: string;
 }
 
 function SystemTableInner({
@@ -110,6 +111,7 @@ function SystemTableInner({
   onRowAction,
   columnWidthOverrides,
   defaultSort,
+  search,
 }: SystemTableProps, ref: React.ForwardedRef<SystemTableRef>) {
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns || []);
@@ -390,6 +392,7 @@ function SystemTableInner({
           enableCellTextSelection={true}
           tooltipShowDelay={300}
           tooltipInteraction={true}
+          quickFilterText={search || undefined}
           getRowId={getRowId ? (params) => getRowId(params.data) : undefined}
           initialState={defaultSort ? {
             sort: {
