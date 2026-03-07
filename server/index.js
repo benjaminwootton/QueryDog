@@ -5032,6 +5032,221 @@ app.post('/api/my-queries/clone', (req, res) => {
   }
 });
 
+// ==================== CLUSTER ENDPOINTS ====================
+
+// Get system.replication_queue (detailed view)
+app.get('/api/cluster/replication-queue', async (req, res) => {
+  try {
+    const query = `
+      SELECT
+        database, table, replica_name, is_leader, is_readonly,
+        future_parts, parts_to_check, queue_size, last_queue_update_exception
+      FROM system.replicas
+      ORDER BY database, table, replica_name
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching replication queue:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.replication_queue columns (using replicas table for this view)
+app.get('/api/cluster/replication-queue/columns', async (req, res) => {
+  try {
+    const columns = [
+      { name: 'database', type: 'String', comment: 'Database name' },
+      { name: 'table', type: 'String', comment: 'Table name' },
+      { name: 'replica_name', type: 'String', comment: 'Replica name in ZooKeeper' },
+      { name: 'is_leader', type: 'UInt8', comment: 'Whether this replica is the leader' },
+      { name: 'is_readonly', type: 'UInt8', comment: 'Whether this replica is in read-only mode' },
+      { name: 'future_parts', type: 'UInt32', comment: 'Number of data parts that will appear after INSERTs' },
+      { name: 'parts_to_check', type: 'UInt32', comment: 'Number of data parts in the queue for verification' },
+      { name: 'queue_size', type: 'UInt32', comment: 'Size of the queue for operations waiting to be performed' },
+      { name: 'last_queue_update_exception', type: 'String', comment: 'Last exception during queue update' },
+    ];
+    res.json(columns);
+  } catch (error) {
+    console.error('Error fetching replication queue columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get grouped replication queue errors
+app.get('/api/cluster/replication-queue/grouped', async (req, res) => {
+  try {
+    const query = `
+      SELECT table, last_exception, postpone_reason, count() as count
+      FROM system.replication_queue
+      GROUP BY table, last_exception, postpone_reason
+      ORDER BY count DESC
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching grouped replication queue:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.replicas
+app.get('/api/cluster/replicas', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.replicas ORDER BY database, table, replica_name`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching replicas:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.replicas columns
+app.get('/api/cluster/replicas/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'replicas'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching replicas columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.clusters
+app.get('/api/cluster/clusters', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.clusters ORDER BY cluster, shard_num, replica_num`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching clusters:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.clusters columns
+app.get('/api/cluster/clusters/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'clusters'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching clusters columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.replicated_fetches
+app.get('/api/cluster/fetches', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.replicated_fetches ORDER BY database, table`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching replicated fetches:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.replicated_fetches columns
+app.get('/api/cluster/fetches/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'replicated_fetches'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching replicated fetches columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.distributed_ddl_queue
+app.get('/api/cluster/distributed-ddl', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.distributed_ddl_queue ORDER BY entry_version DESC LIMIT 1000`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching distributed DDL queue:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.distributed_ddl_queue columns
+app.get('/api/cluster/distributed-ddl/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'distributed_ddl_queue'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching distributed DDL queue columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.zookeeper (root path)
+app.get('/api/cluster/zookeeper', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.zookeeper WHERE path = '/' LIMIT 100`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching zookeeper:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.zookeeper columns
+app.get('/api/cluster/zookeeper/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'zookeeper'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching zookeeper columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Serve the React app for any other routes (Express v5 compatible)
 app.use((req, res, next) => {
   if (req.method === 'GET' && !req.path.startsWith('/api')) {

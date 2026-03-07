@@ -1808,3 +1808,83 @@ export async function fetchProfileEvents(
   if (!response.ok) throw new Error(`Failed to fetch profile events: ${response.statusText}`);
   return response.json();
 }
+
+// ==================== CLUSTER API ====================
+
+export async function fetchReplicationQueue(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/replication-queue`);
+  if (!response.ok) throw new Error(`Failed to fetch replication queue: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchReplicationQueueColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/cluster/replication-queue/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch replication queue columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchReplicationQueueGrouped(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/replication-queue/grouped`);
+  if (!response.ok) throw new Error(`Failed to fetch grouped replication queue: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchReplicas(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/replicas`);
+  if (!response.ok) throw new Error(`Failed to fetch replicas: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchReplicasColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/cluster/replicas/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch replicas columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchClusters(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/clusters`);
+  if (!response.ok) throw new Error(`Failed to fetch clusters: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchClustersColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/cluster/clusters/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch clusters columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchReplicatedFetches(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/fetches`);
+  if (!response.ok) throw new Error(`Failed to fetch replicated fetches: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchReplicatedFetchesColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/cluster/fetches/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch replicated fetches columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchDistributedDdlQueue(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/distributed-ddl`);
+  if (!response.ok) throw new Error(`Failed to fetch distributed DDL queue: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchDistributedDdlQueueColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/cluster/distributed-ddl/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch distributed DDL queue columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchZookeeper(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/zookeeper`);
+  if (!response.ok) throw new Error(`Failed to fetch zookeeper: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchZookeeperColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/cluster/zookeeper/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch zookeeper columns: ${response.statusText}`);
+  return response.json();
+}
