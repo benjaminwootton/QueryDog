@@ -20,21 +20,30 @@ git clone https://github.com/benjaminwootton/querydog
 cd querydog
 ```
 
-Copy `.env.example` to `.env`:
+Copy `querydog.yaml.example` to `querydog.yaml`:
 
 ```bash
-cp .env.example .env
+cp querydog.yaml.example querydog.yaml
 ```
 
-Populate .env with your connection details:
+Edit `querydog.yaml` with your connection details. You can configure multiple environments and switch between them from the UI:
 
-```env
-CLICKHOUSE_HOST=your-clickhouse-host
-CLICKHOUSE_USER=your-username
-CLICKHOUSE_PASSWORD=your-password
-CLICKHOUSE_DATABASE=your-database
-CLICKHOUSE_SECURE=1
-CLICKHOUSE_PORT_HTTP=8443
+```yaml
+environments:
+  - name: "Production"
+    host: "your-clickhouse-host"
+    port: 8443
+    user: "your-username"
+    password: "your-password"
+    database: "default"
+    secure: true
+
+  - name: "Local"
+    host: "localhost"
+    port: 8123
+    user: "default"
+    password: ""
+    database: "default"
 ```
 
 ### Run With Docker Compose (Preferred)
