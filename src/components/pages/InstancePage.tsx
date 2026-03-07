@@ -193,7 +193,7 @@ export function InstancePage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header bar - always visible */}
-      <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 py-2 flex items-center justify-between shrink-0">
+      <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 h-9 flex items-center justify-between shrink-0">
         {isDashboardTab ? (
           <>
             <div className="flex items-center gap-3">
