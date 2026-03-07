@@ -5799,10 +5799,11 @@ app.get('/api/metric-log/timeseries', async (req, res) => {
     }
 
     // Determine truncation function based on bucket
+    // Use toDateTime to avoid toStartOfSecond incompatibility with DateTime columns
     let truncFunc;
     switch (bucket) {
       case 'second':
-        truncFunc = 'toStartOfSecond(event_time)';
+        truncFunc = 'toDateTime(event_time)';
         break;
       case 'hour':
         truncFunc = 'toStartOfHour(event_time)';
@@ -5896,10 +5897,11 @@ app.get('/api/async-metric-log/timeseries', async (req, res) => {
     }
 
     // Determine truncation function based on bucket
+    // Use toDateTime to avoid toStartOfSecond incompatibility with DateTime columns
     let truncFunc;
     switch (bucket) {
       case 'second':
-        truncFunc = 'toStartOfSecond(event_time)';
+        truncFunc = 'toDateTime(event_time)';
         break;
       case 'hour':
         truncFunc = 'toStartOfHour(event_time)';
