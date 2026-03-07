@@ -53,6 +53,9 @@ export function UsersPage() {
 
   return (
     <div className="h-full flex flex-col">
+      <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 py-2 flex items-center justify-between shrink-0">
+        <div />
+      </div>
       <div className="border-b border-gray-700 px-1.5 flex items-center gap-1 shrink-0">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
