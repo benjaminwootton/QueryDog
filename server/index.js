@@ -3,6 +3,7 @@ import tls from 'tls';
 import cors from 'cors';
 import { createClient } from '@clickhouse/client';
 import dotenv from 'dotenv';
+import yaml from 'js-yaml';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -26,55 +27,105 @@ app.use(express.json());
 // Serve static files from the dist folder in production
 app.use(express.static(path.join(__dirname, '../dist')));
 
-const protocol = process.env.CLICKHOUSE_SECURE === '1' ? 'https' : 'http';
-const isSecure = process.env.CLICKHOUSE_SECURE === '1';
-const clickhousePort = process.env.CLICKHOUSE_PORT_HTTP;
+// ==================== YAML CONFIG ====================
 
-// Force IPv4 to avoid Docker Desktop IPv6 issues
-// Use the appropriate agent type based on protocol
-const agent = isSecure
-  ? new https.Agent({
-      family: 4,
-      keepAlive: true, // Enable keep-alive to reduce TLS handshakes over VPN
-      keepAliveMsecs: 10000,
-      timeout: 60000, // 60s socket timeout for slow VPN connections
-      maxSockets: 5, // Limit concurrent connections for VPN stability
-      maxFreeSockets: 2,
-      rejectUnauthorized: process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0',
-      servername: process.env.CLICKHOUSE_HOST,
-      // Explicit secureContext fixes TLS handshake issues in Docker containers
-      secureContext: tls.createSecureContext({
-        minVersion: 'TLSv1.2',
-        maxVersion: 'TLSv1.3',
-      }),
-    })
-  : new http.Agent({ family: 4, keepAlive: true, keepAliveMsecs: 10000, timeout: 60000, maxSockets: 5 });
+// Load environments from querydog.yaml, falling back to .env
+function loadConfig() {
+  const yamlPath = path.join(process.cwd(), 'querydog.yaml');
+  if (fs.existsSync(yamlPath)) {
+    const raw = yaml.load(fs.readFileSync(yamlPath, 'utf-8'));
+    if (raw && raw.environments && raw.environments.length > 0) {
+      console.log(`Loaded ${raw.environments.length} environment(s) from querydog.yaml`);
+      return raw.environments.map(env => ({
+        name: env.name || 'Default',
+        host: env.host,
+        port: env.port || (env.secure ? 8443 : 8123),
+        user: env.user || 'default',
+        password: env.password || '',
+        database: env.database || 'default',
+        secure: env.secure || false,
+        tls_reject_unauthorized: env.tls_reject_unauthorized !== false,
+        cluster: env.cluster || null,
+        queries_folder: env.queries_folder || 'queries',
+      }));
+    }
+  }
+  // Fallback to .env
+  console.log('No querydog.yaml found, falling back to .env');
+  return [{
+    name: 'Default',
+    host: process.env.CLICKHOUSE_HOST || 'localhost',
+    port: parseInt(process.env.CLICKHOUSE_PORT_HTTP || '8123'),
+    user: process.env.CLICKHOUSE_USER || 'default',
+    password: process.env.CLICKHOUSE_PASSWORD || '',
+    database: process.env.CLICKHOUSE_DATABASE || 'default',
+    secure: process.env.CLICKHOUSE_SECURE === '1',
+    tls_reject_unauthorized: process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0',
+    cluster: process.env.CLICKHOUSE_CLUSTER || null,
+    queries_folder: process.env.QUERYDOG_QUERIES_FOLDER || 'queries',
+  }];
+}
 
-// Client configuration with custom agent for Docker IPv4 compatibility
-const clientConfig = {
-  url: `${protocol}://${process.env.CLICKHOUSE_HOST}:${clickhousePort}`,
-  username: process.env.CLICKHOUSE_USER,
-  password: process.env.CLICKHOUSE_PASSWORD,
-  database: process.env.CLICKHOUSE_DATABASE,
-  request_timeout: 3600000, // 1 hour HTTP timeout
-  http_agent: agent, // Works for both HTTP and HTTPS connections
-  clickhouse_settings: {
-    max_execution_time: 0, // No query execution timeout
-  },
-  keep_alive: {
-    enabled: true, // Enable keep-alive to reduce TLS handshakes over VPN
-  },
-};
+const environments = loadConfig();
 
-const client = createClient(clientConfig);
+// Active environment state
+let activeEnvIndex = 0;
+let client = null;
+let CLICKHOUSE_CLUSTER = null;
+let QUERIES_FOLDER = 'queries';
 
-console.log(`Connecting to ClickHouse: ${protocol}://${process.env.CLICKHOUSE_HOST}:${clickhousePort} as user '${process.env.CLICKHOUSE_USER}' on database '${process.env.CLICKHOUSE_DATABASE}'${isSecure ? ` (TLS: rejectUnauthorized=${process.env.CLICKHOUSE_TLS_REJECT_UNAUTHORIZED !== '0'})` : ''}`);
+function createClientForEnv(env) {
+  const protocol = env.secure ? 'https' : 'http';
+  const agent = env.secure
+    ? new https.Agent({
+        family: 4,
+        keepAlive: true,
+        keepAliveMsecs: 10000,
+        timeout: 60000,
+        maxSockets: 5,
+        maxFreeSockets: 2,
+        rejectUnauthorized: env.tls_reject_unauthorized,
+        servername: env.host,
+        secureContext: tls.createSecureContext({
+          minVersion: 'TLSv1.2',
+          maxVersion: 'TLSv1.3',
+        }),
+      })
+    : new http.Agent({ family: 4, keepAlive: true, keepAliveMsecs: 10000, timeout: 60000, maxSockets: 5 });
 
-// Cluster support - if CLICKHOUSE_CLUSTER is set, wrap system table queries with clusterAllReplicas()
-const CLICKHOUSE_CLUSTER = process.env.CLICKHOUSE_CLUSTER;
+  return createClient({
+    url: `${protocol}://${env.host}:${env.port}`,
+    username: env.user,
+    password: env.password,
+    database: env.database,
+    request_timeout: 3600000,
+    http_agent: agent,
+    clickhouse_settings: { max_execution_time: 0 },
+    keep_alive: { enabled: true },
+  });
+}
 
-// Queries folder - can be overridden with QUERYDOG_QUERIES_FOLDER env var
-const QUERIES_FOLDER = process.env.QUERYDOG_QUERIES_FOLDER || 'queries';
+function switchEnvironment(index) {
+  if (index < 0 || index >= environments.length) throw new Error('Invalid environment index');
+  const env = environments[index];
+  const protocol = env.secure ? 'https' : 'http';
+
+  // Close previous client
+  if (client) {
+    client.close().catch(() => {});
+  }
+
+  activeEnvIndex = index;
+  client = createClientForEnv(env);
+  CLICKHOUSE_CLUSTER = env.cluster;
+  QUERIES_FOLDER = env.queries_folder || 'queries';
+
+  console.log(`Switched to environment: "${env.name}" - ${protocol}://${env.host}:${env.port} as '${env.user}' on '${env.database}'`);
+}
+
+// Initialize first environment
+switchEnvironment(0);
+
 const getQueriesPath = () => path.isAbsolute(QUERIES_FOLDER) ? QUERIES_FOLDER : path.join(process.cwd(), QUERIES_FOLDER);
 
 // Helper to get system table reference - uses clusterAllReplicas() if cluster is configured
@@ -105,24 +156,76 @@ app.get('/api/health', async (req, res) => {
 
 // Connection info endpoint
 app.get('/api/connection-info', async (req, res) => {
+  const env = environments[activeEnvIndex];
   try {
-    // Test connection first
     await client.ping();
     res.json({
-      host: process.env.CLICKHOUSE_HOST,
-      port: clickhousePort,
-      secure: process.env.CLICKHOUSE_SECURE === '1',
-      user: process.env.CLICKHOUSE_USER,
+      name: env.name,
+      host: env.host,
+      port: env.port,
+      secure: env.secure,
+      user: env.user,
       cluster: CLICKHOUSE_CLUSTER || null,
       connected: true
     });
   } catch (error) {
     console.error('ClickHouse connection failed:', error.message);
     res.status(503).json({
-      host: process.env.CLICKHOUSE_HOST,
-      port: clickhousePort,
-      secure: process.env.CLICKHOUSE_SECURE === '1',
-      user: process.env.CLICKHOUSE_USER,
+      name: env.name,
+      host: env.host,
+      port: env.port,
+      secure: env.secure,
+      user: env.user,
+      cluster: CLICKHOUSE_CLUSTER || null,
+      connected: false,
+      error: error.message
+    });
+  }
+});
+
+// List all environments
+app.get('/api/environments', (req, res) => {
+  res.json({
+    active: activeEnvIndex,
+    environments: environments.map((env, i) => ({
+      index: i,
+      name: env.name,
+      host: env.host,
+      port: env.port,
+      user: env.user,
+      database: env.database,
+    })),
+  });
+});
+
+// Switch environment
+app.post('/api/environments/switch', async (req, res) => {
+  const { index } = req.body;
+  if (index === undefined || index < 0 || index >= environments.length) {
+    return res.status(400).json({ error: 'Invalid environment index' });
+  }
+  try {
+    switchEnvironment(index);
+    // Test the new connection
+    await client.ping();
+    const env = environments[index];
+    res.json({
+      name: env.name,
+      host: env.host,
+      port: env.port,
+      secure: env.secure,
+      user: env.user,
+      cluster: CLICKHOUSE_CLUSTER || null,
+      connected: true
+    });
+  } catch (error) {
+    const env = environments[index];
+    res.status(503).json({
+      name: env.name,
+      host: env.host,
+      port: env.port,
+      secure: env.secure,
+      user: env.user,
       cluster: CLICKHOUSE_CLUSTER || null,
       connected: false,
       error: error.message
@@ -5865,22 +5968,36 @@ async function startup() {
   // Display banner
   console.log('\n' + figlet.textSync('QueryDog', { font: 'Standard' }) + '\n');
 
+  const env = environments[activeEnvIndex];
+  const protocol = env.secure ? 'https' : 'http';
+
   // Test ClickHouse connection
-  console.log('Testing ClickHouse connection...');
+  console.log(`Testing connection to "${env.name}" (${protocol}://${env.host}:${env.port})...`);
   try {
     await client.ping();
     console.log('ClickHouse connection successful!\n');
   } catch (error) {
     console.error('\n╔══════════════════════════════════════════════════════════════╗');
-    console.error('║  ERROR: Failed to connect to ClickHouse                      ║');
+    console.error('║  WARNING: Failed to connect to ClickHouse                    ║');
     console.error('╚══════════════════════════════════════════════════════════════╝\n');
-    console.error(`Host: ${process.env.CLICKHOUSE_HOST}:${clickhousePort}`);
-    console.error(`User: ${process.env.CLICKHOUSE_USER}`);
-    console.error(`Database: ${process.env.CLICKHOUSE_DATABASE}`);
-    console.error(`Secure: ${process.env.CLICKHOUSE_SECURE === '1' ? 'Yes' : 'No'}\n`);
+    console.error(`Environment: ${env.name}`);
+    console.error(`Host: ${env.host}:${env.port}`);
+    console.error(`User: ${env.user}`);
+    console.error(`Database: ${env.database}`);
+    console.error(`Secure: ${env.secure ? 'Yes' : 'No'}\n`);
     console.error('Error details:', error.message);
-    console.error('\nPlease check your .env configuration and ensure ClickHouse is reachable.\n');
-    process.exit(1);
+    console.error('\nPlease check your querydog.yaml configuration and ensure ClickHouse is reachable.');
+    console.error('Starting server anyway - you can switch environments from the UI.\n');
+  }
+
+  // List available environments
+  if (environments.length > 1) {
+    console.log(`Available environments (${environments.length}):`);
+    environments.forEach((e, i) => {
+      const marker = i === activeEnvIndex ? ' (active)' : '';
+      console.log(`  ${i + 1}. ${e.name} - ${e.host}:${e.port}${marker}`);
+    });
+    console.log('');
   }
 
   // Start HTTP server

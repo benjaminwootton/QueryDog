@@ -1,0 +1,19 @@
+environments:
+  - name: "Production"
+    host: "your-clickhouse-host.cloud"
+    port: 8443
+    user: "your-username"
+    password: "your-password"
+    database: "default"
+    secure: true
+    # Optional: cluster name for clusterAllReplicas() queries
+    # cluster: "default"
+    # Optional: custom queries folder path
+    # queries_folder: "queries"
+
+  - name: "Local Development"
+    host: "localhost"
+    port: 8123
+    user: "default"
+    password: ""
+    database: "default"

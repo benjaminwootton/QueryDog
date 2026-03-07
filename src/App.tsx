@@ -16,11 +16,13 @@ import { DatabaseBrowser } from './components/DatabaseBrowser';
 import { QueryEditor } from './components/QueryEditor';
 import { useQueryStore } from './stores/queryStore';
 import { useQueryData } from './hooks/useQueryData';
+import { fetchEnvironments, switchEnvironment, type EnvironmentInfo } from './services/api';
 
 type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'users' | 'cluster' | 'instance' | 'myqueries';
 type RefreshInterval = 'off' | 5 | 10 | 60 | 600;
 
 interface ConnectionInfo {
+  name: string;
   host: string;
   port: string;
   secure: boolean;
@@ -58,16 +60,18 @@ function App() {
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [hasQueriesFolder, setHasQueriesFolder] = useState(false);
+  const [environments, setEnvironments] = useState<EnvironmentInfo[]>([]);
+  const [activeEnvIndex, setActiveEnvIndex] = useState(0);
+  const [switching, setSwitching] = useState(false);
   const { error, hasPartLogAccess, hasPartsAccess, setActiveTab, setChartMetric, setTimeRange, setFieldFilter, clearAllFilters, setError } = useQueryStore();
   const { refresh } = useQueryData();
 
-  // Fetch connection info on mount
+  // Fetch connection info and environments on mount
   useEffect(() => {
     fetch('/api/connection-info')
       .then(async res => {
         const data = await res.json();
         if (!res.ok) {
-          // Backend is running but can't connect to ClickHouse
           throw new Error(data.error || 'Failed to connect to ClickHouse');
         }
         return data;
@@ -82,6 +86,13 @@ function App() {
           : `Connection failed: ${err.message}`;
         setBackendError(message);
       });
+
+    fetchEnvironments()
+      .then(data => {
+        setEnvironments(data.environments);
+        setActiveEnvIndex(data.active);
+      })
+      .catch(() => {});
   }, []);
 
   // Check if queries folder exists
@@ -296,12 +307,47 @@ function App() {
         >
           About Query Dog V0.3
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {connectionInfo && (
             <span className="flex items-center gap-1.5 text-xs text-gray-400 font-mono">
               <Circle className="w-2 h-2 fill-green-500 text-green-500" />
               {connectionInfo.user}@{connectionInfo.host}:{connectionInfo.port}
             </span>
+          )}
+          {environments.length > 1 && (
+            <select
+              value={activeEnvIndex}
+              disabled={switching}
+              onChange={async (e) => {
+                const idx = parseInt(e.target.value);
+                setSwitching(true);
+                setBackendError(null);
+                try {
+                  const result = await switchEnvironment(idx);
+                  setActiveEnvIndex(idx);
+                  setConnectionInfo({
+                    name: result.name,
+                    host: result.host,
+                    port: String(result.port),
+                    secure: false,
+                    user: environments[idx].user,
+                  });
+                  if (!result.connected) {
+                    setBackendError(`Connection failed: ${result.error}`);
+                  }
+                  refresh();
+                } catch (err) {
+                  setBackendError('Failed to switch environment');
+                } finally {
+                  setSwitching(false);
+                }
+              }}
+              className="bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-gray-300 text-xs"
+            >
+              {environments.map((env, i) => (
+                <option key={i} value={i}>{env.name}</option>
+              ))}
+            </select>
           )}
         </div>
       </footer>

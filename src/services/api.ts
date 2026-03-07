@@ -83,6 +83,32 @@ export async function fetchHealth(): Promise<{ status: string; error?: string }>
   }
 }
 
+// ==================== ENVIRONMENT API ====================
+
+export interface EnvironmentInfo {
+  index: number;
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  database: string;
+}
+
+export async function fetchEnvironments(): Promise<{ active: number; environments: EnvironmentInfo[] }> {
+  const response = await fetch(`${API_BASE}/environments`);
+  if (!response.ok) throw new Error(`Failed to fetch environments: ${response.statusText}`);
+  return response.json();
+}
+
+export async function switchEnvironment(index: number): Promise<{ name: string; host: string; port: number; connected: boolean; error?: string }> {
+  const response = await fetch(`${API_BASE}/environments/switch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ index }),
+  });
+  return response.json();
+}
+
 function formatDateTime(date: Date): string {
   return date.toISOString().slice(0, 19).replace('T', ' ');
 }
