@@ -2945,6 +2945,32 @@ app.get('/api/errors/columns', async (req, res) => {
   }
 });
 
+// Get system.warnings
+app.get('/api/warnings', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.warnings ORDER BY name`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching warnings:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.warnings columns
+app.get('/api/warnings/columns', async (req, res) => {
+  try {
+    const query = `SELECT name, type FROM system.columns WHERE database = 'system' AND table = 'warnings' ORDER BY position`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching warnings columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== INSTANCE ENDPOINTS ====================
 
 // Get system.users
@@ -5571,6 +5597,37 @@ app.get('/api/cluster/zookeeper-log/columns', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching zookeeper_log columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.distribution_queue
+app.get('/api/cluster/distribution-queue', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.distribution_queue ORDER BY data_path LIMIT 1000`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching distribution_queue:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.distribution_queue columns
+app.get('/api/cluster/distribution-queue/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'distribution_queue'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching distribution_queue columns:', error);
     res.status(500).json({ error: error.message });
   }
 });

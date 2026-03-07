@@ -1255,6 +1255,18 @@ export async function fetchErrorsColumns(): Promise<ColumnMetadata[]> {
   return response.json();
 }
 
+export async function fetchWarnings(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/warnings`);
+  if (!response.ok) throw new Error(`Failed to fetch warnings: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchWarningsColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/warnings/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch warnings columns: ${response.statusText}`);
+  return response.json();
+}
+
 // ==================== DATABASE BROWSER API ====================
 
 export interface BrowserDatabase {
@@ -2059,6 +2071,18 @@ export async function fetchZookeeperLog(): Promise<Record<string, unknown>[]> {
 export async function fetchZookeeperLogColumns(): Promise<ColumnMetadata[]> {
   const response = await fetch(`${API_BASE}/cluster/zookeeper-log/columns`);
   if (!response.ok) throw new Error(`Failed to fetch zookeeper_log columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchDistributionQueue(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/distribution-queue`);
+  if (!response.ok) throw new Error(`Failed to fetch distribution_queue: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchDistributionQueueColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/cluster/distribution-queue/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch distribution_queue columns: ${response.statusText}`);
   return response.json();
 }
 

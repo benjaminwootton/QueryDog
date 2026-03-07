@@ -303,13 +303,31 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
               showExplain ? 'h-[30vh] min-h-[220px] max-h-[420px]' : ''
             }`}
           >
-            <button
-              onClick={() => setShowExplain(!showExplain)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-gray-300 text-xs font-medium hover:bg-gray-750 shrink-0"
-            >
-              {showExplain ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-              Query Analysis
-            </button>
+            <div className="flex items-center justify-between bg-gray-800 shrink-0">
+              <button
+                onClick={() => setShowExplain(!showExplain)}
+                className="flex items-center gap-2 px-4 py-2 text-gray-300 text-xs font-medium hover:bg-gray-750"
+              >
+                {showExplain ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                Query Planning
+              </button>
+              {showExplain && (
+                <button
+                  onClick={() => {
+                    const content = activeExplainTab === 'performance'
+                      ? (results ? `Duration: ${formatDuration(results.duration)}\nRows: ${formatNumber(results.rowCount)}` : '')
+                      : (explainResults[activeExplainTab]?.join('\n') || '');
+                    if (content) {
+                      navigator.clipboard.writeText(content);
+                    }
+                  }}
+                  className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded mr-2"
+                  title="Copy to clipboard"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
 
             {showExplain && (
               <div className="flex-1 overflow-hidden flex flex-col">

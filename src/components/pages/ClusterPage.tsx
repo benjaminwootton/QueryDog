@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Network, RefreshCw, Server, GitBranch, Clock, Database } from 'lucide-react';
+import { Network, RefreshCw, Server, GitBranch, Clock, Database, Send } from 'lucide-react';
 import { SystemTable } from '../SystemTable';
 import {
   fetchReplicationQueue,
@@ -13,6 +13,8 @@ import {
   fetchReplicatedFetchesColumns,
   fetchDistributedDdlQueue,
   fetchDistributedDdlQueueColumns,
+  fetchDistributionQueue,
+  fetchDistributionQueueColumns,
   fetchZookeeper,
   fetchZookeeperColumns,
   fetchZookeeperConnection,
@@ -23,7 +25,7 @@ import {
   fetchZookeeperLogColumns,
 } from '../../services/api';
 
-type ClusterTab = 'replication-queue' | 'replicas' | 'clusters' | 'fetches' | 'distributed-ddl' | 'zookeeper';
+type ClusterTab = 'replication-queue' | 'replicas' | 'clusters' | 'fetches' | 'distributed-ddl' | 'distribution-queue' | 'zookeeper';
 type ReplicationQueueSubTab = 'detailed' | 'grouped';
 type ZookeeperSubTab = 'zookeeper' | 'connection' | 'connection-log' | 'log';
 
@@ -38,6 +40,7 @@ export function ClusterPage() {
     { id: 'clusters', label: 'Clusters', icon: Network },
     { id: 'fetches', label: 'Fetches', icon: GitBranch },
     { id: 'distributed-ddl', label: 'Distributed DDL', icon: Clock },
+    { id: 'distribution-queue', label: 'Distribution Queue', icon: Send },
     { id: 'zookeeper', label: 'ZooKeeper', icon: Database },
   ];
 
@@ -144,6 +147,15 @@ export function ClusterPage() {
             fetchData={fetchDistributedDdlQueue}
             fetchColumns={fetchDistributedDdlQueueColumns}
             getRowId={(data) => String(data.entry)}
+            hideHeader
+          />
+        )}
+
+        {activeTab === 'distribution-queue' && (
+          <SystemTable
+            fetchData={fetchDistributionQueue}
+            fetchColumns={fetchDistributionQueueColumns}
+            getRowId={(data) => `${data.database}-${data.table}-${data.data_path}`}
             hideHeader
           />
         )}

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, FirstDataRenderedEvent } from 'ag-grid-community';
-import { Eye, X, Loader2 } from 'lucide-react';
+import { Eye, X } from 'lucide-react';
 import { fetchDictionaries, type SystemDictionary } from '../services/api';
 
 ModuleRegistry.registerModules([AllCommunityModule]);

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { Activity, GitMerge, Zap, RefreshCw, Settings, X, HardDrive, Clock, Upload, Network } from 'lucide-react';
+import { Activity, GitMerge, Zap, RefreshCw, Settings, X, HardDrive, Upload, Network } from 'lucide-react';
 import { SystemTable, type SystemTableRef } from '../SystemTable';
 import { ActivityFilterPanel } from '../ActivityFilterPanel';
 import { ProfileEventsModal } from '../ProfileEventsModal';
@@ -20,9 +20,6 @@ import {
   fetchViewRefreshesDistinct,
   fetchQueryCache,
   fetchQueryCacheColumns,
-  fetchBackgroundJobs,
-  fetchBackgroundJobsColumns,
-  fetchBackgroundJobsDistinct,
   fetchAsyncInserts,
   fetchAsyncInsertsColumns,
   fetchAsyncInsertsDistinct,
@@ -31,7 +28,7 @@ import {
   fetchDistributedDDLDistinct,
 } from '../../services/api';
 
-type ActivityTab = 'processes' | 'merges' | 'mutations' | 'refreshes' | 'queryCache' | 'backgroundJobs' | 'asyncInserts' | 'distributedDDL';
+type ActivityTab = 'processes' | 'merges' | 'mutations' | 'refreshes' | 'queryCache' | 'asyncInserts' | 'distributedDDL';
 
 const PROCESSES_DEFAULT_VISIBLE_FIELDS = [
   'query_id',
@@ -95,20 +92,6 @@ const VIEW_REFRESHES_FILTERABLE_FIELDS = [
   { field: 'status', label: 'Status' },
 ];
 
-const BACKGROUND_JOBS_DEFAULT_VISIBLE_FIELDS = [
-  'event_time',
-  'status',
-  'name',
-  'error',
-  'start_time',
-  'end_time',
-];
-
-const BACKGROUND_JOBS_FILTERABLE_FIELDS = [
-  { field: 'status', label: 'Status' },
-  { field: 'name', label: 'Name' },
-];
-
 const ASYNC_INSERTS_DEFAULT_VISIBLE_FIELDS = [
   'database',
   'table',
@@ -150,7 +133,6 @@ export function ActivityPage() {
   const mutationsTableRef = useRef<SystemTableRef>(null);
   const refreshesTableRef = useRef<SystemTableRef>(null);
   const queryCacheTableRef = useRef<SystemTableRef>(null);
-  const backgroundJobsTableRef = useRef<SystemTableRef>(null);
   const asyncInsertsTableRef = useRef<SystemTableRef>(null);
   const distributedDDLTableRef = useRef<SystemTableRef>(null);
 
@@ -160,7 +142,6 @@ export function ActivityPage() {
   const [mutationsColumns, setMutationsColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
   const [refreshesColumns, setRefreshesColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
   const [queryCacheColumns, setQueryCacheColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
-  const [backgroundJobsColumns, setBackgroundJobsColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
   const [asyncInsertsColumns, setAsyncInsertsColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
   const [distributedDDLColumns, setDistributedDDLColumns] = useState<{ field: string; headerName: string; visible: boolean }[]>([]);
 
@@ -175,7 +156,6 @@ export function ActivityPage() {
       case 'mutations': return mutationsColumns;
       case 'refreshes': return refreshesColumns;
       case 'queryCache': return queryCacheColumns;
-      case 'backgroundJobs': return backgroundJobsColumns;
       case 'asyncInserts': return asyncInsertsColumns;
       case 'distributedDDL': return distributedDDLColumns;
     }
@@ -188,7 +168,6 @@ export function ActivityPage() {
       case 'mutations': mutationsTableRef.current?.toggleColumnVisibility(field); break;
       case 'refreshes': refreshesTableRef.current?.toggleColumnVisibility(field); break;
       case 'queryCache': queryCacheTableRef.current?.toggleColumnVisibility(field); break;
-      case 'backgroundJobs': backgroundJobsTableRef.current?.toggleColumnVisibility(field); break;
       case 'asyncInserts': asyncInsertsTableRef.current?.toggleColumnVisibility(field); break;
       case 'distributedDDL': distributedDDLTableRef.current?.toggleColumnVisibility(field); break;
     }
@@ -299,25 +278,6 @@ export function ActivityPage() {
     []
   );
 
-  // Background Jobs filters
-  const [backgroundJobsFilters, setBackgroundJobsFilters] = useState<Record<string, string[]>>({});
-  const handleBackgroundJobsFilterChange = useCallback((field: string, values: string[]) => {
-    setBackgroundJobsFilters((prev) => ({ ...prev, [field]: values }));
-  }, []);
-  const handleClearBackgroundJobsFilter = useCallback((field: string) => {
-    setBackgroundJobsFilters((prev) => {
-      const { [field]: _, ...rest } = prev;
-      return rest;
-    });
-  }, []);
-  const handleClearAllBackgroundJobsFilters = useCallback(() => {
-    setBackgroundJobsFilters({});
-  }, []);
-  const fetchBackgroundJobsWithFilters = useCallback(
-    () => fetchBackgroundJobs(backgroundJobsFilters),
-    [backgroundJobsFilters]
-  );
-
   // Async Inserts filters
   const [asyncInsertsFilters, setAsyncInsertsFilters] = useState<Record<string, string[]>>({});
   const handleAsyncInsertsFilterChange = useCallback((field: string, values: string[]) => {
@@ -360,7 +320,6 @@ export function ActivityPage() {
   const mergesFilterCount = Object.values(mergesFilters).filter((v) => v.length > 0).length;
   const mutationsFilterCount = Object.values(mutationsFilters).filter((v) => v.length > 0).length;
   const refreshesFilterCount = Object.values(refreshesFilters).filter((v) => v.length > 0).length;
-  const backgroundJobsFilterCount = Object.values(backgroundJobsFilters).filter((v) => v.length > 0).length;
   const asyncInsertsFilterCount = Object.values(asyncInsertsFilters).filter((v) => v.length > 0).length;
   const distributedDDLFilterCount = Object.values(distributedDDLFilters).filter((v) => v.length > 0).length;
 
@@ -370,7 +329,6 @@ export function ActivityPage() {
     { id: 'mutations', label: 'Mutations', icon: Zap },
     { id: 'refreshes', label: 'View Refreshes', icon: RefreshCw },
     { id: 'queryCache', label: 'Query Cache', icon: HardDrive },
-    { id: 'backgroundJobs', label: 'Background Jobs', icon: Clock },
     { id: 'asyncInserts', label: 'Async Inserts', icon: Upload },
     { id: 'distributedDDL', label: 'DDL Queue', icon: Network },
   ];
@@ -420,16 +378,6 @@ export function ActivityPage() {
               filterableFields={VIEW_REFRESHES_FILTERABLE_FIELDS}
             />
           )}
-          {activeTab === 'backgroundJobs' && (
-            <ActivityFilterPanel
-              filters={backgroundJobsFilters}
-              onFilterChange={handleBackgroundJobsFilterChange}
-              onClearFilter={handleClearBackgroundJobsFilter}
-              onClearAll={handleClearAllBackgroundJobsFilters}
-              fetchDistinct={fetchBackgroundJobsDistinct}
-              filterableFields={BACKGROUND_JOBS_FILTERABLE_FIELDS}
-            />
-          )}
           {activeTab === 'asyncInserts' && (
             <ActivityFilterPanel
               filters={asyncInsertsFilters}
@@ -470,11 +418,6 @@ export function ActivityPage() {
           {activeTab === 'refreshes' && refreshesFilterCount > 0 && (
             <span className="text-blue-400">
               {refreshesFilterCount} filter{refreshesFilterCount > 1 ? 's' : ''} active
-            </span>
-          )}
-          {activeTab === 'backgroundJobs' && backgroundJobsFilterCount > 0 && (
-            <span className="text-blue-400">
-              {backgroundJobsFilterCount} filter{backgroundJobsFilterCount > 1 ? 's' : ''} active
             </span>
           )}
           {activeTab === 'asyncInserts' && asyncInsertsFilterCount > 0 && (
@@ -606,19 +549,6 @@ export function ActivityPage() {
             fetchColumns={fetchQueryCacheColumns}
             getRowId={(data) => String(data.key_hash || data.query || JSON.stringify(data))}
             onColumnsChange={setQueryCacheColumns}
-            hideTitle
-            hideHeader={false}
-          />
-        )}
-        {activeTab === 'backgroundJobs' && (
-          <SystemTable
-            ref={backgroundJobsTableRef}
-            fetchData={fetchBackgroundJobsWithFilters}
-            fetchColumns={fetchBackgroundJobsColumns}
-            defaultVisibleFields={BACKGROUND_JOBS_DEFAULT_VISIBLE_FIELDS}
-            filters={backgroundJobsFilters}
-            getRowId={(data) => `${data.event_time}-${data.name}-${data.id || Math.random()}`}
-            onColumnsChange={setBackgroundJobsColumns}
             hideTitle
             hideHeader={false}
           />

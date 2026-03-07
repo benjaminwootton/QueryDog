@@ -13,7 +13,8 @@ import {
   fetchPartLogStackedTimeSeries,
   fetchHealth,
   isConnectionError,
-  extractConnectionError,
+  isServerError,
+  getUserFriendlyError,
 } from '../services/api';
 import { createColumnsFromMetadata } from '../types/queryLog';
 
@@ -91,16 +92,10 @@ export function useQueryData() {
     setError(null);
 
     // Check connectivity before loading data
-    try {
-      const health = await fetchHealth();
-      if (health.status !== 'healthy') {
-        const errorDetail = health.error ? extractConnectionError(health.error) : 'unknown error';
-        setError(`Failed to connect to the database: ${errorDetail}`);
-        setLoading(false);
-        return;
-      }
-    } catch {
-      setError('Failed to connect to the backend server. Please check if the server is running.');
+    const health = await fetchHealth();
+    if (health.status !== 'healthy') {
+      const errorMessage = health.error || 'Cannot connect to database';
+      setError(errorMessage);
       setLoading(false);
       return;
     }
@@ -177,12 +172,12 @@ export function useQueryData() {
         } else if (criticalError?.type === 'not_found') {
           setError('Table system.query_log does not exist or is not accessible on this ClickHouse instance');
         } else if (!hasAnyData) {
-          // Check if this is a connection error
+          // Check if this is a connection or server error
           const firstError = errors[0];
-          if (isConnectionError(firstError)) {
-            setError(`Failed to connect to the database: ${extractConnectionError(firstError)}`);
+          if (isConnectionError(firstError) || isServerError(firstError)) {
+            setError(getUserFriendlyError(firstError));
           } else {
-            setError(`Failed to load data: ${extractConnectionError(firstError)}`);
+            setError(`Failed to load data: ${getUserFriendlyError(firstError)}`);
           }
         } else {
           // Some data loaded, but some requests failed - show a warning
@@ -192,10 +187,10 @@ export function useQueryData() {
     } catch (err) {
       if (requestId !== queryRequestIdRef.current) return;
       const message = err instanceof Error ? err.message : 'Failed to load data';
-      if (isConnectionError(message)) {
-        setError(`Failed to connect to the database: ${extractConnectionError(message)}`);
+      if (isConnectionError(message) || isServerError(message)) {
+        setError(getUserFriendlyError(message));
       } else {
-        setError(message);
+        setError(getUserFriendlyError(message));
       }
     } finally {
       if (requestId === queryRequestIdRef.current) {
@@ -305,12 +300,12 @@ export function useQueryData() {
           console.info('Part log table not found - hiding part log features');
           setHasPartLogAccess(false);
         } else if (!hasAnyData) {
-          // Check if this is a connection error
+          // Check if this is a connection or server error
           const firstError = errors[0];
-          if (isConnectionError(firstError)) {
-            setError(`Failed to connect to the database: ${extractConnectionError(firstError)}`);
+          if (isConnectionError(firstError) || isServerError(firstError)) {
+            setError(getUserFriendlyError(firstError));
           } else {
-            setError(`Failed to load data: ${extractConnectionError(firstError)}`);
+            setError(`Failed to load data: ${getUserFriendlyError(firstError)}`);
           }
           setHasPartLogAccess(false);
         } else {
@@ -321,10 +316,10 @@ export function useQueryData() {
     } catch (err) {
       if (requestId !== partLogRequestIdRef.current) return;
       const message = err instanceof Error ? err.message : 'Failed to load data';
-      if (isConnectionError(message)) {
-        setError(`Failed to connect to the database: ${extractConnectionError(message)}`);
+      if (isConnectionError(message) || isServerError(message)) {
+        setError(getUserFriendlyError(message));
       } else {
-        setError(message);
+        setError(getUserFriendlyError(message));
       }
     } finally {
       if (requestId === partLogRequestIdRef.current) {

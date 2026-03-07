@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef } from 'ag-grid-community';
-import { Settings, HardDrive, Database, BarChart2, Clock, Zap, AlertTriangle, Search, RefreshCw, LayoutDashboard } from 'lucide-react';
+import { Settings, HardDrive, Database, BarChart2, Clock, Zap, AlertTriangle, AlertCircle, Search, RefreshCw, LayoutDashboard } from 'lucide-react';
 import { SystemTable } from '../SystemTable';
 import { DashboardTab } from './DashboardTab';
 import {
@@ -17,6 +17,8 @@ import {
   fetchEvents,
   fetchErrors,
   fetchErrorsColumns,
+  fetchWarnings,
+  fetchWarningsColumns,
 } from '../../services/api';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -38,7 +40,7 @@ const darkTheme = themeAlpine.withParams({
   headerHeight: 30,
 });
 
-type InstanceTab = 'dashboard' | 'metrics' | 'async' | 'events' | 'errors' | 'settings' | 'disks' | 'storagePolicies';
+type InstanceTab = 'dashboard' | 'metrics' | 'async' | 'events' | 'errors' | 'warnings' | 'settings' | 'disks' | 'storagePolicies';
 
 interface MetricRow {
   metric: string;
@@ -163,6 +165,7 @@ export function InstancePage() {
     { id: 'async', label: 'Async Metrics', icon: Clock },
     { id: 'events', label: 'Events', icon: Zap },
     { id: 'errors', label: 'Errors', icon: AlertTriangle },
+    { id: 'warnings', label: 'Warnings', icon: AlertCircle },
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'disks', label: 'Disks', icon: HardDrive },
     { id: 'storagePolicies', label: 'Storage Policies', icon: Database },
@@ -307,6 +310,15 @@ export function InstancePage() {
             fetchColumns={fetchStoragePoliciesColumns}
             defaultVisibleFields={STORAGE_POLICIES_DEFAULT_VISIBLE_FIELDS}
             getRowId={(data) => `${data.policy_name}-${data.volume_name}`}
+            hideHeader
+            search={search}
+          />
+        )}
+        {activeTab === 'warnings' && (
+          <SystemTable
+            fetchData={fetchWarnings}
+            fetchColumns={fetchWarningsColumns}
+            getRowId={(data) => String(data.message)}
             hideHeader
             search={search}
           />

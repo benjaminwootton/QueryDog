@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dog, Database, HardDrive, Activity, Server, Info, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network, Circle } from 'lucide-react';
+import { Dog, Database, HardDrive, Activity, Server, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network, Circle } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
 import { PartsPage } from './components/pages/PartsPage';
@@ -289,7 +289,13 @@ function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-gray-900 border-t border-gray-700 px-1.5 py-1.5 flex items-center justify-end shrink-0">
+      <footer className="bg-gray-900 border-t border-gray-700 px-1.5 py-1.5 flex items-center justify-between shrink-0">
+        <button
+          onClick={() => setAboutOpen(true)}
+          className="text-xs text-gray-400 hover:text-blue-400 hover:underline cursor-pointer"
+        >
+          About Query Dog V0.3
+        </button>
         <div className="flex items-center gap-2">
           {connectionInfo && (
             <span className="flex items-center gap-1.5 text-xs text-gray-400 font-mono">
@@ -297,14 +303,6 @@ function App() {
               {connectionInfo.user}@{connectionInfo.host}:{connectionInfo.port}
             </span>
           )}
-          <button
-            onClick={() => setAboutOpen(true)}
-            className="flex items-center gap-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 text-xs"
-            title="About"
-          >
-            <Info className="w-3.5 h-3.5" />
-            About
-          </button>
         </div>
       </footer>
 
@@ -358,7 +356,7 @@ function App() {
             </button>
             <div className="flex flex-col items-center gap-4">
               <Dog className="w-12 h-12 text-blue-400" />
-              <h2 className="text-xl font-bold text-white">Query Dog</h2>
+              <h2 className="text-xl font-bold text-white">Query Dog V0.3</h2>
               <p className="text-sm text-gray-300 text-center">
                 A tool for analysing the ClickHouse query log.
               </p>
