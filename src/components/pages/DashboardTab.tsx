@@ -13,19 +13,29 @@ import {
   type AsyncMetricLogColumn,
 } from '../../services/api';
 
-type DashboardSource = 'metrics' | 'async' | 'bgpool';
+type DashboardSource = 'metrics' | 'async' | 'threadpool';
 type TimeRangeMinutes = 15 | 60 | 360 | 1440;
 
-// Background pool metrics (fixed set)
-const BACKGROUND_POOL_METRICS = [
+// Thread pool metrics (fixed set)
+const THREAD_POOL_METRICS = [
   'CurrentMetric_BackgroundMergesAndMutationsPoolSize',
   'CurrentMetric_BackgroundMergesAndMutationsPoolTask',
   'CurrentMetric_BackgroundFetchesPoolSize',
   'CurrentMetric_BackgroundFetchesPoolTask',
   'CurrentMetric_BackgroundMovePoolSize',
   'CurrentMetric_BackgroundMovePoolTask',
+  'CurrentMetric_BackgroundSchedulePoolSize',
+  'CurrentMetric_BackgroundSchedulePoolTask',
   'CurrentMetric_BackgroundCommonPoolSize',
   'CurrentMetric_BackgroundCommonPoolTask',
+  'CurrentMetric_BackgroundBufferFlushSchedulePoolSize',
+  'CurrentMetric_BackgroundBufferFlushSchedulePoolTask',
+  'CurrentMetric_BackgroundDistributedSchedulePoolSize',
+  'CurrentMetric_BackgroundDistributedSchedulePoolTask',
+  'CurrentMetric_BackgroundMessageBrokerSchedulePoolSize',
+  'CurrentMetric_BackgroundMessageBrokerSchedulePoolTask',
+  'CurrentMetric_IOThreadPoolSize',
+  'CurrentMetric_IOThreadPoolTask',
 ];
 
 // Format large numbers with K, M, B suffixes
@@ -42,7 +52,7 @@ function formatValue(value: number | string | null | undefined): string {
 
 // Format metric name for display
 function formatMetricName(name: string, source: DashboardSource): string {
-  if (source === 'metrics' || source === 'bgpool') {
+  if (source === 'metrics' || source === 'threadpool') {
     return name
       .replace(/^(CurrentMetric_|ProfileEvent_)/, '')
       .replace(/([A-Z])/g, ' $1')
@@ -487,7 +497,7 @@ export function DashboardTab() {
   const [timeRangeMinutes, setTimeRangeMinutes] = useState<TimeRangeMinutes>(60);
   const [metricsData, setMetricsData] = useState<MetricLogTimeSeriesPoint[]>([]);
   const [asyncData, setAsyncData] = useState<MetricLogTimeSeriesPoint[]>([]);
-  const [bgPoolData, setBgPoolData] = useState<MetricLogTimeSeriesPoint[]>([]);
+  const [threadPoolData, setThreadPoolData] = useState<MetricLogTimeSeriesPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [columnsLoaded, setColumnsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -584,9 +594,9 @@ export function DashboardTab() {
       } else if (activeSource === 'async' && selectedAsyncLog.length > 0) {
         const result = await fetchAsyncMetricLogTimeSeries(start, end, bucket, selectedAsyncLog);
         setAsyncData(result);
-      } else if (activeSource === 'bgpool') {
-        const result = await fetchMetricLogTimeSeries(start, end, bucket, BACKGROUND_POOL_METRICS);
-        setBgPoolData(result);
+      } else if (activeSource === 'threadpool') {
+        const result = await fetchMetricLogTimeSeries(start, end, bucket, THREAD_POOL_METRICS);
+        setThreadPoolData(result);
       }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -634,15 +644,20 @@ export function DashboardTab() {
     }
   };
 
-  const currentData = activeSource === 'metrics' ? metricsData : activeSource === 'async' ? asyncData : bgPoolData;
-  const currentMetrics = activeSource === 'metrics' ? selectedMetricsLog : activeSource === 'async' ? selectedAsyncLog : BACKGROUND_POOL_METRICS;
+  const currentData = activeSource === 'metrics' ? metricsData : activeSource === 'async' ? asyncData : threadPoolData;
+  const currentMetrics = activeSource === 'metrics' ? selectedMetricsLog : activeSource === 'async' ? selectedAsyncLog : THREAD_POOL_METRICS;
 
-  // Background pool pairs (Size + Task for each pool type)
-  const bgPoolPairs = [
-    { name: 'Merges & Mutations', size: 'CurrentMetric_BackgroundMergesAndMutationsPoolSize', task: 'CurrentMetric_BackgroundMergesAndMutationsPoolTask' },
-    { name: 'Fetches', size: 'CurrentMetric_BackgroundFetchesPoolSize', task: 'CurrentMetric_BackgroundFetchesPoolTask' },
-    { name: 'Move', size: 'CurrentMetric_BackgroundMovePoolSize', task: 'CurrentMetric_BackgroundMovePoolTask' },
-    { name: 'Common', size: 'CurrentMetric_BackgroundCommonPoolSize', task: 'CurrentMetric_BackgroundCommonPoolTask' },
+  // Thread pool pairs (Size + Task for each pool type)
+  const threadPoolPairs = [
+    { name: 'Background Merge & Mutation Pool', size: 'CurrentMetric_BackgroundMergesAndMutationsPoolSize', task: 'CurrentMetric_BackgroundMergesAndMutationsPoolTask' },
+    { name: 'Background Fetch Pool', size: 'CurrentMetric_BackgroundFetchesPoolSize', task: 'CurrentMetric_BackgroundFetchesPoolTask' },
+    { name: 'Background Move Pool', size: 'CurrentMetric_BackgroundMovePoolSize', task: 'CurrentMetric_BackgroundMovePoolTask' },
+    { name: 'Background Schedule Pool', size: 'CurrentMetric_BackgroundSchedulePoolSize', task: 'CurrentMetric_BackgroundSchedulePoolTask' },
+    { name: 'Background Common Pool', size: 'CurrentMetric_BackgroundCommonPoolSize', task: 'CurrentMetric_BackgroundCommonPoolTask' },
+    { name: 'Buffer Flush Pool', size: 'CurrentMetric_BackgroundBufferFlushSchedulePoolSize', task: 'CurrentMetric_BackgroundBufferFlushSchedulePoolTask' },
+    { name: 'Distributed Schedule Pool', size: 'CurrentMetric_BackgroundDistributedSchedulePoolSize', task: 'CurrentMetric_BackgroundDistributedSchedulePoolTask' },
+    { name: 'Message Broker Pool', size: 'CurrentMetric_BackgroundMessageBrokerSchedulePoolSize', task: 'CurrentMetric_BackgroundMessageBrokerSchedulePoolTask' },
+    { name: 'IO Thread Pool', size: 'CurrentMetric_IOThreadPoolSize', task: 'CurrentMetric_IOThreadPoolTask' },
   ];
 
   if (error) {
@@ -691,15 +706,15 @@ export function DashboardTab() {
               Async Log
             </button>
             <button
-              onClick={() => setActiveSource('bgpool')}
+              onClick={() => setActiveSource('threadpool')}
               className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-                activeSource === 'bgpool'
+                activeSource === 'threadpool'
                   ? 'bg-gray-700 text-white'
                   : 'text-gray-400 hover:text-gray-300'
               }`}
             >
               <Layers className="w-3 h-3" />
-              Background Pool
+              Thread Pool
             </button>
           </div>
 
@@ -724,7 +739,7 @@ export function DashboardTab() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          {activeSource !== 'bgpool' && (
+          {activeSource !== 'threadpool' && (
             <button
               onClick={() => setSettingsOpen(true)}
               className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
@@ -745,21 +760,21 @@ export function DashboardTab() {
         ) : currentData.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-gray-400 text-sm">
-              {activeSource === 'bgpool'
-                ? 'No background pool data available. Make sure metric_log is enabled.'
+              {activeSource === 'threadpool'
+                ? 'No thread pool data available. Make sure metric_log is enabled.'
                 : `No data available. Make sure ${activeSource === 'metrics' ? 'metric_log' : 'asynchronous_metric_log'} is enabled.`
               }
             </div>
           </div>
-        ) : activeSource === 'bgpool' ? (
-          <div className="grid grid-cols-2 gap-3">
-            {bgPoolPairs.map((pool, index) => (
+        ) : activeSource === 'threadpool' ? (
+          <div className="grid grid-cols-3 gap-3">
+            {threadPoolPairs.map((pool, index) => (
               <PoolChart
                 key={pool.name}
                 poolName={pool.name}
                 sizeMetric={pool.size}
                 taskMetric={pool.task}
-                data={bgPoolData}
+                data={threadPoolData}
                 colorIndex={index}
               />
             ))}
