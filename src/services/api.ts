@@ -3,15 +3,28 @@ import type { RangeFilter } from '../stores/queryStore';
 
 const API_BASE = '/api';
 
-// Common connection error patterns
+// Common connection error patterns - errors that indicate the server/database is unreachable
 const CONNECTION_ERROR_PATTERNS = [
   'ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET',
   'EHOSTUNREACH', 'EAI_AGAIN', 'socket hang up', 'DEPTH_ZERO_SELF_SIGNED_CERT',
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'CERT_HAS_EXPIRED',
+  'Failed to fetch', 'NetworkError', 'net::ERR_',
+];
+
+// Proxy/server error patterns - generic errors from Vite proxy when backend is down
+const SERVER_ERROR_PATTERNS = [
+  'Internal Server Error',
+  '502 Bad Gateway',
+  '503 Service Unavailable',
+  '504 Gateway Timeout',
 ];
 
 export function isConnectionError(message: string): boolean {
   return CONNECTION_ERROR_PATTERNS.some(pattern => message.includes(pattern));
+}
+
+export function isServerError(message: string): boolean {
+  return SERVER_ERROR_PATTERNS.some(pattern => message.includes(pattern));
 }
 
 export function extractConnectionError(message: string): string {
@@ -22,9 +35,52 @@ export function extractConnectionError(message: string): string {
   return cleaned;
 }
 
+// Transform error messages into user-friendly versions
+export function getUserFriendlyError(message: string): string {
+  const cleaned = extractConnectionError(message);
+
+  // Server/proxy errors indicate backend is down
+  if (isServerError(cleaned)) {
+    return 'Cannot connect to backend server. Please ensure the server is running.';
+  }
+
+  // Network/connection errors
+  if (cleaned.includes('ECONNREFUSED')) {
+    return 'Connection refused. The backend server is not running or is unreachable.';
+  }
+  if (cleaned.includes('ETIMEDOUT')) {
+    return 'Connection timed out. The server may be overloaded or unreachable.';
+  }
+  if (cleaned.includes('ENOTFOUND')) {
+    return 'Server not found. Please check your network connection and server address.';
+  }
+  if (cleaned.includes('Failed to fetch') || cleaned.includes('NetworkError')) {
+    return 'Network error. Please check your connection and ensure the server is running.';
+  }
+  if (isConnectionError(cleaned)) {
+    return `Connection error: ${cleaned}`;
+  }
+
+  return cleaned;
+}
+
 export async function fetchHealth(): Promise<{ status: string; error?: string }> {
-  const response = await fetch(`${API_BASE}/health`);
-  return response.json();
+  try {
+    const response = await fetch(`${API_BASE}/health`);
+    if (!response.ok) {
+      // Server returned an error status
+      const statusText = response.statusText || `HTTP ${response.status}`;
+      if (isServerError(statusText) || response.status >= 500) {
+        return { status: 'unhealthy', error: 'Backend server error' };
+      }
+      return { status: 'unhealthy', error: statusText };
+    }
+    return response.json();
+  } catch (err) {
+    // Network error - couldn't reach the server at all
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return { status: 'unhealthy', error: getUserFriendlyError(message) };
+  }
 }
 
 function formatDateTime(date: Date): string {
@@ -811,6 +867,7 @@ export async function fetchPartitionsSummaryColumns(): Promise<ColumnMetadata[]>
 export interface GroupedPartsEntry {
   database: string;
   table: string;
+  engine_full: string;
   partition_count: number;
   part_count: number;
   total_rows: number;
@@ -1422,6 +1479,50 @@ export async function fetchViewDefinition(
   return data.definition;
 }
 
+// System-wide dictionaries API
+export interface SystemDictionary {
+  database: string;
+  name: string;
+  uuid: string;
+  status: string;
+  origin: string;
+  type: string;
+  key: string;
+  attribute_names: string[];
+  attribute_types: string[];
+  bytes_allocated: number;
+  hierarchical_index_bytes_allocated: number;
+  query_count: number;
+  hit_rate: number;
+  found_rate: number;
+  element_count: number;
+  load_factor: number;
+  source: string;
+  lifetime_min: number;
+  lifetime_max: number;
+  loading_start_time: string;
+  last_successful_update_time: string;
+  loading_duration: number;
+  last_exception: string;
+}
+
+export async function fetchDictionaries(
+  filters: Record<string, string[]> = {},
+  search = ''
+): Promise<SystemDictionary[]> {
+  const params = new URLSearchParams();
+  if (Object.keys(filters).length > 0) {
+    params.set('filters', JSON.stringify(filters));
+  }
+  if (search) {
+    params.set('search', search);
+  }
+  const url = params.toString() ? `${API_BASE}/dictionaries?${params}` : `${API_BASE}/dictionaries`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch dictionaries: ${response.statusText}`);
+  return response.json();
+}
+
 // System-wide data skipping indexes API
 export interface SystemIndex {
   database: string;
@@ -1922,5 +2023,125 @@ export async function fetchZookeeper(): Promise<Record<string, unknown>[]> {
 export async function fetchZookeeperColumns(): Promise<ColumnMetadata[]> {
   const response = await fetch(`${API_BASE}/cluster/zookeeper/columns`);
   if (!response.ok) throw new Error(`Failed to fetch zookeeper columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchZookeeperConnection(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/zookeeper-connection`);
+  if (!response.ok) throw new Error(`Failed to fetch zookeeper_connection: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchZookeeperConnectionColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/cluster/zookeeper-connection/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch zookeeper_connection columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchZookeeperConnectionLog(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/zookeeper-connection-log`);
+  if (!response.ok) throw new Error(`Failed to fetch zookeeper_connection_log: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchZookeeperConnectionLogColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/cluster/zookeeper-connection-log/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch zookeeper_connection_log columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchZookeeperLog(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/cluster/zookeeper-log`);
+  if (!response.ok) throw new Error(`Failed to fetch zookeeper_log: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchZookeeperLogColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/cluster/zookeeper-log/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch zookeeper_log columns: ${response.statusText}`);
+  return response.json();
+}
+
+// ==================== METRIC LOG API (Dashboard) ====================
+
+export interface MetricLogColumn {
+  name: string;
+  type: string;
+}
+
+export interface MetricLogTimeSeriesPoint {
+  time: string;
+  [key: string]: string | number;
+}
+
+export async function fetchMetricLogColumns(): Promise<MetricLogColumn[]> {
+  const response = await fetch(`${API_BASE}/metric-log/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch metric_log columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchMetricLogTimeSeries(
+  start: Date,
+  end: Date,
+  bucket: 'second' | 'minute' | 'hour' = 'minute',
+  metrics?: string[]
+): Promise<MetricLogTimeSeriesPoint[]> {
+  const params = new URLSearchParams({
+    start: start.toISOString().slice(0, 19).replace('T', ' '),
+    end: end.toISOString().slice(0, 19).replace('T', ' '),
+    bucket,
+  });
+
+  if (metrics && metrics.length > 0) {
+    params.set('metrics', metrics.join(','));
+  }
+
+  const response = await fetch(`${API_BASE}/metric-log/timeseries?${params}`);
+  if (!response.ok) throw new Error(`Failed to fetch metric_log timeseries: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchMetricLogDefaults(): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/metric-log/defaults`);
+  if (!response.ok) throw new Error(`Failed to fetch metric_log defaults: ${response.statusText}`);
+  return response.json();
+}
+
+// ==================== ASYNC METRIC LOG API (Dashboard) ====================
+
+export interface AsyncMetricLogColumn {
+  name: string;
+}
+
+export async function fetchAsyncMetricLogColumns(): Promise<AsyncMetricLogColumn[]> {
+  const response = await fetch(`${API_BASE}/async-metric-log/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch async metric_log columns: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchAsyncMetricLogTimeSeries(
+  start: Date,
+  end: Date,
+  bucket: 'second' | 'minute' | 'hour' = 'minute',
+  metrics?: string[]
+): Promise<MetricLogTimeSeriesPoint[]> {
+  const params = new URLSearchParams({
+    start: start.toISOString().slice(0, 19).replace('T', ' '),
+    end: end.toISOString().slice(0, 19).replace('T', ' '),
+    bucket,
+  });
+
+  if (metrics && metrics.length > 0) {
+    params.set('metrics', metrics.join(','));
+  }
+
+  const response = await fetch(`${API_BASE}/async-metric-log/timeseries?${params}`);
+  if (!response.ok) throw new Error(`Failed to fetch async metric_log timeseries: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchAsyncMetricLogDefaults(): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/async-metric-log/defaults`);
+  if (!response.ok) throw new Error(`Failed to fetch async metric_log defaults: ${response.statusText}`);
   return response.json();
 }

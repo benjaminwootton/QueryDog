@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { HardDrive, ChevronLeft, ChevronRight, Layers, Grid3X3, BarChart2, Settings, X, Eye, Search, Sparkles, Zap, Server, Loader2, FileCode } from 'lucide-react';
+import { HardDrive, ChevronLeft, ChevronRight, Layers, Grid3X3, BarChart2, Settings, X, Eye, Search, Sparkles, Zap, Server, Loader2, FileCode, BookOpen } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, FirstDataRenderedEvent } from 'ag-grid-community';
@@ -9,6 +9,7 @@ import { PartsHistogramsTab } from '../PartsHistogramsTab';
 import { ProjectionsTab } from '../ProjectionsTab';
 import { DataSkippingIndexesTab } from '../DataSkippingIndexesTab';
 import { ViewsTab } from '../ViewsTab';
+import { DictionariesTab } from '../DictionariesTab';
 import { fetchParts, fetchPartsColumns, fetchPartsCount, fetchPartitionsSummary, fetchPartitionsSummaryColumns, fetchPartitionsSummaryCount, fetchGroupedParts, fetchTablePartitions, fetchPartitionParts, fetchTableCompression, fetchBrowserColumns, fetchBrowserSampleData, fetchBrowserTables, fetchMergeTreeIndex, fetchTableDefinition, fetchDatabasesSummary, type GroupedPartsEntry, type TablePartitionEntry, type PartitionPartEntry, type ColumnCompressionEntry, type BrowserColumn, type BrowserTable, type MergeTreeIndexEntry, type DatabaseSummary } from '../../services/api';
 import { useQueryStore } from '../../stores/queryStore';
 
@@ -32,7 +33,7 @@ const darkTheme = themeAlpine.withParams({
   headerHeight: 30,
 });
 
-type PartsTab = 'databases' | 'parts' | 'partitions' | 'grouped' | 'views' | 'projections' | 'secondary-indexes' | 'histograms';
+type PartsTab = 'databases' | 'parts' | 'partitions' | 'grouped' | 'views' | 'dictionaries' | 'projections' | 'secondary-indexes' | 'histograms';
 
 const PARTS_DEFAULT_VISIBLE_FIELDS = [
   'database',
@@ -98,6 +99,12 @@ export function PartsPage() {
   const partitionsTableRef = useRef<SystemTableRef>(null);
   const [partsColumnSelectorOpen, setPartsColumnSelectorOpen] = useState(false);
   const [partitionsColumnSelectorOpen, setPartitionsColumnSelectorOpen] = useState(false);
+  const [groupedColumnSelectorOpen, setGroupedColumnSelectorOpen] = useState(false);
+  const [databasesColumnSelectorOpen, setDatabasesColumnSelectorOpen] = useState(false);
+
+  // Hidden columns state for AG Grid tables
+  const [groupedHiddenColumns, setGroupedHiddenColumns] = useState<Set<string>>(new Set());
+  const [databasesHiddenColumns, setDatabasesHiddenColumns] = useState<Set<string>>(new Set());
 
   // Search state
   const [partsSearch, setPartsSearch] = useState('');
@@ -547,7 +554,7 @@ export function PartsPage() {
     {
       headerName: 'Table',
       field: 'table',
-      width: 400,
+      width: 250,
       sortable: true,
       cellStyle: { color: '#93c5fd', cursor: 'pointer' },
       onCellClicked: (params) => {
@@ -563,6 +570,14 @@ export function PartsPage() {
           }
         }
       },
+    },
+    {
+      headerName: 'Engine',
+      field: 'engine_full',
+      width: 250,
+      sortable: true,
+      cellStyle: { color: '#a5b4fc' },
+      valueFormatter: (params) => params.value || '-',
     },
     {
       headerName: 'Partitions',
@@ -820,6 +835,7 @@ export function PartsPage() {
     { id: 'databases', label: 'Databases', icon: Server },
     { id: 'grouped', label: 'Tables', icon: Grid3X3 },
     { id: 'views', label: 'Views', icon: FileCode },
+    { id: 'dictionaries', label: 'Dictionaries', icon: BookOpen },
     { id: 'partitions', label: 'Partitions', icon: Layers },
     { id: 'parts', label: 'Parts', icon: HardDrive },
     { id: 'projections', label: 'Projections', icon: Sparkles },
@@ -876,6 +892,91 @@ export function PartsPage() {
       </div>
     );
   };
+
+  // Column selector for AG Grid tables (databases, grouped/tables)
+  const renderAgGridColumnSelector = (
+    isOpen: boolean,
+    setIsOpen: (open: boolean) => void,
+    columns: { field: string; headerName: string }[],
+    hiddenColumns: Set<string>,
+    setHiddenColumns: (update: (prev: Set<string>) => Set<string>) => void
+  ) => {
+    if (columns.length === 0) return null;
+
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+          title="Configure columns"
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </button>
+        {isOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+            <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg z-50 min-w-[200px]">
+              <div className="flex items-center justify-between p-2 border-b border-gray-700">
+                <span className="text-xs font-semibold text-gray-300">Columns</span>
+                <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-white">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+              <div className="max-h-64 overflow-y-auto p-1">
+                {columns.map((col) => (
+                  <label key={col.field} className="flex items-center gap-2 p-1.5 hover:bg-gray-700 rounded cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!hiddenColumns.has(col.field)}
+                      onChange={() => {
+                        setHiddenColumns(prev => {
+                          const next = new Set(prev);
+                          if (next.has(col.field)) {
+                            next.delete(col.field);
+                          } else {
+                            next.add(col.field);
+                          }
+                          return next;
+                        });
+                      }}
+                      className="w-3 h-3 rounded border-gray-500 bg-gray-700 text-blue-500"
+                    />
+                    <span className="text-xs text-gray-300">{col.headerName}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // Column info for AG Grid column selectors
+  const groupedColumnInfo = useMemo(() =>
+    groupedColumnDefs
+      .filter(col => col.field && col.headerName)
+      .map(col => ({ field: col.field as string, headerName: col.headerName as string })),
+    [groupedColumnDefs]
+  );
+
+  const databasesColumnInfo = useMemo(() =>
+    databasesColumnDefs
+      .filter(col => col.field && col.headerName)
+      .map(col => ({ field: col.field as string, headerName: col.headerName as string })),
+    [databasesColumnDefs]
+  );
+
+  // Filter column definitions based on hidden columns
+  const visibleGroupedColumnDefs = useMemo(() =>
+    groupedColumnDefs.filter(col => !col.field || !groupedHiddenColumns.has(col.field as string)),
+    [groupedColumnDefs, groupedHiddenColumns]
+  );
+
+  const visibleDatabasesColumnDefs = useMemo(() =>
+    databasesColumnDefs.filter(col => !col.field || !databasesHiddenColumns.has(col.field as string)),
+    [databasesColumnDefs, databasesHiddenColumns]
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -960,14 +1061,20 @@ export function PartsPage() {
             </div>
           )}
           {activeTab === 'databases' && (
-            <span className="text-gray-400 text-xs">
-              {filteredDatabasesData.length.toLocaleString()} {filteredDatabasesData.length !== databasesData.length && `of ${databasesData.length}`} databases
-            </span>
+            <>
+              <span className="text-gray-400 text-xs">
+                {filteredDatabasesData.length.toLocaleString()} {filteredDatabasesData.length !== databasesData.length && `of ${databasesData.length}`} databases
+              </span>
+              {renderAgGridColumnSelector(databasesColumnSelectorOpen, setDatabasesColumnSelectorOpen, databasesColumnInfo, databasesHiddenColumns, setDatabasesHiddenColumns)}
+            </>
           )}
           {activeTab === 'grouped' && (
-            <span className="text-gray-400 text-xs">
-              {groupedData.length.toLocaleString()} tables
-            </span>
+            <>
+              <span className="text-gray-400 text-xs">
+                {groupedData.length.toLocaleString()} tables
+              </span>
+              {renderAgGridColumnSelector(groupedColumnSelectorOpen, setGroupedColumnSelectorOpen, groupedColumnInfo, groupedHiddenColumns, setGroupedHiddenColumns)}
+            </>
           )}
           {activeTab === 'parts' && (
             <>
@@ -1043,10 +1150,10 @@ export function PartsPage() {
         {activeTab === 'databases' && (
           <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
             <AgGridReact<DatabaseSummary>
-              key={`databases-${databaseFilter}`}
+              key={`databases-${databaseFilter}-${databasesHiddenColumns.size}`}
               theme={darkTheme}
               rowData={filteredDatabasesData}
-              columnDefs={databasesColumnDefs}
+              columnDefs={visibleDatabasesColumnDefs}
               defaultColDef={defaultColDef}
               loading={databasesLoading}
               animateRows={false}
@@ -1065,10 +1172,10 @@ export function PartsPage() {
         {activeTab === 'grouped' && (
           <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
             <AgGridReact<GroupedPartsEntry>
-              key={`grouped-${JSON.stringify(partsFilters)}-${partsSearch}`}
+              key={`grouped-${JSON.stringify(partsFilters)}-${partsSearch}-${groupedHiddenColumns.size}`}
               theme={darkTheme}
               rowData={groupedData}
-              columnDefs={groupedColumnDefs}
+              columnDefs={visibleGroupedColumnDefs}
               defaultColDef={defaultColDef}
               loading={groupedLoading}
               animateRows={false}
@@ -1198,6 +1305,12 @@ export function PartsPage() {
         )}
         {activeTab === 'views' && (
           <ViewsTab
+            filters={partsFilters}
+            search={partsSearch}
+          />
+        )}
+        {activeTab === 'dictionaries' && (
+          <DictionariesTab
             filters={partsFilters}
             search={partsSearch}
           />
@@ -1452,7 +1565,7 @@ export function PartsPage() {
                     {/* MergeTree Index Granules Section */}
                     {tableDetailsTab === 'index' && (
                       <div className="flex flex-col flex-1">
-                    <h3 className="text-xs font-semibold text-gray-300 mb-2">MergeTree Index Granules ({mergeTreeIndexData.length}) <span className="text-gray-500 font-normal">(limit 5)</span></h3>
+                    <h3 className="text-xs font-semibold text-gray-300 mb-2">MergeTree Index Granules ({mergeTreeIndexData.length}) <span className="text-gray-500 font-normal">(limit 50)</span></h3>
                     {mergeTreeIndexLoading ? (
                       <div className="flex items-center justify-center h-20 text-gray-400">Loading index granules...</div>
                     ) : mergeTreeIndexData.length === 0 ? (

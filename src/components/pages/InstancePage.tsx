@@ -2,8 +2,9 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef } from 'ag-grid-community';
-import { Settings, HardDrive, Database, BarChart2, Clock, Zap, AlertTriangle, Search, RefreshCw } from 'lucide-react';
+import { Settings, HardDrive, Database, BarChart2, Clock, Zap, AlertTriangle, Search, RefreshCw, LayoutDashboard } from 'lucide-react';
 import { SystemTable } from '../SystemTable';
+import { DashboardTab } from './DashboardTab';
 import {
   fetchSettings,
   fetchSettingsColumns,
@@ -37,7 +38,7 @@ const darkTheme = themeAlpine.withParams({
   headerHeight: 30,
 });
 
-type InstanceTab = 'metrics' | 'async' | 'events' | 'errors' | 'settings' | 'disks' | 'storagePolicies';
+type InstanceTab = 'dashboard' | 'metrics' | 'async' | 'events' | 'errors' | 'settings' | 'disks' | 'storagePolicies';
 
 interface MetricRow {
   metric: string;
@@ -80,7 +81,7 @@ const STORAGE_POLICIES_DEFAULT_VISIBLE_FIELDS = [
 ];
 
 export function InstancePage() {
-  const [activeTab, setActiveTab] = useState<InstanceTab>('metrics');
+  const [activeTab, setActiveTab] = useState<InstanceTab>('dashboard');
   const [metrics, setMetrics] = useState<MetricRow[]>([]);
   const [asyncMetrics, setAsyncMetrics] = useState<MetricRow[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -106,6 +107,7 @@ export function InstancePage() {
   }, [loadMetricsData]);
 
   const isMetricsTab = activeTab === 'metrics' || activeTab === 'async' || activeTab === 'events';
+  const isDashboardTab = activeTab === 'dashboard';
 
   const currentData = activeTab === 'events' ? events : (activeTab === 'metrics' ? metrics : asyncMetrics);
   const nameField = activeTab === 'events' ? 'event' : 'metric';
@@ -156,6 +158,7 @@ export function InstancePage() {
   }), []);
 
   const tabs: { id: InstanceTab; label: string; icon: typeof Settings }[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'metrics', label: 'Metrics', icon: BarChart2 },
     { id: 'async', label: 'Async Metrics', icon: Clock },
     { id: 'events', label: 'Events', icon: Zap },
@@ -165,38 +168,75 @@ export function InstancePage() {
     { id: 'storagePolicies', label: 'Storage Policies', icon: Database },
   ];
 
+  // Get dashboard metrics count from localStorage
+  const getDashboardMetricsCount = () => {
+    const source = localStorage.getItem('dashboardSource') || 'metrics';
+    const savedMetrics = localStorage.getItem('dashboardMetricsLog');
+    const savedAsync = localStorage.getItem('dashboardAsyncLog');
+
+    try {
+      if (source === 'async' && savedAsync) {
+        return JSON.parse(savedAsync).length;
+      }
+      if (savedMetrics) {
+        return JSON.parse(savedMetrics).length;
+      }
+    } catch {
+      // ignore
+    }
+    return 0;
+  };
+
   return (
     <div className="h-full flex flex-col">
-      {/* Search bar */}
+      {/* Header bar - always visible */}
       <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 py-2 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="relative flex items-center">
-            <Search className="absolute left-2 w-3 h-3 text-gray-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Search ${activeTab === 'events' ? 'events' : activeTab === 'settings' ? 'settings' : activeTab === 'errors' ? 'errors' : activeTab === 'disks' ? 'disks' : activeTab === 'storagePolicies' ? 'storage policies' : 'metrics'}...`}
-              className="bg-gray-800 border border-gray-600 rounded pl-6 pr-6 py-0.5 text-white text-xs w-64"
-            />
-          </div>
-          {isMetricsTab && (
-            <button
-              onClick={loadMetricsData}
-              disabled={metricsLoading}
-              className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
-              title="Refresh"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${metricsLoading ? 'animate-spin' : ''}`} />
-            </button>
-          )}
-        </div>
-        {isMetricsTab && (
-          <div className="flex items-center gap-4 text-xs">
-            <span className="text-gray-400">
-              Total: <span className="text-white font-medium">{filteredData.length.toLocaleString()}</span> {activeTab === 'events' ? 'events' : 'metrics'}
-            </span>
-          </div>
+        {isDashboardTab ? (
+          <>
+            <div className="flex items-center gap-3">
+              <LayoutDashboard className="w-4 h-4 text-blue-400" />
+              <span className="text-xs text-gray-400">
+                Real-time metrics dashboard
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-xs">
+              <span className="text-gray-400">
+                Total: <span className="text-white font-medium">{getDashboardMetricsCount()}</span> metrics on dashboard
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-3">
+              <div className="relative flex items-center">
+                <Search className="absolute left-2 w-3 h-3 text-gray-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={`Search ${activeTab === 'events' ? 'events' : activeTab === 'settings' ? 'settings' : activeTab === 'errors' ? 'errors' : activeTab === 'disks' ? 'disks' : activeTab === 'storagePolicies' ? 'storage policies' : 'metrics'}...`}
+                  className="bg-gray-800 border border-gray-600 rounded pl-6 pr-6 py-0.5 text-white text-xs w-64"
+                />
+              </div>
+              {isMetricsTab && (
+                <button
+                  onClick={loadMetricsData}
+                  disabled={metricsLoading}
+                  className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
+                  title="Refresh"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${metricsLoading ? 'animate-spin' : ''}`} />
+                </button>
+              )}
+            </div>
+            {isMetricsTab && (
+              <div className="flex items-center gap-4 text-xs">
+                <span className="text-gray-400">
+                  Total: <span className="text-white font-medium">{filteredData.length.toLocaleString()}</span> {activeTab === 'events' ? 'events' : 'metrics'}
+                </span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -217,7 +257,8 @@ export function InstancePage() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-hidden px-1.5 pt-3 pb-4">
+      <div className={`flex-1 overflow-hidden ${isDashboardTab ? '' : 'px-1.5 pt-3 pb-4'}`}>
+        {isDashboardTab && <DashboardTab />}
         {isMetricsTab && (
           <AgGridReact<MetricRow | EventRow>
             theme={darkTheme}

@@ -853,19 +853,21 @@ app.get('/api/parts/grouped', async (req, res) => {
 
     const query = `
       SELECT
-        database,
-        table,
-        count(DISTINCT partition_id) as partition_count,
+        p.database,
+        p.table,
+        any(t.engine_full) as engine_full,
+        count(DISTINCT p.partition_id) as partition_count,
         count() as part_count,
-        sum(rows) as total_rows,
-        sum(bytes_on_disk) as total_bytes,
-        sum(data_compressed_bytes) as compressed_bytes,
-        sum(data_uncompressed_bytes) as uncompressed_bytes,
-        round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) as savings_pct,
-        max(modification_time) as last_modification_time
-      FROM ${getSystemTable('parts')}
-      ${whereClause}
-      GROUP BY database, table
+        sum(p.rows) as total_rows,
+        sum(p.bytes_on_disk) as total_bytes,
+        sum(p.data_compressed_bytes) as compressed_bytes,
+        sum(p.data_uncompressed_bytes) as uncompressed_bytes,
+        round((sum(p.data_uncompressed_bytes) - sum(p.data_compressed_bytes)) / nullIf(sum(p.data_uncompressed_bytes), 0) * 100, 1) as savings_pct,
+        max(p.modification_time) as last_modification_time
+      FROM ${getSystemTable('parts')} p
+      LEFT JOIN system.tables t ON p.database = t.database AND p.table = t.name
+      ${whereClause ? whereClause.replace(/\b(database|table)\b/g, 'p.$1') : ''}
+      GROUP BY p.database, p.table
       ORDER BY total_bytes DESC
     `;
 
@@ -1344,8 +1346,8 @@ app.get('/api/table-mergetree-index/:database/:table', async (req, res) => {
     const safeDatabase = database.replace(/'/g, "''");
     const safeTable = table.replace(/'/g, "''");
 
-    // Query mergeTreeIndex table function for granule boundaries (limit 5 for performance)
-    const query = `SELECT * FROM mergeTreeIndex('${safeDatabase}', '${safeTable}') LIMIT 5`;
+    // Query mergeTreeIndex table function for granule boundaries (limit 50 for performance)
+    const query = `SELECT * FROM mergeTreeIndex('${safeDatabase}', '${safeTable}') LIMIT 50`;
 
     console.log('MergeTree index query:', query);
 
@@ -2581,12 +2583,12 @@ app.get('/api/browser/projection-parts/:database/:table/:projection', async (req
 
 // ==================== VIEWS ENDPOINTS ====================
 
-// Get all views and materialized views (system-wide)
+// Get all views (View and MaterializedView)
 app.get('/api/views', async (req, res) => {
   try {
     const { filters, search } = req.query;
 
-    let whereConditions = ["engine IN ('View', 'MaterializedView', 'LiveView', 'WindowView')"];
+    let whereConditions = ["engine IN ('View', 'MaterializedView')"];
     const params = {};
 
     if (filters) {
@@ -2644,6 +2646,92 @@ app.get('/api/view-definition/:database/:view', async (req, res) => {
     res.json({ definition });
   } catch (error) {
     console.error('Error fetching view definition:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== DICTIONARIES ENDPOINTS ====================
+
+// Get all dictionaries (system-wide)
+app.get('/api/dictionaries', async (req, res) => {
+  try {
+    const { filters, search } = req.query;
+
+    let whereConditions = [];
+    const params = {};
+
+    if (filters) {
+      const parsed = JSON.parse(filters);
+      Object.entries(parsed).forEach(([field, values], idx) => {
+        if (!values || !Array.isArray(values) || values.length === 0) return;
+        const condition = buildFilterCondition(field, values, params, idx);
+        whereConditions.push(condition);
+      });
+    }
+
+    if (search) {
+      params.search = `%${search}%`;
+      whereConditions.push(`(database ILIKE {search:String} OR name ILIKE {search:String})`);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT
+        database,
+        name,
+        uuid,
+        status,
+        origin,
+        type,
+        key,
+        attribute.names as attribute_names,
+        attribute.types as attribute_types,
+        bytes_allocated,
+        hierarchical_index_bytes_allocated,
+        query_count,
+        hit_rate,
+        found_rate,
+        element_count,
+        load_factor,
+        source,
+        lifetime_min,
+        lifetime_max,
+        loading_start_time,
+        last_successful_update_time,
+        loading_duration,
+        last_exception
+      FROM system.dictionaries
+      ${whereClause}
+      ORDER BY database, name
+    `;
+    const result = await client.query({
+      query,
+      query_params: params,
+      format: 'JSONEachRow'
+    });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching dictionaries:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get dictionaries columns metadata
+app.get('/api/dictionaries/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'dictionaries'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching dictionaries columns:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -3285,14 +3373,17 @@ app.post('/api/explain/:type', async (req, res) => {
 // Execute a query and return results
 app.post('/api/query', async (req, res) => {
   try {
-    const { query: userQuery, limit = 1000 } = req.body;
+    let { query: userQuery, limit = 1000 } = req.body;
 
     if (!userQuery) {
       return res.status(400).json({ error: 'Query is required' });
     }
 
+    // Strip trailing semicolons (ClickHouse doesn't need them and they can cause issues)
+    userQuery = userQuery.trim().replace(/;+$/, '').trim();
+
     // Safety: don't allow dangerous operations
-    const upperQuery = userQuery.trim().toUpperCase();
+    const upperQuery = userQuery.toUpperCase();
     const dangerousKeywords = ['DROP', 'TRUNCATE', 'DELETE', 'ALTER', 'DETACH', 'ATTACH', 'RENAME', 'KILL'];
     const isDangerous = dangerousKeywords.some(kw => upperQuery.startsWith(kw));
 
@@ -3425,6 +3516,122 @@ app.post('/api/explore', async (req, res) => {
     });
   } catch (error) {
     console.error('Error exploring table data:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Column profiling endpoint - returns stats for each column
+app.post('/api/profile', async (req, res) => {
+  try {
+    const { database, table, columns = [], sampleSize = 10000 } = req.body;
+
+    if (!database || !table) {
+      return res.status(400).json({ error: 'Database and table are required' });
+    }
+
+    const safeSampleSize = Math.min(100000, Math.max(1000, parseInt(sampleSize) || 10000));
+    const fullTableName = `\`${database}\`.\`${table}\``;
+
+    // Get column info if not provided
+    let targetColumns = columns;
+    if (targetColumns.length === 0) {
+      const colQuery = `SELECT name, type FROM system.columns WHERE database = '${database}' AND table = '${table}'`;
+      const colResult = await client.query({ query: colQuery, format: 'JSONEachRow' });
+      const colData = await colResult.json();
+      targetColumns = colData.map(c => ({ name: c.name, type: c.type }));
+    }
+
+    // Get total row count
+    const countQuery = `SELECT count() as total FROM ${fullTableName}`;
+    const countResult = await client.query({ query: countQuery, format: 'JSONEachRow' });
+    const [{ total: totalRows }] = await countResult.json();
+
+    const profiles = [];
+
+    for (const col of targetColumns) {
+      const colName = typeof col === 'string' ? col : col.name;
+      const colType = typeof col === 'string' ? null : col.type;
+      const escapedCol = `\`${colName}\``;
+
+      try {
+        // Build profile query for this column
+        // Get: count, null count, distinct count, min, max, and top values
+        const isNumeric = colType && /^(Int|UInt|Float|Decimal|Date|DateTime)/.test(colType);
+
+        let statsQuery;
+        if (isNumeric) {
+          statsQuery = `
+            SELECT
+              count() as total,
+              countIf(isNull(${escapedCol}) OR toString(${escapedCol}) = '') as null_count,
+              uniqExact(${escapedCol}) as cardinality,
+              min(${escapedCol}) as min_val,
+              max(${escapedCol}) as max_val,
+              avg(toFloat64OrNull(toString(${escapedCol}))) as avg_val
+            FROM (SELECT ${escapedCol} FROM ${fullTableName} LIMIT ${safeSampleSize})
+          `;
+        } else {
+          statsQuery = `
+            SELECT
+              count() as total,
+              countIf(isNull(${escapedCol}) OR toString(${escapedCol}) = '') as null_count,
+              uniqExact(${escapedCol}) as cardinality,
+              min(length(toString(${escapedCol}))) as min_len,
+              max(length(toString(${escapedCol}))) as max_len,
+              avg(length(toString(${escapedCol}))) as avg_len
+            FROM (SELECT ${escapedCol} FROM ${fullTableName} LIMIT ${safeSampleSize})
+          `;
+        }
+
+        const statsResult = await client.query({ query: statsQuery, format: 'JSONEachRow' });
+        const [stats] = await statsResult.json();
+
+        // Get top values histogram
+        const topValuesQuery = `
+          SELECT
+            toString(${escapedCol}) as value,
+            count() as count
+          FROM (SELECT ${escapedCol} FROM ${fullTableName} LIMIT ${safeSampleSize})
+          WHERE ${escapedCol} IS NOT NULL AND toString(${escapedCol}) != ''
+          GROUP BY ${escapedCol}
+          ORDER BY count DESC
+          LIMIT 10
+        `;
+        const topResult = await client.query({ query: topValuesQuery, format: 'JSONEachRow' });
+        const topValues = await topResult.json();
+
+        profiles.push({
+          column: colName,
+          type: colType,
+          total: parseInt(stats.total) || 0,
+          nullCount: parseInt(stats.null_count) || 0,
+          nullPercent: stats.total > 0 ? ((parseInt(stats.null_count) || 0) / parseInt(stats.total) * 100).toFixed(1) : '0.0',
+          cardinality: parseInt(stats.cardinality) || 0,
+          cardinalityPercent: stats.total > 0 ? ((parseInt(stats.cardinality) || 0) / parseInt(stats.total) * 100).toFixed(1) : '0.0',
+          min: stats.min_val !== undefined ? stats.min_val : stats.min_len,
+          max: stats.max_val !== undefined ? stats.max_val : stats.max_len,
+          avg: stats.avg_val !== undefined ? stats.avg_val : stats.avg_len,
+          topValues: topValues.map(v => ({ value: v.value, count: parseInt(v.count) })),
+        });
+      } catch (colError) {
+        // If a column fails, add it with error info
+        profiles.push({
+          column: colName,
+          type: colType,
+          error: colError.message,
+        });
+      }
+    }
+
+    res.json({
+      database,
+      table,
+      totalRows: parseInt(totalRows),
+      sampleSize: safeSampleSize,
+      profiles,
+    });
+  } catch (error) {
+    console.error('Error profiling table:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -5273,6 +5480,304 @@ app.get('/api/cluster/zookeeper/columns', async (req, res) => {
     console.error('Error fetching zookeeper columns:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// Get system.zookeeper_connection
+app.get('/api/cluster/zookeeper-connection', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.zookeeper_connection LIMIT 1000`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching zookeeper_connection:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.zookeeper_connection columns
+app.get('/api/cluster/zookeeper-connection/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'zookeeper_connection'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching zookeeper_connection columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.zookeeper_connection_log
+app.get('/api/cluster/zookeeper-connection-log', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.zookeeper_connection_log ORDER BY event_time DESC LIMIT 1000`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching zookeeper_connection_log:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.zookeeper_connection_log columns
+app.get('/api/cluster/zookeeper-connection-log/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'zookeeper_connection_log'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching zookeeper_connection_log columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.zookeeper_log
+app.get('/api/cluster/zookeeper-log', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.zookeeper_log ORDER BY event_time DESC LIMIT 1000`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching zookeeper_log:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.zookeeper_log columns
+app.get('/api/cluster/zookeeper-log/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type, comment
+      FROM system.columns
+      WHERE database = 'system' AND table = 'zookeeper_log'
+      ORDER BY position
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching zookeeper_log columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== METRIC LOG API (Dashboard) ====================
+
+// Default top 20 metrics for the dashboard
+const DEFAULT_DASHBOARD_METRICS = [
+  'CurrentMetric_Query',
+  'CurrentMetric_MemoryTracking',
+  'CurrentMetric_TCPConnection',
+  'CurrentMetric_HTTPConnection',
+  'CurrentMetric_Merge',
+  'CurrentMetric_BackgroundMergesAndMutationsPoolTask',
+  'CurrentMetric_Read',
+  'CurrentMetric_Write',
+  'CurrentMetric_MarkCacheBytes',
+  'CurrentMetric_UncompressedCacheBytes',
+  'ProfileEvent_Query',
+  'ProfileEvent_InsertedRows',
+  'ProfileEvent_SelectedRows',
+  'ProfileEvent_ReadCompressedBytes',
+  'ProfileEvent_InsertedBytes',
+  'ProfileEvent_MergedRows',
+  'ProfileEvent_MarkCacheHits',
+  'ProfileEvent_MarkCacheMisses',
+  'ProfileEvent_QueryMemoryLimitExceeded',
+  'ProfileEvent_FailedQuery',
+];
+
+// Get available metric columns from metric_log
+app.get('/api/metric-log/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT name, type
+      FROM system.columns
+      WHERE database = 'system'
+        AND table = 'metric_log'
+        AND (name LIKE 'CurrentMetric_%' OR name LIKE 'ProfileEvent_%')
+      ORDER BY name
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching metric_log columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get time series data for selected metrics
+app.get('/api/metric-log/timeseries', async (req, res) => {
+  try {
+    const { start, end, bucket = 'minute', metrics } = req.query;
+
+    // Parse metrics or use defaults
+    const metricList = metrics
+      ? (typeof metrics === 'string' ? metrics.split(',') : metrics)
+      : DEFAULT_DASHBOARD_METRICS;
+
+    // Validate metrics to prevent SQL injection
+    const validMetrics = metricList.filter(m => /^(CurrentMetric_|ProfileEvent_)[A-Za-z0-9_]+$/.test(m));
+
+    if (validMetrics.length === 0) {
+      return res.json([]);
+    }
+
+    // Determine truncation function based on bucket
+    let truncFunc;
+    switch (bucket) {
+      case 'second':
+        truncFunc = 'toStartOfSecond(event_time)';
+        break;
+      case 'hour':
+        truncFunc = 'toStartOfHour(event_time)';
+        break;
+      default:
+        truncFunc = 'toStartOfMinute(event_time)';
+    }
+
+    // Build dynamic SELECT: sum for ProfileEvent, max for CurrentMetric
+    const selectClauses = validMetrics.map(m => {
+      if (m.startsWith('ProfileEvent_')) {
+        return `sum(${m}) as ${m}`;
+      } else {
+        return `max(${m}) as ${m}`;
+      }
+    }).join(',\n        ');
+
+    const query = `
+      SELECT
+        ${truncFunc} as time,
+        ${selectClauses}
+      FROM system.metric_log
+      WHERE event_time >= '${start}' AND event_time <= '${end}'
+      GROUP BY time
+      ORDER BY time
+    `;
+
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching metric_log timeseries:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get default dashboard metrics list
+app.get('/api/metric-log/defaults', async (req, res) => {
+  res.json(DEFAULT_DASHBOARD_METRICS);
+});
+
+// ==================== ASYNC METRIC LOG API (Dashboard) ====================
+
+// Default async metrics from asynchronous_metric_log for the dashboard
+const DEFAULT_ASYNC_METRIC_LOG_METRICS = [
+  'OSMemoryTotal',
+  'OSMemoryAvailable',
+  'OSMemoryCached',
+  'OSMemoryBuffers',
+  'jemalloc.resident',
+  'jemalloc.allocated',
+  'ReplicasMaxQueueSize',
+  'ReplicasSumQueueSize',
+  'UncompressedCacheBytes',
+  'MarkCacheBytes',
+];
+
+// Get available async metric names from asynchronous_metric_log
+app.get('/api/async-metric-log/columns', async (req, res) => {
+  try {
+    const query = `
+      SELECT DISTINCT metric as name
+      FROM system.asynchronous_metric_log
+      ORDER BY metric
+      LIMIT 500
+    `;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching asynchronous_metric_log columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get time series data for selected async metrics
+app.get('/api/async-metric-log/timeseries', async (req, res) => {
+  try {
+    const { start, end, bucket = 'minute', metrics } = req.query;
+
+    // Parse metrics or use defaults
+    const metricList = metrics
+      ? (typeof metrics === 'string' ? metrics.split(',') : metrics)
+      : DEFAULT_ASYNC_METRIC_LOG_METRICS;
+
+    // Validate metrics - async metrics can have various characters including dots
+    const validMetrics = metricList.filter(m => /^[A-Za-z0-9_.]+$/.test(m));
+
+    if (validMetrics.length === 0) {
+      return res.json([]);
+    }
+
+    // Determine truncation function based on bucket
+    let truncFunc;
+    switch (bucket) {
+      case 'second':
+        truncFunc = 'toStartOfSecond(event_time)';
+        break;
+      case 'hour':
+        truncFunc = 'toStartOfHour(event_time)';
+        break;
+      default:
+        truncFunc = 'toStartOfMinute(event_time)';
+    }
+
+    // Build query to pivot async metrics into columns
+    const selectClauses = validMetrics.map(m =>
+      `maxIf(value, metric = '${m}') as \`${m}\``
+    ).join(',\n        ');
+
+    const whereMetrics = validMetrics.map(m => `'${m}'`).join(', ');
+
+    const query = `
+      SELECT
+        ${truncFunc} as time,
+        ${selectClauses}
+      FROM system.asynchronous_metric_log
+      WHERE event_time >= '${start}' AND event_time <= '${end}'
+        AND metric IN (${whereMetrics})
+      GROUP BY time
+      ORDER BY time
+    `;
+
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching asynchronous_metric_log timeseries:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get default async dashboard metrics list
+app.get('/api/async-metric-log/defaults', async (req, res) => {
+  res.json(DEFAULT_ASYNC_METRIC_LOG_METRICS);
 });
 
 // Serve the React app for any other routes (Express v5 compatible)

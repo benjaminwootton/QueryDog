@@ -15,14 +15,22 @@ import {
   fetchDistributedDdlQueueColumns,
   fetchZookeeper,
   fetchZookeeperColumns,
+  fetchZookeeperConnection,
+  fetchZookeeperConnectionColumns,
+  fetchZookeeperConnectionLog,
+  fetchZookeeperConnectionLogColumns,
+  fetchZookeeperLog,
+  fetchZookeeperLogColumns,
 } from '../../services/api';
 
 type ClusterTab = 'replication-queue' | 'replicas' | 'clusters' | 'fetches' | 'distributed-ddl' | 'zookeeper';
 type ReplicationQueueSubTab = 'detailed' | 'grouped';
+type ZookeeperSubTab = 'zookeeper' | 'connection' | 'connection-log' | 'log';
 
 export function ClusterPage() {
   const [activeTab, setActiveTab] = useState<ClusterTab>('replication-queue');
   const [replicationSubTab, setReplicationSubTab] = useState<ReplicationQueueSubTab>('detailed');
+  const [zookeeperSubTab, setZookeeperSubTab] = useState<ZookeeperSubTab>('zookeeper');
 
   const tabs: { id: ClusterTab; label: string; icon: typeof Network }[] = [
     { id: 'replication-queue', label: 'Replication Queue', icon: RefreshCw },
@@ -36,6 +44,13 @@ export function ClusterPage() {
   const replicationSubTabs: { id: ReplicationQueueSubTab; label: string }[] = [
     { id: 'detailed', label: 'Detailed' },
     { id: 'grouped', label: 'Grouped by Error' },
+  ];
+
+  const zookeeperSubTabs: { id: ZookeeperSubTab; label: string }[] = [
+    { id: 'zookeeper', label: 'ZooKeeper' },
+    { id: 'connection', label: 'Connection' },
+    { id: 'connection-log', label: 'Connection Log' },
+    { id: 'log', label: 'Log' },
   ];
 
   return (
@@ -134,12 +149,57 @@ export function ClusterPage() {
         )}
 
         {activeTab === 'zookeeper' && (
-          <SystemTable
-            fetchData={fetchZookeeper}
-            fetchColumns={fetchZookeeperColumns}
-            getRowId={(data) => String(data.path)}
-            hideHeader
-          />
+          <div className="flex flex-col h-full">
+            <div className="flex items-center gap-1 mb-2">
+              {zookeeperSubTabs.map(({ id, label }) => (
+                <button
+                  key={id}
+                  onClick={() => setZookeeperSubTab(id)}
+                  className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                    zookeeperSubTab === id
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 overflow-hidden">
+              {zookeeperSubTab === 'zookeeper' && (
+                <SystemTable
+                  fetchData={fetchZookeeper}
+                  fetchColumns={fetchZookeeperColumns}
+                  getRowId={(data) => String(data.path)}
+                  hideHeader
+                />
+              )}
+              {zookeeperSubTab === 'connection' && (
+                <SystemTable
+                  fetchData={fetchZookeeperConnection}
+                  fetchColumns={fetchZookeeperConnectionColumns}
+                  getRowId={(data) => `${data.index}-${data.host}`}
+                  hideHeader
+                />
+              )}
+              {zookeeperSubTab === 'connection-log' && (
+                <SystemTable
+                  fetchData={fetchZookeeperConnectionLog}
+                  fetchColumns={fetchZookeeperConnectionLogColumns}
+                  getRowId={(data) => `${data.event_time}-${data.type}`}
+                  hideHeader
+                />
+              )}
+              {zookeeperSubTab === 'log' && (
+                <SystemTable
+                  fetchData={fetchZookeeperLog}
+                  fetchColumns={fetchZookeeperLogColumns}
+                  getRowId={(data) => `${data.event_time}-${data.address}`}
+                  hideHeader
+                />
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>
