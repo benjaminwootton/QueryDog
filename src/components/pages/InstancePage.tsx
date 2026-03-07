@@ -195,19 +195,7 @@ export function InstancePage() {
       {/* Header bar - always visible */}
       <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 h-9 flex items-center justify-between shrink-0">
         {isDashboardTab ? (
-          <>
-            <div className="flex items-center gap-3">
-              <LayoutDashboard className="w-4 h-4 text-blue-400" />
-              <span className="text-xs text-gray-400">
-                Real-time metrics dashboard
-              </span>
-            </div>
-            <div className="flex items-center gap-4 text-xs">
-              <span className="text-gray-400">
-                Total: <span className="text-white font-medium">{getDashboardMetricsCount()}</span> metrics on dashboard
-              </span>
-            </div>
-          </>
+          <div />
         ) : (
           <>
             <div className="flex items-center gap-3">
