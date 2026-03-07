@@ -151,28 +151,21 @@ export function TimelineChart() {
   // Handle click on chart to filter to that time bucket
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleChartClick = useCallback((data: any) => {
-    console.log('Chart clicked, data:', data);
-
     // Use activeLabel which contains the time string directly
     const timeStr = data?.activeLabel;
-    console.log('Time string:', timeStr);
 
     if (!timeStr) {
-      console.log('No time data found in click event');
       return;
     }
 
     // ClickHouse returns time like "2025-12-05 10:30:00" - convert space to T for proper Date parsing
     const clickedTime = new Date(timeStr.replace(' ', 'T'));
-    console.log('Parsed clickedTime:', clickedTime, 'getTime:', clickedTime.getTime());
 
     if (isNaN(clickedTime.getTime())) {
-      console.error('Invalid time value from chart:', timeStr);
       return;
     }
 
     // Set both start and end to the same clicked time
-    console.log('Setting time range:', { start: clickedTime.toISOString(), end: clickedTime.toISOString() });
     setTimeRange({ start: clickedTime, end: clickedTime });
   }, [setTimeRange]);
 

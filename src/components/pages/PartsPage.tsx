@@ -880,7 +880,7 @@ export function PartsPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Filter bar */}
-      <div className="bg-gray-900/50 border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0">
+      <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 py-2 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <PartsFilterPanel
             filters={partsFilters}
@@ -1039,7 +1039,7 @@ export function PartsPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden px-4 pt-3 pb-4">
+      <div className="flex-1 overflow-hidden px-1.5 pt-3 pb-4">
         {activeTab === 'databases' && (
           <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
             <AgGridReact<DatabaseSummary>

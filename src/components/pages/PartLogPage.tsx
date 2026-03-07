@@ -34,7 +34,7 @@ export function PartLogPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Filter bar */}
-      <div className="bg-gray-900/50 border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0">
+      <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 py-2 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <PartLogFilterPanel />
           <TimeRangeSelector usePartLogMetric />
@@ -52,7 +52,7 @@ export function PartLogPage() {
       </div>
 
       {/* Timeline Chart */}
-      <div className="px-4 pt-3 pb-2 shrink-0">
+      <div className="px-1.5 pt-3 pb-2 shrink-0">
         <PartLogTimelineChart />
       </div>
 
@@ -108,7 +108,7 @@ export function PartLogPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden px-4 pt-3 pb-4">
+      <div className="flex-1 overflow-hidden px-1.5 pt-3 pb-4">
         {activeTab === 'partlog' && <PartLogTable />}
         {activeTab === 'histograms' && <PartLogHistogramsTab />}
       </div>

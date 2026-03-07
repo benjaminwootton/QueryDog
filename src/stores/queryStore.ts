@@ -330,7 +330,6 @@ export const useQueryStore = create<QueryState>((set) => ({
     }),
   clearAllFilters: () => set({ fieldFilters: { type: ['QueryFinish'] }, rangeFilters: {}, search: '', currentPage: 0 }),
   setColumns: (columns) => {
-    console.log('Store setColumns called with', columns.length, 'columns');
     set({ columns, columnsLoaded: true });
   },
   toggleColumnVisibility: (field) =>

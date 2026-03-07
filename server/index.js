@@ -2650,6 +2650,8 @@ app.get('/api/view-definition/:database/:view', async (req, res) => {
 
 // ==================== DATA SKIPPING INDEXES ENDPOINTS ====================
 
+const DATA_SKIPPING_ALLOWED_FIELDS = ['database', 'table', 'name', 'type', 'type_full', 'expr', 'granularity'];
+
 // Get all data skipping indexes (system-wide)
 app.get('/api/indexes', async (req, res) => {
   try {
@@ -2658,12 +2660,12 @@ app.get('/api/indexes', async (req, res) => {
     let whereConditions = [];
     const params = {};
 
-    // Parse and apply filters
+    // Parse and apply filters (skip fields not available in all ClickHouse versions)
     if (filters) {
       const parsedFilters = JSON.parse(filters);
       let paramIndex = 0;
       for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
+        if (values && values.length > 0 && DATA_SKIPPING_ALLOWED_FIELDS.includes(field)) {
           whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
         }
       }
@@ -2745,12 +2747,12 @@ app.get('/api/data-skipping-indexes', async (req, res) => {
     let whereConditions = [];
     const params = {};
 
-    // Parse and apply filters
+    // Parse and apply filters (skip fields not available in all ClickHouse versions)
     if (filters) {
       const parsedFilters = JSON.parse(filters);
       let paramIndex = 0;
       for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
+        if (values && values.length > 0 && DATA_SKIPPING_ALLOWED_FIELDS.includes(field)) {
           whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
         }
       }
@@ -2825,6 +2827,32 @@ app.get('/api/events', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching events:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.errors
+app.get('/api/errors', async (req, res) => {
+  try {
+    const query = `SELECT * FROM system.errors ORDER BY last_error_time DESC`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching errors:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get system.errors columns
+app.get('/api/errors/columns', async (req, res) => {
+  try {
+    const query = `SELECT name, type FROM system.columns WHERE database = 'system' AND table = 'errors' ORDER BY position`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching errors columns:', error);
     res.status(500).json({ error: error.message });
   }
 });

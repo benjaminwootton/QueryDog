@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Dog, RefreshCw, Database, HardDrive, Activity, BarChart2, Server, Info, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network } from 'lucide-react';
+import { Dog, Database, HardDrive, Activity, Server, Info, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network, Circle } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
 import { PartsPage } from './components/pages/PartsPage';
 import { PartLogPage } from './components/pages/PartLogPage';
 import { ActivityPage } from './components/pages/ActivityPage';
-import { MetricsPage } from './components/pages/MetricsPage';
 import { InstancePage } from './components/pages/InstancePage';
 import { UsersPage } from './components/pages/UsersPage';
 import { ClusterPage } from './components/pages/ClusterPage';
@@ -18,8 +17,8 @@ import { QueryEditor } from './components/QueryEditor';
 import { useQueryStore } from './stores/queryStore';
 import { useQueryData } from './hooks/useQueryData';
 
-type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'metrics' | 'users' | 'cluster' | 'instance' | 'myqueries';
-type RefreshInterval = 'off' | 10 | 30 | 60;
+type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'users' | 'cluster' | 'instance' | 'myqueries';
+type RefreshInterval = 'off' | 5 | 10 | 60 | 600;
 
 interface ConnectionInfo {
   host: string;
@@ -59,7 +58,7 @@ function App() {
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [hasQueriesFolder, setHasQueriesFolder] = useState(false);
-  const { loading, error, hasPartLogAccess, hasPartsAccess, setActiveTab, setChartMetric, setTimeRange, setFieldFilter, clearAllFilters, setError } = useQueryStore();
+  const { error, hasPartLogAccess, hasPartsAccess, setActiveTab, setChartMetric, setTimeRange, setFieldFilter, clearAllFilters, setError } = useQueryStore();
   const { refresh } = useQueryData();
 
   // Fetch connection info on mount
@@ -163,18 +162,17 @@ function App() {
     ...(hasPartsAccess ? [{ id: 'parts' as const, label: 'Objects', icon: HardDrive }] : []),
     ...(hasPartLogAccess ? [{ id: 'partlog' as const, label: 'Parts Log', icon: Layers }] : []),
     { id: 'activity', label: 'Activity', icon: Activity },
-    { id: 'metrics', label: 'Metrics', icon: BarChart2 },
+    { id: 'instance', label: 'Instance', icon: Server },
     { id: 'textlog', label: 'Text Log', icon: FileText },
     { id: 'users', label: 'Users', icon: Users },
     { id: 'cluster', label: 'Cluster', icon: Network },
-    { id: 'instance', label: 'Instance', icon: Server },
     ...(hasQueriesFolder ? [{ id: 'myqueries' as const, label: 'My Queries', icon: FileCode }] : []),
   ];
 
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="bg-gray-900 border-b border-gray-700 px-3 py-1.5 flex items-center justify-between shrink-0">
+      <header className="bg-gray-900 border-b border-gray-700 px-1.5 py-1.5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-6">
           <button
             onClick={() => {
@@ -211,19 +209,14 @@ function App() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-3">
-          {connectionInfo && (
-            <span className="text-xs text-gray-400 font-mono">
-              {connectionInfo.user}@{connectionInfo.host}:{connectionInfo.port}
-            </span>
-          )}
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setBrowserOpen(true)}
             className="flex items-center gap-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 text-xs"
             title="Database Browser"
           >
             <FolderTree className="w-3.5 h-3.5" />
-            Browser
+            Browse
           </button>
           <button
             onClick={() => setDataExplorerOpen(true)}
@@ -248,28 +241,12 @@ function App() {
             interval={refreshInterval}
             onIntervalChange={setRefreshInterval}
           />
-          <button
-            onClick={refresh}
-            disabled={loading}
-            className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-          <button
-            onClick={() => setAboutOpen(true)}
-            className="flex items-center gap-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 text-xs"
-            title="About"
-          >
-            <Info className="w-3.5 h-3.5" />
-            About
-          </button>
         </div>
       </header>
 
       {/* Backend Error Banner */}
       {backendError && (
-        <div className="bg-red-900/50 border-b border-red-700 px-4 py-2 flex items-center justify-center gap-2">
+        <div className="bg-red-900/50 border-b border-red-700 px-1.5 py-2 flex items-center justify-center gap-2">
           <span className="text-red-300 text-sm">{backendError}</span>
           <button
             onClick={() => {
@@ -304,12 +281,32 @@ function App() {
         {navItem === 'partlog' && <PartLogPage />}
         {navItem === 'parts' && <PartsPage />}
         {navItem === 'activity' && <ActivityPage />}
-        {navItem === 'metrics' && <MetricsPage />}
+
         {navItem === 'users' && <UsersPage />}
         {navItem === 'cluster' && <ClusterPage />}
         {navItem === 'instance' && <InstancePage />}
         {navItem === 'myqueries' && <MyQueriesPage />}
       </main>
+
+      {/* Footer */}
+      <footer className="bg-gray-900 border-t border-gray-700 px-1.5 py-1.5 flex items-center justify-end shrink-0">
+        <div className="flex items-center gap-2">
+          {connectionInfo && (
+            <span className="flex items-center gap-1.5 text-xs text-gray-400 font-mono">
+              <Circle className="w-2 h-2 fill-green-500 text-green-500" />
+              {connectionInfo.user}@{connectionInfo.host}:{connectionInfo.port}
+            </span>
+          )}
+          <button
+            onClick={() => setAboutOpen(true)}
+            className="flex items-center gap-1 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 text-xs"
+            title="About"
+          >
+            <Info className="w-3.5 h-3.5" />
+            About
+          </button>
+        </div>
+      </footer>
 
       {/* Profile Events Modal */}
       <ProfileEventsModal />

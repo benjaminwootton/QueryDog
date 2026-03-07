@@ -11,6 +11,9 @@ import {
   fetchPartLogColumnMetadata,
   fetchPartLogTimeSeries,
   fetchPartLogStackedTimeSeries,
+  fetchHealth,
+  isConnectionError,
+  extractConnectionError,
 } from '../services/api';
 import { createColumnsFromMetadata } from '../types/queryLog';
 
@@ -59,9 +62,7 @@ export function useQueryData() {
 
     fetchColumnMetadata()
       .then((metadata) => {
-        console.log('Column metadata loaded:', metadata.length, 'columns');
         const columns = createColumnsFromMetadata(metadata, 'query_log');
-        console.log('Columns created:', columns.length);
         setColumns(columns);
       })
       .catch((err) => {
@@ -76,9 +77,7 @@ export function useQueryData() {
 
     fetchPartLogColumnMetadata()
       .then((metadata) => {
-        console.log('Part log column metadata loaded:', metadata.length, 'columns');
         const columns = createColumnsFromMetadata(metadata, 'part_log');
-        console.log('Part log columns created:', columns.length);
         setPartLogColumns(columns);
       })
       .catch((err) => {
@@ -90,6 +89,21 @@ export function useQueryData() {
     const requestId = ++queryRequestIdRef.current;
     setLoading(true);
     setError(null);
+
+    // Check connectivity before loading data
+    try {
+      const health = await fetchHealth();
+      if (health.status !== 'healthy') {
+        const errorDetail = health.error ? extractConnectionError(health.error) : 'unknown error';
+        setError(`Failed to connect to the database: ${errorDetail}`);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setError('Failed to connect to the backend server. Please check if the server is running.');
+      setLoading(false);
+      return;
+    }
 
     // Get latest state from store to ensure we have the most recent time range
     const state = useQueryStore.getState();
@@ -116,7 +130,7 @@ export function useQueryData() {
         hasAnyData = true;
       } else {
         console.error('Failed to load query log entries:', results[0].reason);
-        errors.push(`Entries: ${results[0].reason.message}`);
+        errors.push(results[0].reason.message);
         setEntries([]);
       }
 
@@ -125,7 +139,7 @@ export function useQueryData() {
         hasAnyData = true;
       } else {
         console.error('Failed to load time series:', results[1].reason);
-        errors.push(`Time series: ${results[1].reason.message}`);
+        errors.push(results[1].reason.message);
         setTimeSeries([]);
       }
 
@@ -134,7 +148,7 @@ export function useQueryData() {
         hasAnyData = true;
       } else {
         console.error('Failed to load stacked time series:', results[2].reason);
-        errors.push(`Stacked series: ${results[2].reason.message}`);
+        errors.push(results[2].reason.message);
         setStackedTimeSeries([]);
       }
 
@@ -143,7 +157,7 @@ export function useQueryData() {
         hasAnyData = true;
       } else {
         console.error('Failed to load count:', results[3].reason);
-        errors.push(`Count: ${results[3].reason.message}`);
+        errors.push(results[3].reason.message);
         setTotalCount(0);
       }
 
@@ -157,14 +171,19 @@ export function useQueryData() {
         const criticalError: any = rejectedResult?.reason;
 
         if (criticalError?.type === 'authentication') {
-          setError('⚠️ Authentication failed: Invalid username or password for ClickHouse');
+          setError('Authentication failed: Invalid username or password for ClickHouse');
         } else if (criticalError?.type === 'permission') {
-          setError('⚠️ Access denied: You do not have permission to access system.query_log table');
+          setError('Access denied: You do not have permission to access system.query_log table');
         } else if (criticalError?.type === 'not_found') {
-          setError('⚠️ Table system.query_log does not exist or is not accessible on this ClickHouse instance');
+          setError('Table system.query_log does not exist or is not accessible on this ClickHouse instance');
         } else if (!hasAnyData) {
-          // All requests failed with generic errors
-          setError(`Failed to load data: ${errors[0]}`);
+          // Check if this is a connection error
+          const firstError = errors[0];
+          if (isConnectionError(firstError)) {
+            setError(`Failed to connect to the database: ${extractConnectionError(firstError)}`);
+          } else {
+            setError(`Failed to load data: ${extractConnectionError(firstError)}`);
+          }
         } else {
           // Some data loaded, but some requests failed - show a warning
           console.warn('Some query log data failed to load:', errors.join('; '));
@@ -172,7 +191,12 @@ export function useQueryData() {
       }
     } catch (err) {
       if (requestId !== queryRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      const message = err instanceof Error ? err.message : 'Failed to load data';
+      if (isConnectionError(message)) {
+        setError(`Failed to connect to the database: ${extractConnectionError(message)}`);
+      } else {
+        setError(message);
+      }
     } finally {
       if (requestId === queryRequestIdRef.current) {
         setLoading(false);
@@ -228,7 +252,7 @@ export function useQueryData() {
         hasAnyData = true;
       } else {
         console.error('Failed to load part log entries:', results[0].reason);
-        errors.push(`Entries: ${results[0].reason.message}`);
+        errors.push(results[0].reason.message);
         setPartLogEntries([]);
       }
 
@@ -237,7 +261,7 @@ export function useQueryData() {
         hasAnyData = true;
       } else {
         console.error('Failed to load part log time series:', results[1].reason);
-        errors.push(`Time series: ${results[1].reason.message}`);
+        errors.push(results[1].reason.message);
         setPartLogTimeSeries([]);
       }
 
@@ -246,7 +270,7 @@ export function useQueryData() {
         hasAnyData = true;
       } else {
         console.error('Failed to load part log stacked time series:', results[2].reason);
-        errors.push(`Stacked series: ${results[2].reason.message}`);
+        errors.push(results[2].reason.message);
         setPartLogStackedTimeSeries([]);
       }
 
@@ -255,7 +279,7 @@ export function useQueryData() {
         hasAnyData = true;
       } else {
         console.error('Failed to load part log count:', results[3].reason);
-        errors.push(`Count: ${results[3].reason.message}`);
+        errors.push(results[3].reason.message);
         setPartLogTotalCount(0);
       }
 
@@ -274,15 +298,20 @@ export function useQueryData() {
           setHasPartLogAccess(false);
         } else if (criticalError?.type === 'authentication') {
           // Authentication errors should be shown
-          setError('⚠️ Authentication failed: Invalid username or password for ClickHouse');
+          setError('Authentication failed: Invalid username or password for ClickHouse');
           setHasPartLogAccess(false);
         } else if (criticalError?.type === 'not_found') {
           // Table doesn't exist - hide but don't show error
           console.info('Part log table not found - hiding part log features');
           setHasPartLogAccess(false);
         } else if (!hasAnyData) {
-          // All requests failed with generic errors
-          setError(`Failed to load part log data: ${errors[0]}`);
+          // Check if this is a connection error
+          const firstError = errors[0];
+          if (isConnectionError(firstError)) {
+            setError(`Failed to connect to the database: ${extractConnectionError(firstError)}`);
+          } else {
+            setError(`Failed to load data: ${extractConnectionError(firstError)}`);
+          }
           setHasPartLogAccess(false);
         } else {
           // Some data loaded, but some requests failed - show a warning
@@ -291,7 +320,12 @@ export function useQueryData() {
       }
     } catch (err) {
       if (requestId !== partLogRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : 'Failed to load part log data');
+      const message = err instanceof Error ? err.message : 'Failed to load data';
+      if (isConnectionError(message)) {
+        setError(`Failed to connect to the database: ${extractConnectionError(message)}`);
+      } else {
+        setError(message);
+      }
     } finally {
       if (requestId === partLogRequestIdRef.current) {
         setPartLogLoading(false);

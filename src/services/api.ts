@@ -3,6 +3,30 @@ import type { RangeFilter } from '../stores/queryStore';
 
 const API_BASE = '/api';
 
+// Common connection error patterns
+const CONNECTION_ERROR_PATTERNS = [
+  'ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET',
+  'EHOSTUNREACH', 'EAI_AGAIN', 'socket hang up', 'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'CERT_HAS_EXPIRED',
+];
+
+export function isConnectionError(message: string): boolean {
+  return CONNECTION_ERROR_PATTERNS.some(pattern => message.includes(pattern));
+}
+
+export function extractConnectionError(message: string): string {
+  // Strip prefixes like "Failed to fetch query log: ", "Entries: " etc.
+  const cleaned = message
+    .replace(/^Failed to (fetch|load) [^:]+:\s*/i, '')
+    .replace(/^(Entries|Time series|Stacked series|Count):\s*/i, '');
+  return cleaned;
+}
+
+export async function fetchHealth(): Promise<{ status: string; error?: string }> {
+  const response = await fetch(`${API_BASE}/health`);
+  return response.json();
+}
+
 function formatDateTime(date: Date): string {
   return date.toISOString().slice(0, 19).replace('T', ' ');
 }
@@ -1159,6 +1183,18 @@ export async function fetchAsyncMetrics(): Promise<Record<string, unknown>[]> {
 export async function fetchEvents(): Promise<Record<string, unknown>[]> {
   const response = await fetch(`${API_BASE}/events`);
   if (!response.ok) throw new Error(`Failed to fetch events: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchErrors(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/errors`);
+  if (!response.ok) throw new Error(`Failed to fetch errors: ${response.statusText}`);
+  return response.json();
+}
+
+export async function fetchErrorsColumns(): Promise<ColumnMetadata[]> {
+  const response = await fetch(`${API_BASE}/errors/columns`);
+  if (!response.ok) throw new Error(`Failed to fetch errors columns: ${response.statusText}`);
   return response.json();
 }
 

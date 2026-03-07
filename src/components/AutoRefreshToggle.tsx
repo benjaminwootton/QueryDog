@@ -1,6 +1,4 @@
-import { Timer } from 'lucide-react';
-
-type RefreshInterval = 'off' | 10 | 30 | 60;
+type RefreshInterval = 'off' | 5 | 10 | 60 | 600;
 
 interface AutoRefreshToggleProps {
   interval: RefreshInterval;
@@ -9,29 +7,27 @@ interface AutoRefreshToggleProps {
 
 export function AutoRefreshToggle({ interval, onIntervalChange }: AutoRefreshToggleProps) {
   const options: { value: RefreshInterval; label: string }[] = [
-    { value: 'off', label: 'Off' },
-    { value: 10, label: '10s' },
-    { value: 30, label: '30s' },
-    { value: 60, label: '60s' },
+    { value: 'off', label: 'Auto Refresh Off' },
+    { value: 5, label: 'Refresh 5s' },
+    { value: 10, label: 'Refresh 10s' },
+    { value: 60, label: 'Refresh 1m' },
+    { value: 600, label: 'Refresh 10m' },
   ];
 
   return (
-    <div className="flex items-center gap-1.5 text-xs">
-      <Timer className="w-3 h-3 text-gray-400" />
-      <select
-        value={interval}
-        onChange={(e) => {
-          const val = e.target.value;
-          onIntervalChange(val === 'off' ? 'off' : parseInt(val) as RefreshInterval);
-        }}
-        className="bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-gray-300 text-xs"
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </div>
+    <select
+      value={interval}
+      onChange={(e) => {
+        const val = e.target.value;
+        onIntervalChange(val === 'off' ? 'off' : parseInt(val) as RefreshInterval);
+      }}
+      className="bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-gray-300 text-xs"
+    >
+      {options.map((opt) => (
+        <option key={opt.value} value={opt.value}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
   );
 }

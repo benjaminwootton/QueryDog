@@ -53,7 +53,7 @@ export function UsersPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="border-b border-gray-700 px-4 flex items-center gap-1 shrink-0">
+      <div className="border-b border-gray-700 px-1.5 flex items-center gap-1 shrink-0">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -70,7 +70,7 @@ export function UsersPage() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-hidden px-4 pt-3 pb-4 flex flex-col">
+      <div className="flex-1 overflow-hidden px-1.5 pt-3 pb-4 flex flex-col">
         {activeTab === 'users' && (
           <SystemTable
             fetchData={fetchUsers}

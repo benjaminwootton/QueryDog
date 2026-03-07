@@ -259,7 +259,7 @@ export function TextLogPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Filter bar */}
-      <div className="bg-gray-900/50 border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0">
+      <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 py-2 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           {/* Filter dropdown */}
           <div className="relative">
@@ -344,7 +344,7 @@ export function TextLogPage() {
 
       {/* Active filters display */}
       {activeFilterCount > 0 && (
-        <div className="px-4 py-2 bg-gray-800/50 border-b border-gray-700 flex items-center gap-2 flex-wrap">
+        <div className="px-1.5 py-2 bg-gray-800/50 border-b border-gray-700 flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-400">Active:</span>
           {Object.entries(filters).map(([field, values]) =>
             values.map(value => (
@@ -371,7 +371,7 @@ export function TextLogPage() {
       )}
 
       {/* Timeline Chart */}
-      <div className="px-4 pt-3 pb-2 shrink-0">
+      <div className="px-1.5 pt-3 pb-2 shrink-0">
         <div className="flex gap-1 border-b border-gray-700 mb-2">
           <button
             onClick={() => handleChartTabChange('count')}
@@ -499,7 +499,7 @@ export function TextLogPage() {
       </div>
 
       {/* Log entries table - AG Grid */}
-      <div className="flex-1 overflow-hidden px-4 pt-3 pb-4">
+      <div className="flex-1 overflow-hidden px-1.5 pt-3 pb-4">
         <AgGridReact
           theme={darkTheme}
           rowData={entries}

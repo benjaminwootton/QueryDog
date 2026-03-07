@@ -12,7 +12,7 @@ import {
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { X, Database, Table, Layers, Box, ChevronRight, Loader2, Users, User, Columns, FileText, Sparkles, Zap, Info, Key, Shield, HardDrive } from 'lucide-react';
+import { X, Database, Table, Layers, Box, ChevronRight, ChevronDown, Loader2, Users, User, Columns, FileText, Sparkles, Zap, Info, Key, Shield, HardDrive, GitBranch, List } from 'lucide-react';
 import {
   fetchBrowserDatabases,
   fetchBrowserTables,
@@ -473,11 +473,87 @@ const nodeTypes = {
   index: IndexNode,
 };
 
+// Tree view components
+function TreeNode({ icon, label, labelClass, sublabel, expanded, onClick, loading, onInfo, children }: {
+  icon: React.ReactNode;
+  label: string;
+  labelClass?: string;
+  sublabel?: string;
+  expanded: boolean;
+  onClick: () => void;
+  loading?: boolean;
+  onInfo?: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div
+        onClick={onClick}
+        className="flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:bg-gray-800 group"
+      >
+        {expanded ? (
+          <ChevronDown className="w-3 h-3 text-gray-500 shrink-0" />
+        ) : (
+          <ChevronRight className="w-3 h-3 text-gray-500 shrink-0" />
+        )}
+        {icon}
+        <span className={`text-xs font-medium uppercase tracking-wide ${labelClass || 'text-gray-200'}`}>{label}</span>
+        {sublabel && <span className="text-[10px] text-gray-500 ml-1">{sublabel}</span>}
+        {loading && <Loader2 className="w-3 h-3 text-blue-400 animate-spin ml-1" />}
+        {onInfo && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onInfo(); }}
+            className="w-4 h-4 bg-gray-700/80 hover:bg-gray-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 ml-auto"
+            title="View details"
+          >
+            <Info className="w-2.5 h-2.5 text-gray-400" />
+          </button>
+        )}
+      </div>
+      {expanded && children && (
+        <div className="ml-4 border-l border-gray-700/50 pl-1">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TreeLeaf({ icon, label, sublabel, badges, onInfo }: {
+  icon: React.ReactNode;
+  label: string;
+  sublabel?: string;
+  badges?: string[];
+  onInfo?: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded hover:bg-gray-800 group">
+      <span className="w-3 shrink-0" />
+      {icon}
+      <span className="text-xs font-medium tracking-wide text-gray-300">{label}</span>
+      {badges && badges.map((b) => (
+        <span key={b} className="text-[8px] text-yellow-400 bg-yellow-400/10 px-1 rounded">{b}</span>
+      ))}
+      {sublabel && <span className="text-[10px] text-gray-500 ml-1">{sublabel}</span>}
+      {onInfo && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onInfo(); }}
+          className="w-4 h-4 bg-gray-700/80 hover:bg-gray-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 ml-auto"
+          title="View details"
+        >
+          <Info className="w-2.5 h-2.5 text-gray-400" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 interface DatabaseBrowserProps {
   onClose: () => void;
 }
 
 export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
+  const [viewMode, setViewMode] = useState<'tree' | 'graph'>('tree');
   const [databases, setDatabases] = useState<BrowserDatabase[]>([]);
   const [users, setUsers] = useState<BrowserUser[]>([]);
   const [roles, setRoles] = useState<BrowserRole[]>([]);
@@ -1383,6 +1459,26 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
             <Database className="w-5 h-5 text-blue-400" />
             <h2 className="text-sm font-semibold text-white">Database Browser</h2>
             {isLoading && <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />}
+            <div className="flex items-center bg-gray-800 rounded border border-gray-600 ml-2">
+              <button
+                onClick={() => setViewMode('tree')}
+                className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded-l transition-colors ${
+                  viewMode === 'tree' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <List className="w-3 h-3" />
+                Tree
+              </button>
+              <button
+                onClick={() => setViewMode('graph')}
+                className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded-r transition-colors ${
+                  viewMode === 'graph' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <GitBranch className="w-3 h-3" />
+                Graph
+              </button>
+            </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white">
             <X className="w-4 h-4" />
@@ -1471,25 +1567,289 @@ export function DatabaseBrowser({ onClose }: DatabaseBrowserProps) {
           </div>
         </div>
 
-        {/* React Flow */}
-        <div className="flex-1">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            nodeTypes={nodeTypes}
-            defaultViewport={{ x: 20, y: 20, zoom: 1.3 }}
-            minZoom={0.5}
-            maxZoom={2}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#374151" />
-            <Controls
-              className="!bg-gray-800 !border-gray-600 !rounded [&>button]:!bg-gray-700 [&>button]:!border-gray-600 [&>button]:!text-gray-300 [&>button:hover]:!bg-gray-600 [&>button>svg]:!fill-gray-300"
-            />
-          </ReactFlow>
-        </div>
+        {/* Graph View */}
+        {viewMode === 'graph' && (
+          <div className="flex-1">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              nodeTypes={nodeTypes}
+              defaultViewport={{ x: 20, y: 20, zoom: 1.3 }}
+              minZoom={0.5}
+              maxZoom={2}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#374151" />
+              <Controls
+                className="!bg-gray-800 !border-gray-600 !rounded [&>button]:!bg-gray-700 [&>button]:!border-gray-600 [&>button]:!text-gray-300 [&>button:hover]:!bg-gray-600 [&>button>svg]:!fill-gray-300"
+              />
+            </ReactFlow>
+          </div>
+        )}
+
+        {/* Tree View */}
+        {viewMode === 'tree' && (
+          <div className="flex-1 overflow-auto p-4">
+            <div className="space-y-0.5">
+              {/* Databases */}
+              <TreeNode
+                icon={<Database className="w-3.5 h-3.5 text-blue-400" />}
+                label="Databases"
+                labelClass="text-blue-400 font-semibold"
+                expanded={selectedRoot === 'databases'}
+                onClick={() => setSelectedRoot(selectedRoot === 'databases' ? null : 'databases')}
+                loading={loading && selectedRoot === 'databases'}
+              >
+                {databases.map((db) => (
+                  <TreeNode
+                    key={db.name}
+                    icon={<Database className="w-3 h-3 text-blue-400" />}
+                    label={db.name}
+                    sublabel={db.engine}
+                    expanded={selectedDatabase === db.name}
+                    onClick={() => setSelectedDatabase(selectedDatabase === db.name ? null : db.name)}
+                    loading={loadingTables && selectedDatabase === db.name}
+                    onInfo={() => { setInfoModalData({ title: db.name, data: db as unknown as Record<string, unknown> }); setInfoModalOpen(true); }}
+                  >
+                    {tables.map((t) => (
+                      <TreeNode
+                        key={t.name}
+                        icon={<Table className="w-3 h-3 text-green-400" />}
+                        label={t.name}
+                        sublabel={`${t.engine} | ${formatNumber(t.total_rows)} rows | ${formatBytes(t.total_bytes)}`}
+                        expanded={selectedTable === t.name}
+                        onClick={() => setSelectedTable(selectedTable === t.name ? null : t.name)}
+                        loading={(loadingPartitions || loadingColumns) && selectedTable === t.name}
+                        onInfo={() => { setInfoModalData({ title: t.name, data: t as unknown as Record<string, unknown> }); setInfoModalOpen(true); }}
+                      >
+                        {/* Columns */}
+                        <TreeNode
+                          icon={<Columns className="w-3 h-3 text-cyan-400" />}
+                          label={`Columns (${columns.length})`}
+                          labelClass="text-cyan-400"
+                          expanded={selectedTableCategory === 'columns'}
+                          onClick={() => setSelectedTableCategory(selectedTableCategory === 'columns' ? null : 'columns')}
+                        >
+                          {columns.map((col) => {
+                            const badges: string[] = [];
+                            if (col.is_in_partition_key) badges.push('PART');
+                            if (col.is_in_sorting_key) badges.push('SORT');
+                            return (
+                              <TreeLeaf
+                                key={col.name}
+                                icon={<FileText className="w-3 h-3 text-cyan-400" />}
+                                label={col.name}
+                                sublabel={col.type}
+                                badges={badges}
+                                onInfo={() => { setInfoModalData({ title: col.name, data: col as unknown as Record<string, unknown> }); setInfoModalOpen(true); }}
+                              />
+                            );
+                          })}
+                        </TreeNode>
+
+                        {/* Partitions */}
+                        <TreeNode
+                          icon={<Layers className="w-3 h-3 text-purple-400" />}
+                          label={`Partitions (${partitions.length})`}
+                          labelClass="text-purple-400"
+                          expanded={selectedTableCategory === 'partitions'}
+                          onClick={() => setSelectedTableCategory(selectedTableCategory === 'partitions' ? null : 'partitions')}
+                        >
+                          {partitions.map((p) => (
+                            <TreeNode
+                              key={p.partition}
+                              icon={<Layers className="w-3 h-3 text-purple-400" />}
+                              label={p.partition}
+                              sublabel={`${p.part_count} parts | ${formatNumber(p.total_rows)} rows`}
+                              expanded={selectedPartition === p.partition}
+                              onClick={() => setSelectedPartition(selectedPartition === p.partition ? null : p.partition)}
+                              loading={loadingParts && selectedPartition === p.partition}
+                              onInfo={() => { setInfoModalData({ title: `Partition ${p.partition}`, data: p as unknown as Record<string, unknown> }); setInfoModalOpen(true); }}
+                            >
+                              {parts.map((part) => (
+                                <TreeLeaf
+                                  key={part.name}
+                                  icon={<Box className="w-3 h-3 text-orange-400" />}
+                                  label={part.name}
+                                  sublabel={`L${part.level} | ${formatNumber(part.rows)} rows | ${formatBytes(part.bytes_on_disk)}`}
+                                  onInfo={() => { setInfoModalData({ title: part.name, data: part as unknown as Record<string, unknown> }); setInfoModalOpen(true); }}
+                                />
+                              ))}
+                            </TreeNode>
+                          ))}
+                        </TreeNode>
+
+                        {/* Projections */}
+                        {projections.length > 0 && (
+                          <TreeNode
+                            icon={<Sparkles className="w-3 h-3 text-pink-400" />}
+                            label={`Projections (${projections.length})`}
+                            labelClass="text-pink-400"
+                            expanded={selectedTableCategory === 'projections'}
+                            onClick={() => setSelectedTableCategory(selectedTableCategory === 'projections' ? null : 'projections')}
+                          >
+                            {projections.map((proj) => (
+                              <TreeNode
+                                key={proj.name}
+                                icon={<Sparkles className="w-3 h-3 text-pink-400" />}
+                                label={proj.name}
+                                sublabel={proj.type}
+                                expanded={selectedProjection === proj.name}
+                                onClick={() => setSelectedProjection(selectedProjection === proj.name ? null : proj.name)}
+                                loading={loadingProjectionParts && selectedProjection === proj.name}
+                              >
+                                {projectionParts.map((pp) => (
+                                  <TreeLeaf
+                                    key={pp.name}
+                                    icon={<Box className="w-3 h-3 text-pink-400" />}
+                                    label={pp.name}
+                                    sublabel={`${formatNumber(pp.rows)} rows | ${formatBytes(pp.bytes_on_disk)}`}
+                                  />
+                                ))}
+                              </TreeNode>
+                            ))}
+                          </TreeNode>
+                        )}
+
+                        {/* Indexes */}
+                        {indexes.length > 0 && (
+                          <TreeNode
+                            icon={<Zap className="w-3 h-3 text-amber-400" />}
+                            label={`Indexes (${indexes.length})`}
+                            labelClass="text-amber-400"
+                            expanded={selectedTableCategory === 'indexes'}
+                            onClick={() => setSelectedTableCategory(selectedTableCategory === 'indexes' ? null : 'indexes')}
+                          >
+                            {indexes.map((idx) => (
+                              <TreeLeaf
+                                key={idx.name}
+                                icon={<Zap className="w-3 h-3 text-amber-400" />}
+                                label={idx.name}
+                                sublabel={`${idx.type} | ${idx.expr} | granularity: ${idx.granularity}`}
+                              />
+                            ))}
+                          </TreeNode>
+                        )}
+                      </TreeNode>
+                    ))}
+                  </TreeNode>
+                ))}
+              </TreeNode>
+
+              {/* Users */}
+              <TreeNode
+                icon={<Users className="w-3.5 h-3.5 text-amber-400" />}
+                label="Users"
+                labelClass="text-amber-400 font-semibold"
+                expanded={selectedRoot === 'users'}
+                onClick={() => setSelectedRoot(selectedRoot === 'users' ? null : 'users')}
+                loading={loading && selectedRoot === 'users'}
+              >
+                {users.map((u) => (
+                  <TreeNode
+                    key={u.name}
+                    icon={<User className="w-3 h-3 text-amber-400" />}
+                    label={u.name}
+                    sublabel={`Auth: ${u.auth_type}`}
+                    expanded={selectedUser === u.name}
+                    onClick={() => setSelectedUser(selectedUser === u.name ? null : u.name)}
+                  >
+                    {grants.map((g, i) => (
+                      <TreeLeaf
+                        key={i}
+                        icon={<Shield className="w-3 h-3 text-emerald-400" />}
+                        label={g.access_type}
+                        sublabel={`${g.database || '*'}.${g.table || '*'}${g.grant_option ? ' (WITH GRANT)' : ''}`}
+                      />
+                    ))}
+                  </TreeNode>
+                ))}
+              </TreeNode>
+
+              {/* Roles */}
+              <TreeNode
+                icon={<Key className="w-3.5 h-3.5 text-violet-400" />}
+                label="Roles"
+                labelClass="text-violet-400 font-semibold"
+                expanded={selectedRoot === 'roles'}
+                onClick={() => setSelectedRoot(selectedRoot === 'roles' ? null : 'roles')}
+                loading={loading && selectedRoot === 'roles'}
+              >
+                {roles.map((r) => (
+                  <TreeNode
+                    key={r.name}
+                    icon={<Key className="w-3 h-3 text-violet-400" />}
+                    label={r.name}
+                    sublabel={r.storage}
+                    expanded={selectedRole === r.name}
+                    onClick={() => setSelectedRole(selectedRole === r.name ? null : r.name)}
+                  >
+                    {roleGrants.map((rg, i) => (
+                      <TreeLeaf
+                        key={i}
+                        icon={<Shield className="w-3 h-3 text-emerald-400" />}
+                        label={rg.granted_role_name}
+                        sublabel={rg.with_admin_option ? 'WITH ADMIN' : ''}
+                      />
+                    ))}
+                  </TreeNode>
+                ))}
+              </TreeNode>
+
+              {/* Storage */}
+              <TreeNode
+                icon={<HardDrive className="w-3.5 h-3.5 text-teal-400" />}
+                label="Storage"
+                labelClass="text-teal-400 font-semibold"
+                expanded={selectedRoot === 'storage'}
+                onClick={() => setSelectedRoot(selectedRoot === 'storage' ? null : 'storage')}
+                loading={loading && selectedRoot === 'storage'}
+              >
+                {disks.length > 0 && (
+                  <TreeNode
+                    icon={<HardDrive className="w-3 h-3 text-teal-400" />}
+                    label={`Disks (${disks.length})`}
+                    labelClass="text-teal-400"
+                    expanded={true}
+                    onClick={() => {}}
+                  >
+                    {disks.map((d) => {
+                      const usedPercent = d.total_space > 0 ? Math.round((1 - d.free_space / d.total_space) * 100) : 0;
+                      return (
+                        <TreeLeaf
+                          key={d.name}
+                          icon={<HardDrive className="w-3 h-3 text-teal-400" />}
+                          label={d.name}
+                          sublabel={`${d.type} | ${d.path} | ${usedPercent}% used`}
+                        />
+                      );
+                    })}
+                  </TreeNode>
+                )}
+                {storagePolicies.length > 0 && (
+                  <TreeNode
+                    icon={<Layers className="w-3 h-3 text-teal-400" />}
+                    label={`Storage Policies (${storagePolicies.length})`}
+                    labelClass="text-teal-400"
+                    expanded={true}
+                    onClick={() => {}}
+                  >
+                    {storagePolicies.map((sp, i) => (
+                      <TreeLeaf
+                        key={i}
+                        icon={<Layers className="w-3 h-3 text-teal-400" />}
+                        label={sp.policy_name}
+                        sublabel={`Volume: ${sp.volume_name} | Disks: ${Array.isArray(sp.disks) ? sp.disks.join(', ') : sp.disks}`}
+                      />
+                    ))}
+                  </TreeNode>
+                )}
+              </TreeNode>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Info Modal */}
