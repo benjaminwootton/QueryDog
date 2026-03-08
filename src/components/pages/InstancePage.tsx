@@ -174,44 +174,40 @@ export function InstancePage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header bar - always visible */}
-      <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 h-9 flex items-center justify-between shrink-0">
-        {isDashboardTab ? (
-          <div />
-        ) : (
-          <>
-            <div className="flex items-center gap-3">
-              <div className="relative flex items-center">
-                <Search className="absolute left-2 w-3 h-3 text-gray-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={`Search ${activeTab === 'events' ? 'events' : activeTab === 'settings' ? 'settings' : activeTab === 'errors' ? 'errors' : activeTab === 'disks' ? 'disks' : activeTab === 'storagePolicies' ? 'storage policies' : 'metrics'}...`}
-                  className="bg-gray-800 border border-gray-600 rounded pl-6 pr-6 py-0.5 text-white text-xs w-64"
-                />
-              </div>
-              {isMetricsTab && (
-                <button
-                  onClick={loadMetricsData}
-                  disabled={metricsLoading}
-                  className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
-                  title="Refresh"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${metricsLoading ? 'animate-spin' : ''}`} />
-                </button>
-              )}
+      {/* Header bar - visible on non-dashboard tabs (dashboard has its own) */}
+      {!isDashboardTab && (
+        <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 h-9 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="relative flex items-center">
+              <Search className="absolute left-2 w-3 h-3 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={`Search ${activeTab === 'events' ? 'events' : activeTab === 'settings' ? 'settings' : activeTab === 'errors' ? 'errors' : activeTab === 'disks' ? 'disks' : activeTab === 'storagePolicies' ? 'storage policies' : 'metrics'}...`}
+                className="bg-gray-800 border border-gray-600 rounded pl-6 pr-6 py-0.5 text-white text-xs w-64"
+              />
             </div>
             {isMetricsTab && (
-              <div className="flex items-center gap-4 text-xs">
-                <span className="text-gray-400">
-                  Total: <span className="text-white font-medium">{filteredData.length.toLocaleString()}</span> {activeTab === 'events' ? 'events' : 'metrics'}
-                </span>
-              </div>
+              <button
+                onClick={loadMetricsData}
+                disabled={metricsLoading}
+                className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
+                title="Refresh"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${metricsLoading ? 'animate-spin' : ''}`} />
+              </button>
             )}
-          </>
-        )}
-      </div>
+          </div>
+          {isMetricsTab && (
+            <div className="flex items-center gap-4 text-xs">
+              <span className="text-gray-400">
+                Total: <span className="text-white font-medium">{filteredData.length.toLocaleString()}</span> {activeTab === 'events' ? 'events' : 'metrics'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="border-b border-gray-700 px-1.5 flex items-center gap-1 shrink-0">
         {tabs.map(({ id, label, icon: Icon }) => (

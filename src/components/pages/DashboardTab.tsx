@@ -352,6 +352,7 @@ export function DashboardTab() {
   const [startTime, setStartTime] = useState<Date>(() => new Date(Date.now() - 60 * 60 * 1000));
   const [endTime, setEndTime] = useState<Date>(() => new Date());
   const [relativeMinutes, setRelativeMinutes] = useState<number | null>(60);
+  const [bucketSize, setBucketSize] = useState<'second' | 'minute' | 'hour'>('minute');
   const [metricData, setMetricData] = useState<MetricLogTimeSeriesPoint[]>([]);
   const [asyncData, setAsyncData] = useState<MetricLogTimeSeriesPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -384,23 +385,18 @@ export function DashboardTab() {
       end = endTime;
     }
 
-    const diffMinutes = (end.getTime() - start.getTime()) / (60 * 1000);
-    const bucket: 'second' | 'minute' | 'hour' = diffMinutes <= 15 ? 'second' : diffMinutes <= 360 ? 'minute' : 'hour';
-
     try {
       const metrics = getMetricsForSource(activeSource);
 
       if (activeSource === 'memory') {
-        // Memory loads from both metric_log and async_metric_log
         const [metricResult, asyncResult] = await Promise.all([
-          fetchMetricLogTimeSeries(start, end, bucket, metrics),
-          fetchAsyncMetricLogTimeSeries(start, end, bucket, MEMORY_ASYNC_METRICS),
+          fetchMetricLogTimeSeries(start, end, bucketSize, metrics),
+          fetchAsyncMetricLogTimeSeries(start, end, bucketSize, MEMORY_ASYNC_METRICS),
         ]);
         setMetricData(metricResult);
         setAsyncData(asyncResult);
       } else {
-        // All other sources use metric_log only
-        const result = await fetchMetricLogTimeSeries(start, end, bucket, metrics);
+        const result = await fetchMetricLogTimeSeries(start, end, bucketSize, metrics);
         setMetricData(result);
         setAsyncData([]);
       }
@@ -410,7 +406,7 @@ export function DashboardTab() {
     } finally {
       setLoading(false);
     }
-  }, [activeSource, relativeMinutes, startTime, endTime]);
+  }, [activeSource, relativeMinutes, startTime, endTime, bucketSize]);
 
   // Load data when source or time range changes
   useEffect(() => {
@@ -470,83 +466,93 @@ export function DashboardTab() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="bg-gray-900/50 border-b border-gray-700 px-3 py-2 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          {/* Source Tabs */}
-          <div className="flex items-center gap-1 bg-gray-800 rounded p-0.5">
-            {SOURCE_TABS.map(({ id, label, icon: Icon }) => (
+      {/* Filter bar - matches the h-9 filter bar on other pages */}
+      <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 h-9 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-1">
+            <label className="text-gray-400">From:</label>
+            <input
+              type="datetime-local"
+              step="1"
+              value={formatForInput(startTime)}
+              onChange={handleStartChange}
+              className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            <label className="text-gray-400">To:</label>
+            <input
+              type="datetime-local"
+              step="1"
+              value={formatForInput(endTime)}
+              onChange={handleEndChange}
+              className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
+            />
+          </div>
+          <div className="flex gap-1 ml-1">
+            {[
+              { minutes: 15, label: '15m' },
+              { minutes: 60, label: '1h' },
+              { minutes: 360, label: '6h' },
+              { minutes: 1440, label: '24h' },
+            ].map(({ minutes, label }) => (
               <button
-                key={id}
-                onClick={() => setActiveSource(id)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-                  activeSource === id
-                    ? 'bg-gray-700 text-white'
-                    : 'text-gray-400 hover:text-gray-300'
+                key={minutes}
+                onClick={() => setQuickRange(minutes)}
+                className={`px-1.5 py-0.5 rounded ${
+                  relativeMinutes === minutes
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
                 }`}
               >
-                <Icon className="w-3 h-3" />
                 {label}
               </button>
             ))}
           </div>
-
-          {/* Time Range */}
-          <div className="flex items-center gap-2 text-xs">
-            <div className="flex items-center gap-1">
-              <label className="text-gray-400">From:</label>
-              <input
-                type="datetime-local"
-                step="1"
-                value={formatForInput(startTime)}
-                onChange={handleStartChange}
-                className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
-              />
-            </div>
-            <div className="flex items-center gap-1">
-              <label className="text-gray-400">To:</label>
-              <input
-                type="datetime-local"
-                step="1"
-                value={formatForInput(endTime)}
-                onChange={handleEndChange}
-                className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
-              />
-            </div>
-            <div className="flex gap-1 ml-1">
-              {[
-                { minutes: 15, label: '15m' },
-                { minutes: 60, label: '1h' },
-                { minutes: 360, label: '6h' },
-                { minutes: 1440, label: '24h' },
-              ].map(({ minutes, label }) => (
-                <button
-                  key={minutes}
-                  onClick={() => setQuickRange(minutes)}
-                  className={`px-1.5 py-0.5 rounded ${
-                    relativeMinutes === minutes
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center gap-1 ml-2 border-l border-gray-600 pl-2">
+            <label className="text-gray-400">Bucket:</label>
+            <select
+              value={bucketSize}
+              onChange={(e) => setBucketSize(e.target.value as 'second' | 'minute' | 'hour')}
+              className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
+            >
+              <option value="second">Second</option>
+              <option value="minute">Minute</option>
+              <option value="hour">Hour</option>
+            </select>
           </div>
-
+        </div>
+        <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500">
             {metricsCount} metrics
           </span>
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
-        <button
-          onClick={loadData}
-          disabled={loading}
-          className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
-          title="Refresh"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+      </div>
+
+      {/* Source tabs */}
+      <div className="border-b border-gray-700 px-1.5 flex items-center gap-1 shrink-0">
+        {SOURCE_TABS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setActiveSource(id)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              activeSource === id
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            <Icon className="w-3 h-3" />
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Charts Grid */}
