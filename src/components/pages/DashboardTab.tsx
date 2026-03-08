@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { RefreshCw, Activity, GitMerge, Cpu, HardDrive, Layers, Database } from 'lucide-react';
 import {
@@ -181,11 +182,12 @@ function formatValue(value: number | string | null | undefined): string {
 }
 
 function formatMetricName(name: string): string {
-  if (name.startsWith('CurrentMetric_') || name.startsWith('ProfileEvent_')) {
-    return name
-      .replace(/^(CurrentMetric_|ProfileEvent_)/, '')
-      .replace(/([A-Z])/g, ' $1')
-      .trim();
+  if (name.startsWith('ProfileEvent_')) {
+    const base = name.replace(/^ProfileEvent_/, '').replace(/([A-Z])/g, ' $1').trim();
+    return `Total ${base}`;
+  }
+  if (name.startsWith('CurrentMetric_')) {
+    return name.replace(/^CurrentMetric_/, '').replace(/([A-Z])/g, ' $1').trim();
   }
   return name
     .replace(/\./g, ' ')
@@ -347,7 +349,11 @@ const SOURCE_TABS: { id: DashboardSource; label: string; icon: typeof Activity }
 
 // ==================== MAIN COMPONENT ====================
 
-export function DashboardTab() {
+interface DashboardTabProps {
+  filterBarContainer?: HTMLDivElement | null;
+}
+
+export function DashboardTab({ filterBarContainer }: DashboardTabProps) {
   const [activeSource, setActiveSource] = useState<DashboardSource>('queries');
   const [startTime, setStartTime] = useState<Date>(() => new Date(Date.now() - 60 * 60 * 1000));
   const [endTime, setEndTime] = useState<Date>(() => new Date());
@@ -451,102 +457,108 @@ export function DashboardTab() {
     ? MEMORY_METRICS.length + MEMORY_ASYNC_METRICS.length
     : getMetricsForSource(activeSource).length;
 
-  if (error) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-400 text-sm mb-2">{error}</div>
-          <button onClick={loadData} className="text-xs text-blue-400 hover:text-blue-300">
-            Retry
-          </button>
+  const filterBarContent = filterBarContainer ? createPortal(
+    <>
+      <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-1">
+          <label className="text-gray-400">From:</label>
+          <input
+            type="datetime-local"
+            step="1"
+            value={formatForInput(startTime)}
+            onChange={handleStartChange}
+            className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          <label className="text-gray-400">To:</label>
+          <input
+            type="datetime-local"
+            step="1"
+            value={formatForInput(endTime)}
+            onChange={handleEndChange}
+            className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
+          />
+        </div>
+        <div className="flex gap-1 ml-1">
+          {[
+            { minutes: 15, label: '15m' },
+            { minutes: 60, label: '1h' },
+            { minutes: 360, label: '6h' },
+            { minutes: 1440, label: '24h' },
+          ].map(({ minutes, label }) => (
+            <button
+              key={minutes}
+              onClick={() => setQuickRange(minutes)}
+              className={`px-1.5 py-0.5 rounded text-xs ${
+                relativeMinutes === minutes
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1 ml-2 border-l border-gray-600 pl-2">
+          <label className="text-gray-400">Bucket:</label>
+          <select
+            value={bucketSize}
+            onChange={(e) => setBucketSize(e.target.value as 'second' | 'minute' | 'hour')}
+            className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
+          >
+            <option value="second">Second</option>
+            <option value="minute">Minute</option>
+            <option value="hour">Hour</option>
+          </select>
         </div>
       </div>
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-gray-500">
+          {metricsCount} metrics
+        </span>
+        <button
+          onClick={loadData}
+          disabled={loading}
+          className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
+          title="Refresh"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+    </>,
+    filterBarContainer,
+  ) : null;
+
+  if (error) {
+    return (
+      <>
+        {filterBarContent}
+        <div className="h-full flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-red-400 text-sm mb-2">{error}</div>
+            <button onClick={loadData} className="text-xs text-blue-400 hover:text-blue-300">
+              Retry
+            </button>
+          </div>
+        </div>
+      </>
     );
   }
 
   return (
     <div className="h-full flex flex-col">
-      {/* Filter bar - matches the h-9 filter bar on other pages */}
-      <div className="bg-gray-900/50 border-b border-gray-700 px-1.5 h-9 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2 text-xs">
-          <div className="flex items-center gap-1">
-            <label className="text-gray-400">From:</label>
-            <input
-              type="datetime-local"
-              step="1"
-              value={formatForInput(startTime)}
-              onChange={handleStartChange}
-              className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
-            />
-          </div>
-          <div className="flex items-center gap-1">
-            <label className="text-gray-400">To:</label>
-            <input
-              type="datetime-local"
-              step="1"
-              value={formatForInput(endTime)}
-              onChange={handleEndChange}
-              className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
-            />
-          </div>
-          <div className="flex gap-1 ml-1">
-            {[
-              { minutes: 15, label: '15m' },
-              { minutes: 60, label: '1h' },
-              { minutes: 360, label: '6h' },
-              { minutes: 1440, label: '24h' },
-            ].map(({ minutes, label }) => (
-              <button
-                key={minutes}
-                onClick={() => setQuickRange(minutes)}
-                className={`px-1.5 py-0.5 rounded ${
-                  relativeMinutes === minutes
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-1 ml-2 border-l border-gray-600 pl-2">
-            <label className="text-gray-400">Bucket:</label>
-            <select
-              value={bucketSize}
-              onChange={(e) => setBucketSize(e.target.value as 'second' | 'minute' | 'hour')}
-              className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-white text-xs"
-            >
-              <option value="second">Second</option>
-              <option value="minute">Minute</option>
-              <option value="hour">Hour</option>
-            </select>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">
-            {metricsCount} metrics
-          </span>
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-50"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-      </div>
-
+      {filterBarContent}
       {/* Source tabs */}
-      <div className="border-b border-gray-700 px-1.5 flex items-center gap-1 shrink-0">
+      <div className="bg-gray-900/30 border-b border-gray-700 px-1.5 py-1 flex items-center gap-1 shrink-0">
         {SOURCE_TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setActiveSource(id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
               activeSource === id
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-400 hover:text-gray-300'
+                ? 'bg-gray-700 text-white'
+                : 'text-gray-400 hover:text-gray-300 hover:bg-gray-800'
             }`}
           >
             <Icon className="w-3 h-3" />

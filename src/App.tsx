@@ -359,24 +359,7 @@ function App() {
       {browserOpen && <DatabaseBrowser onClose={() => setBrowserOpen(false)} />}
 
       {/* Data Explorer Modal */}
-      {dataExplorerOpen && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => setDataExplorerOpen(false)}>
-          <div
-            className="bg-gray-900 border border-gray-700 rounded-lg w-[95vw] h-[90vh] overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-3 border-b border-gray-700 shrink-0">
-              <h2 className="text-sm font-semibold text-white">Data Explorer</h2>
-              <button onClick={() => setDataExplorerOpen(false)} className="text-gray-400 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <DataExplorerPage />
-            </div>
-          </div>
-        </div>
-      )}
+      {dataExplorerOpen && <DataExplorerPage onClose={() => setDataExplorerOpen(false)} />}
 
       {/* Query Editor Modal */}
       {queryEditorOpen && (

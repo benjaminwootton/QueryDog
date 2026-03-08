@@ -3051,7 +3051,7 @@ app.get('/api/errors/columns', async (req, res) => {
 // Get system.warnings
 app.get('/api/warnings', async (req, res) => {
   try {
-    const query = `SELECT * FROM system.warnings ORDER BY name`;
+    const query = `SELECT * FROM system.warnings ORDER BY message`;
     const result = await client.query({ query, format: 'JSONEachRow' });
     const data = await result.json();
     res.json(data);

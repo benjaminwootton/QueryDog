@@ -248,13 +248,6 @@ export function QueryViewsLogTable() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Stats bar */}
-      <div className="flex items-center gap-4 mb-2 text-xs">
-        <span className="text-gray-400">
-          Total: <span className="text-white font-medium">{totalCount.toLocaleString()}</span> view executions
-        </span>
-      </div>
-
       {/* Table */}
       <div className="flex-1 bg-gray-900 border border-gray-700 rounded overflow-hidden">
         <AgGridReact<QueryViewsLogEntry>
