@@ -58,7 +58,7 @@ function App() {
   const [queryEditorOpen, setQueryEditorOpen] = useState(false);
   const [queryEditorInitialQuery, setQueryEditorInitialQuery] = useState('');
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
-  const [backendError, setBackendError] = useState<string | null>(null);
+  const [backendError, setBackendError] = useState<{ message: string; envName?: string; isBackendServer?: boolean } | null>(null);
   const [hasQueriesFolder, setHasQueriesFolder] = useState(false);
   const [environments, setEnvironments] = useState<EnvironmentInfo[]>([]);
   const [activeEnvIndex, setActiveEnvIndex] = useState(0);
@@ -68,31 +68,59 @@ function App() {
 
   // Fetch connection info and environments on mount
   useEffect(() => {
-    fetch('/api/connection-info')
-      .then(async res => {
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || 'Failed to connect to ClickHouse');
-        }
-        return data;
-      })
-      .then(info => {
-        setConnectionInfo(info);
-        setBackendError(null);
-      })
-      .catch((err) => {
-        const message = err.message === 'Failed to fetch'
-          ? 'Failed to connect to backend server. Please check if the server is running.'
-          : `Connection failed: ${err.message}`;
-        setBackendError(message);
-      });
-
+    // First fetch environments so we know what databases are available
     fetchEnvironments()
       .then(data => {
         setEnvironments(data.environments);
         setActiveEnvIndex(data.active);
+        return data;
       })
-      .catch(() => {});
+      .then((envData) => {
+        // Now check the connection to the active environment
+        return fetch('/api/connection-info')
+          .then(async res => {
+            const data = await res.json();
+            if (!res.ok) {
+              const envName = envData.environments[envData.active]?.name || 'Unknown';
+              throw { message: data.error || 'Failed to connect to ClickHouse', envName };
+            }
+            return data;
+          })
+          .then(info => {
+            setConnectionInfo(info);
+            setBackendError(null);
+          })
+          .catch((err) => {
+            const envName = err.envName || envData.environments[envData.active]?.name || 'Unknown';
+            const isBackendServer = err.message === 'Failed to fetch';
+            const message = isBackendServer
+              ? 'The QueryDog backend server is not running or cannot be reached.'
+              : 'Unable to establish a connection to the ClickHouse database.';
+            setBackendError({ message, envName, isBackendServer });
+          });
+      })
+      .catch(() => {
+        // Environments fetch failed - try connection info anyway
+        fetch('/api/connection-info')
+          .then(async res => {
+            const data = await res.json();
+            if (!res.ok) {
+              throw new Error(data.error || 'Failed to connect to ClickHouse');
+            }
+            return data;
+          })
+          .then(info => {
+            setConnectionInfo(info);
+            setBackendError(null);
+          })
+          .catch((err) => {
+            const isBackendServer = err.message === 'Failed to fetch';
+            const message = isBackendServer
+              ? 'The QueryDog backend server is not running or cannot be reached.'
+              : 'Unable to establish a connection to the ClickHouse database.';
+            setBackendError({ message, isBackendServer });
+          });
+      });
   }, []);
 
   // Check if queries folder exists
@@ -255,35 +283,6 @@ function App() {
         </div>
       </header>
 
-      {/* Backend Error Banner */}
-      {backendError && (
-        <div className="bg-red-900/50 border-b border-red-700 px-1.5 py-2 flex items-center justify-center gap-2">
-          <span className="text-red-300 text-sm">{backendError}</span>
-          <button
-            onClick={() => {
-              setBackendError(null);
-              fetch('/api/connection-info')
-                .then(async res => {
-                  const data = await res.json();
-                  if (!res.ok) {
-                    throw new Error(data.error || 'Failed to connect to ClickHouse');
-                  }
-                  return data;
-                })
-                .then(setConnectionInfo)
-                .catch((err) => {
-                  const message = err.message === 'Failed to fetch'
-                    ? 'Failed to connect to backend server. Please check if the server is running.'
-                    : `Connection failed: ${err.message}`;
-                  setBackendError(message);
-                });
-            }}
-            className="px-2 py-0.5 bg-red-700 hover:bg-red-600 rounded text-white text-xs"
-          >
-            Retry
-          </button>
-        </div>
-      )}
 
       {/* Main Content */}
       <main className="flex-1 overflow-hidden">
@@ -308,18 +307,27 @@ function App() {
           About Query Dog V0.3
         </button>
         <div className="flex items-center gap-3">
-          {connectionInfo && (
+          {/* Connection status - show red when error, green when connected */}
+          {connectionInfo && !backendError && (
             <span className="flex items-center gap-1.5 text-xs text-gray-400 font-mono">
               <Circle className="w-2 h-2 fill-green-500 text-green-500" />
               {connectionInfo.user}@{connectionInfo.host}:{connectionInfo.port}
             </span>
           )}
+          {backendError && (
+            <span className="flex items-center gap-1.5 text-xs text-red-400 font-mono">
+              <Circle className="w-2 h-2 fill-red-500 text-red-500" />
+              {backendError.envName || 'Disconnected'}
+            </span>
+          )}
+          {/* Always show database selector when multiple environments exist */}
           {environments.length > 1 && (
             <select
               value={activeEnvIndex}
               disabled={switching}
               onChange={async (e) => {
                 const idx = parseInt(e.target.value);
+                const selectedEnv = environments[idx];
                 setSwitching(true);
                 setBackendError(null);
                 try {
@@ -330,14 +338,22 @@ function App() {
                     host: result.host,
                     port: String(result.port),
                     secure: false,
-                    user: environments[idx].user,
+                    user: selectedEnv.user,
                   });
                   if (!result.connected) {
-                    setBackendError(`Connection failed: ${result.error}`);
+                    setBackendError({
+                      message: result.error || 'Connection failed',
+                      envName: selectedEnv.name
+                    });
+                  } else {
+                    // Connection successful - refresh data
+                    refresh();
                   }
-                  refresh();
                 } catch (err) {
-                  setBackendError('Failed to switch environment');
+                  setBackendError({
+                    message: 'Failed to switch environment',
+                    envName: selectedEnv.name
+                  });
                 } finally {
                   setSwitching(false);
                 }
@@ -428,6 +444,124 @@ function App() {
               >
                 Dismiss
               </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Connection Error Modal */}
+      {backendError && (
+        <>
+          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => setBackendError(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-950 border border-red-700 rounded-lg shadow-xl z-50 p-6 min-w-[400px] max-w-[500px]">
+            <button
+              onClick={() => setBackendError(null)}
+              className="absolute top-3 right-3 text-red-200 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex flex-col items-center gap-4">
+              <AlertTriangle className="w-12 h-12 text-red-400" />
+              <h2 className="text-lg font-semibold text-red-100">
+                {backendError.isBackendServer ? 'Backend Server Unavailable' : 'Database Connection Failed'}
+              </h2>
+              {!backendError.isBackendServer && backendError.envName && (
+                <div className="bg-red-900/50 border border-red-700 rounded px-4 py-2 w-full text-center">
+                  <span className="text-red-300 text-sm font-mono">{backendError.envName}</span>
+                </div>
+              )}
+              <p className="text-sm text-red-200 text-center">
+                {backendError.message}
+              </p>
+
+              {!backendError.isBackendServer && environments.length > 1 && (
+                <div className="w-full border-t border-red-800 pt-4 mt-2">
+                  <p className="text-sm text-red-300 text-center mb-3">Select a different database:</p>
+                  <select
+                    value={activeEnvIndex}
+                    disabled={switching}
+                    onChange={async (e) => {
+                      const idx = parseInt(e.target.value);
+                      const selectedEnv = environments[idx];
+                      setSwitching(true);
+                      try {
+                        const result = await switchEnvironment(idx);
+                        setActiveEnvIndex(idx);
+                        setConnectionInfo({
+                          name: result.name,
+                          host: result.host,
+                          port: String(result.port),
+                          secure: false,
+                          user: selectedEnv.user,
+                        });
+                        if (!result.connected) {
+                          setBackendError({
+                            message: 'Unable to establish a connection to the ClickHouse database.',
+                            envName: selectedEnv.name,
+                            isBackendServer: false
+                          });
+                        } else {
+                          setBackendError(null);
+                          refresh();
+                        }
+                      } catch (err) {
+                        setBackendError({
+                          message: 'Unable to establish a connection to the ClickHouse database.',
+                          envName: selectedEnv.name,
+                          isBackendServer: false
+                        });
+                      } finally {
+                        setSwitching(false);
+                      }
+                    }}
+                    className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-gray-200 text-sm"
+                  >
+                    {environments.map((env, i) => (
+                      <option key={i} value={i}>{env.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex gap-3 mt-2">
+                <button
+                  onClick={() => {
+                    const currentEnv = environments[activeEnvIndex];
+                    setSwitching(true);
+                    fetch('/api/connection-info')
+                      .then(async res => {
+                        const data = await res.json();
+                        if (!res.ok) {
+                          throw new Error(data.error || 'Failed to connect');
+                        }
+                        return data;
+                      })
+                      .then(info => {
+                        setConnectionInfo(info);
+                        setBackendError(null);
+                        refresh();
+                      })
+                      .catch((err) => {
+                        const isBackendServer = err.message === 'Failed to fetch';
+                        const message = isBackendServer
+                          ? 'The QueryDog backend server is not running or cannot be reached.'
+                          : 'Unable to establish a connection to the ClickHouse database.';
+                        setBackendError({ message, envName: currentEnv?.name, isBackendServer });
+                      })
+                      .finally(() => setSwitching(false));
+                  }}
+                  disabled={switching}
+                  className="px-4 py-2 bg-red-700 hover:bg-red-600 disabled:bg-red-800 disabled:cursor-not-allowed rounded text-white text-sm font-medium"
+                >
+                  {switching ? 'Connecting...' : 'Retry Connection'}
+                </button>
+                <button
+                  onClick={() => setBackendError(null)}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm font-medium"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           </div>
         </>

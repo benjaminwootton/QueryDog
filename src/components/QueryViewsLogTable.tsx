@@ -75,7 +75,7 @@ export function QueryViewsLogTable() {
   const { search, fieldFilters, globalRefreshTrigger } = useQueryStore();
   const [data, setData] = useState<QueryViewsLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [totalCount, setTotalCount] = useState(0);
+  const [, setTotalCount] = useState(0);
   const [sortField, setSortField] = useState('event_time');
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
 
