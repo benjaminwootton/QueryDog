@@ -5792,7 +5792,19 @@ app.get('/api/metric-log/timeseries', async (req, res) => {
       : DEFAULT_DASHBOARD_METRICS;
 
     // Validate metrics to prevent SQL injection
-    const validMetrics = metricList.filter(m => /^(CurrentMetric_|ProfileEvent_)[A-Za-z0-9_]+$/.test(m));
+    const safeMetrics = metricList.filter(m => /^(CurrentMetric_|ProfileEvent_)[A-Za-z0-9_]+$/.test(m));
+
+    if (safeMetrics.length === 0) {
+      return res.json([]);
+    }
+
+    // Filter against actual columns in metric_log to avoid UNKNOWN_IDENTIFIER errors
+    const colResult = await client.query({
+      query: `SELECT name FROM system.columns WHERE database = 'system' AND table = 'metric_log' AND name IN (${safeMetrics.map(m => `'${m}'`).join(',')})`,
+      format: 'JSONEachRow',
+    });
+    const existingCols = new Set((await colResult.json()).map(r => r.name));
+    const validMetrics = safeMetrics.filter(m => existingCols.has(m));
 
     if (validMetrics.length === 0) {
       return res.json([]);
