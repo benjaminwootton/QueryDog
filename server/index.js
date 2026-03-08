@@ -5799,12 +5799,18 @@ app.get('/api/metric-log/timeseries', async (req, res) => {
     }
 
     // Filter against actual columns in metric_log to avoid UNKNOWN_IDENTIFIER errors
-    const colResult = await client.query({
-      query: `SELECT name FROM system.columns WHERE database = 'system' AND table = 'metric_log' AND name IN (${safeMetrics.map(m => `'${m}'`).join(',')})`,
-      format: 'JSONEachRow',
-    });
-    const existingCols = new Set((await colResult.json()).map(r => r.name));
-    const validMetrics = safeMetrics.filter(m => existingCols.has(m));
+    let validMetrics;
+    try {
+      const colResult = await client.query({
+        query: `SELECT name FROM system.columns WHERE database = 'system' AND table = 'metric_log' AND name IN (${safeMetrics.map(m => `'${m}'`).join(',')})`,
+        format: 'JSONEachRow',
+      });
+      const existingCols = new Set((await colResult.json()).map(r => r.name));
+      validMetrics = safeMetrics.filter(m => existingCols.has(m));
+    } catch (colErr) {
+      console.error('Error checking metric_log columns, falling back to all metrics:', colErr.message);
+      validMetrics = safeMetrics;
+    }
 
     if (validMetrics.length === 0) {
       return res.json([]);
