@@ -5,4 +5,5 @@ services:
       - "3001:3001"
     volumes:
       - ./queries:/app/queries
+      - ./querydog.yaml:/app/querydog.yaml
     restart: unless-stopped

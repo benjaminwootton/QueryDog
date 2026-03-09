@@ -16,7 +16,7 @@ import { DatabaseBrowser } from './components/DatabaseBrowser';
 import { QueryEditor } from './components/QueryEditor';
 import { useQueryStore } from './stores/queryStore';
 import { useQueryData } from './hooks/useQueryData';
-import { fetchConfigEnvironments, fetchEnvironments, switchEnvironment, type EnvironmentInfo } from './services/api';
+import { fetchEnvironments, switchEnvironment, type EnvironmentInfo } from './services/api';
 
 type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'users' | 'cluster' | 'instance' | 'myqueries';
 type RefreshInterval = 'off' | 5 | 10 | 60 | 600;
@@ -39,22 +39,6 @@ function getCookie(name: string): string | null {
 function setCookie(name: string, value: string, days: number = 365) {
   const expires = new Date(Date.now() + days * 864e5).toUTCString();
   document.cookie = `${name}=${value}; expires=${expires}; path=/`;
-}
-
-// Helper for fetch with timeout (default 6 seconds)
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 6000): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
 
 function App() {
@@ -81,7 +65,7 @@ function App() {
   const [connectedEnvIndex, setConnectedEnvIndex] = useState<number | null>(null);
   const [environmentsFetched, setEnvironmentsFetched] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  const [connecting] = useState(false);
   const [connectingToName, setConnectingToName] = useState<string | null>(null);
   const {
     error,
@@ -109,7 +93,8 @@ function App() {
   const connectionReady = !!connectionInfo && !backendError;
   const { refresh } = useQueryData(connectionReady);
   const activeEnvName = environments[activeEnvIndex]?.name;
-  const [initialConnectOpen, setInitialConnectOpen] = useState(true);
+  const [initialConnectOpen, setInitialConnectOpen] = useState(false);
+  const [checkedExistingConnection, setCheckedExistingConnection] = useState(false);
   const previousDataRef = useRef<null | {
     entries: ReturnType<typeof useQueryStore.getState>['entries'];
     timeSeries: ReturnType<typeof useQueryStore.getState>['timeSeries'];
@@ -280,7 +265,39 @@ function App() {
     };
   }, []);
 
-  // No automatic connection attempt on load - wait for user selection
+  // On mount, check if server already has an active connection (survives page refresh)
+  useEffect(() => {
+    if (!environmentsFetched || checkedExistingConnection) return;
+    setCheckedExistingConnection(true);
+    (async () => {
+      try {
+        const res = await fetch('/api/connection-info');
+        const data = await res.json();
+        if (data.connected) {
+          setConnectionInfo({
+            name: data.name,
+            host: data.host,
+            port: String(data.port),
+            secure: data.secure,
+            user: data.user,
+          });
+          // Find the matching environment index
+          const matchIdx = environments.findIndex(e => e.name === data.name);
+          if (matchIdx >= 0) {
+            setActiveEnvIndex(matchIdx);
+            setConnectedEnvIndex(matchIdx);
+          }
+          setInitialConnectOpen(false);
+          refresh();
+          return;
+        }
+      } catch {
+        // Server not reachable, fall through to show modal
+      }
+      // No active connection - show the connect modal
+      setInitialConnectOpen(true);
+    })();
+  }, [environmentsFetched, checkedExistingConnection, environments, refresh]);
 
   // Check if queries folder exists
   useEffect(() => {
