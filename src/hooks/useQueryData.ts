@@ -18,7 +18,7 @@ import {
 } from '../services/api';
 import { createColumnsFromMetadata } from '../types/queryLog';
 
-export function useQueryData() {
+export function useQueryData(enabled: boolean = true) {
   const {
     timeRange,
     bucketSize,
@@ -345,13 +345,15 @@ export function useQueryData() {
   ]);
 
   useEffect(() => {
+    if (!enabled) return;
     loadData();
-  }, [loadData]);
+  }, [loadData, enabled]);
 
   // Load part log data on startup
   useEffect(() => {
+    if (!enabled) return;
     loadPartLogData();
-  }, [loadPartLogData]);
+  }, [loadPartLogData, enabled]);
 
   const { triggerGlobalRefresh, refreshTimeRange } = useQueryStore();
 

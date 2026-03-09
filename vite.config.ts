@@ -8,8 +8,10 @@ export default defineConfig({
     allowedHosts: ['querydog.benjaminwootton.com'],
     proxy: {
       '/api': {
-        target: 'http://localhost:3002',
+        target: 'http://127.0.0.1:3002',
         changeOrigin: true,
+        timeout: 10000,
+        proxyTimeout: 10000,
       },
     },
   },

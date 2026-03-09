@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Dog, Database, HardDrive, Activity, Server, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network, Circle } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
@@ -16,7 +16,7 @@ import { DatabaseBrowser } from './components/DatabaseBrowser';
 import { QueryEditor } from './components/QueryEditor';
 import { useQueryStore } from './stores/queryStore';
 import { useQueryData } from './hooks/useQueryData';
-import { fetchEnvironments, switchEnvironment, type EnvironmentInfo } from './services/api';
+import { fetchConfigEnvironments, fetchEnvironments, switchEnvironment, type EnvironmentInfo } from './services/api';
 
 type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'users' | 'cluster' | 'instance' | 'myqueries';
 type RefreshInterval = 'off' | 5 | 10 | 60 | 600;
@@ -41,6 +41,22 @@ function setCookie(name: string, value: string, days: number = 365) {
   document.cookie = `${name}=${value}; expires=${expires}; path=/`;
 }
 
+// Helper for fetch with timeout (default 6 seconds)
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 6000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function App() {
   const [navItem, setNavItem] = useState<NavItem>('queries');
   const [refreshInterval, setRefreshInterval] = useState<RefreshInterval>('off');
@@ -62,66 +78,209 @@ function App() {
   const [hasQueriesFolder, setHasQueriesFolder] = useState(false);
   const [environments, setEnvironments] = useState<EnvironmentInfo[]>([]);
   const [activeEnvIndex, setActiveEnvIndex] = useState(0);
+  const [connectedEnvIndex, setConnectedEnvIndex] = useState<number | null>(null);
+  const [environmentsFetched, setEnvironmentsFetched] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const { error, hasPartLogAccess, hasPartsAccess, setActiveTab, setChartMetric, setTimeRange, setFieldFilter, clearAllFilters, setError } = useQueryStore();
-  const { refresh } = useQueryData();
+  const [connecting, setConnecting] = useState(false);
+  const [connectingToName, setConnectingToName] = useState<string | null>(null);
+  const {
+    error,
+    hasPartLogAccess,
+    hasPartsAccess,
+    setActiveTab,
+    setChartMetric,
+    setTimeRange,
+    setFieldFilter,
+    clearAllFilters,
+    setError,
+    setLoading,
+    setGroupedLoading,
+    setPartLogLoading,
+    setEntries,
+    setTimeSeries,
+    setStackedTimeSeries,
+    setTotalCount,
+    setGroupedEntries,
+    setPartLogEntries,
+    setPartLogTimeSeries,
+    setPartLogStackedTimeSeries,
+    setPartLogTotalCount,
+  } = useQueryStore();
+  const connectionReady = !!connectionInfo && !backendError;
+  const { refresh } = useQueryData(connectionReady);
+  const activeEnvName = environments[activeEnvIndex]?.name;
+  const [initialConnectOpen, setInitialConnectOpen] = useState(true);
+  const previousDataRef = useRef<null | {
+    entries: ReturnType<typeof useQueryStore.getState>['entries'];
+    timeSeries: ReturnType<typeof useQueryStore.getState>['timeSeries'];
+    stackedTimeSeries: ReturnType<typeof useQueryStore.getState>['stackedTimeSeries'];
+    totalCount: ReturnType<typeof useQueryStore.getState>['totalCount'];
+    groupedEntries: ReturnType<typeof useQueryStore.getState>['groupedEntries'];
+    partLogEntries: ReturnType<typeof useQueryStore.getState>['partLogEntries'];
+    partLogTimeSeries: ReturnType<typeof useQueryStore.getState>['partLogTimeSeries'];
+    partLogStackedTimeSeries: ReturnType<typeof useQueryStore.getState>['partLogStackedTimeSeries'];
+    partLogTotalCount: ReturnType<typeof useQueryStore.getState>['partLogTotalCount'];
+  }>(null);
 
-  // Fetch connection info and environments on mount
+  const beginSwitchLoading = useCallback(() => {
+    const state = useQueryStore.getState();
+    previousDataRef.current = {
+      entries: state.entries,
+      timeSeries: state.timeSeries,
+      stackedTimeSeries: state.stackedTimeSeries,
+      totalCount: state.totalCount,
+      groupedEntries: state.groupedEntries,
+      partLogEntries: state.partLogEntries,
+      partLogTimeSeries: state.partLogTimeSeries,
+      partLogStackedTimeSeries: state.partLogStackedTimeSeries,
+      partLogTotalCount: state.partLogTotalCount,
+    };
+
+    setLoading(true);
+    setGroupedLoading(true);
+    setPartLogLoading(true);
+    setEntries([]);
+    setTimeSeries([]);
+    setStackedTimeSeries([]);
+    setTotalCount(0);
+    setGroupedEntries([]);
+    setPartLogEntries([]);
+    setPartLogTimeSeries([]);
+    setPartLogStackedTimeSeries([]);
+    setPartLogTotalCount(0);
+  }, [
+    setEntries,
+    setGroupedEntries,
+    setGroupedLoading,
+    setLoading,
+    setPartLogEntries,
+    setPartLogLoading,
+    setPartLogStackedTimeSeries,
+    setPartLogTimeSeries,
+    setPartLogTotalCount,
+    setStackedTimeSeries,
+    setTimeSeries,
+    setTotalCount,
+  ]);
+
+  const restorePreviousData = useCallback(() => {
+    const previous = previousDataRef.current;
+    if (!previous) return;
+    setEntries(previous.entries);
+    setTimeSeries(previous.timeSeries);
+    setStackedTimeSeries(previous.stackedTimeSeries);
+    setTotalCount(previous.totalCount);
+    setGroupedEntries(previous.groupedEntries);
+    setPartLogEntries(previous.partLogEntries);
+    setPartLogTimeSeries(previous.partLogTimeSeries);
+    setPartLogStackedTimeSeries(previous.partLogStackedTimeSeries);
+    setPartLogTotalCount(previous.partLogTotalCount);
+    setLoading(false);
+    setGroupedLoading(false);
+    setPartLogLoading(false);
+  }, [
+    setEntries,
+    setGroupedEntries,
+    setGroupedLoading,
+    setLoading,
+    setPartLogEntries,
+    setPartLogLoading,
+    setPartLogStackedTimeSeries,
+    setPartLogTimeSeries,
+    setPartLogTotalCount,
+    setStackedTimeSeries,
+    setTimeSeries,
+    setTotalCount,
+  ]);
+  const ENV_CACHE_KEY = 'querydog_envs';
+
+  const loadCachedEnvironments = useCallback(() => {
+    try {
+      const cached = localStorage.getItem(ENV_CACHE_KEY);
+      if (!cached) return null;
+      const parsed = JSON.parse(cached) as { active: number; environments: EnvironmentInfo[] };
+      if (!parsed?.environments?.length) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const saveCachedEnvironments = useCallback((data: { active: number; environments: EnvironmentInfo[] }) => {
+    try {
+      localStorage.setItem(ENV_CACHE_KEY, JSON.stringify(data));
+    } catch {
+      // Ignore cache failures
+    }
+  }, []);
+
+  const fetchConfigEnvironmentsWithTimeout = useCallback(async (timeoutMs: number) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch('/api/config/environments', { signal: controller.signal });
+      if (!response.ok) throw new Error(`Failed to fetch config environments: ${response.statusText}`);
+      return response.json() as Promise<{ active: number; environments: EnvironmentInfo[] }>;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }, []);
+
+  // Load environments list on mount (read directly from YAML first)
   useEffect(() => {
-    // First fetch environments so we know what databases are available
-    fetchEnvironments()
-      .then(data => {
+    let isMounted = true;
+    (async () => {
+      const cached = loadCachedEnvironments();
+      if (cached && isMounted) {
+        setEnvironments(cached.environments);
+        setActiveEnvIndex(cached.active);
+        const cachedActiveEnv = cached.environments[cached.active];
+        if (cachedActiveEnv) {
+          setConnectingToName(cachedActiveEnv.name);
+        }
+      }
+
+      let data: { active: number; environments: EnvironmentInfo[] } | null = null;
+      const maxAttempts = 10;
+      const retryDelayMs = 1000;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          data = await fetchConfigEnvironmentsWithTimeout(2000);
+          break;
+        } catch {
+          if (attempt === 1) {
+            // Fallback for older backends on first failure
+            try {
+              data = await fetchEnvironments();
+              break;
+            } catch {
+              data = null;
+            }
+          }
+          if (attempt < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+          }
+        }
+      }
+      if (!isMounted) return;
+      if (data) {
         setEnvironments(data.environments);
         setActiveEnvIndex(data.active);
-        return data;
-      })
-      .then((envData) => {
-        // Now check the connection to the active environment
-        return fetch('/api/connection-info')
-          .then(async res => {
-            const data = await res.json();
-            if (!res.ok) {
-              const envName = envData.environments[envData.active]?.name || 'Unknown';
-              throw { message: data.error || 'Failed to connect to ClickHouse', envName };
-            }
-            return data;
-          })
-          .then(info => {
-            setConnectionInfo(info);
-            setBackendError(null);
-          })
-          .catch((err) => {
-            const envName = err.envName || envData.environments[envData.active]?.name || 'Unknown';
-            const isBackendServer = err.message === 'Failed to fetch';
-            const message = isBackendServer
-              ? 'The QueryDog backend server is not running or cannot be reached.'
-              : 'Unable to establish a connection to the ClickHouse database.';
-            setBackendError({ message, envName, isBackendServer });
-          });
-      })
-      .catch(() => {
-        // Environments fetch failed - try connection info anyway
-        fetch('/api/connection-info')
-          .then(async res => {
-            const data = await res.json();
-            if (!res.ok) {
-              throw new Error(data.error || 'Failed to connect to ClickHouse');
-            }
-            return data;
-          })
-          .then(info => {
-            setConnectionInfo(info);
-            setBackendError(null);
-          })
-          .catch((err) => {
-            const isBackendServer = err.message === 'Failed to fetch';
-            const message = isBackendServer
-              ? 'The QueryDog backend server is not running or cannot be reached.'
-              : 'Unable to establish a connection to the ClickHouse database.';
-            setBackendError({ message, isBackendServer });
-          });
-      });
+        // Show which database we're connecting to
+        const activeEnv = data.environments[data.active];
+        if (activeEnv) {
+          setConnectingToName(activeEnv.name);
+        }
+        saveCachedEnvironments(data);
+        setEnvironmentsFetched(true);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
+  // No automatic connection attempt on load - wait for user selection
 
   // Check if queries folder exists
   useEffect(() => {
@@ -190,11 +349,19 @@ function App() {
         setDataExplorerOpen(false);
         setQueryEditorOpen(false);
         setError(null);
+        setBackendError(null);
       }
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, []);
+
+  // If a backend connection error is showing, clear any generic error to avoid double modals
+  useEffect(() => {
+    if (backendError) {
+      setError(null);
+    }
+  }, [backendError, setError]);
 
   const navItems: { id: NavItem; label: string; icon: typeof Database }[] = [
     { id: 'queries', label: 'Queries', icon: Database },
@@ -307,64 +474,39 @@ function App() {
           About Query Dog V0.3
         </button>
         <div className="flex items-center gap-3">
-          {/* Connection status - show red when error, green when connected */}
-          {connectionInfo && !backendError && (
+          {/* Connection status */}
+          {(connecting || switching) && (
+            <span className="flex items-center gap-1.5 text-xs text-yellow-400 font-mono">
+              <Circle className="w-2 h-2 fill-yellow-500 text-yellow-500 animate-pulse" />
+              Connecting to {connectingToName || activeEnvName || 'database'}...
+            </span>
+          )}
+          {!connecting && !switching && connectionInfo && !backendError && (
             <span className="flex items-center gap-1.5 text-xs text-gray-400 font-mono">
               <Circle className="w-2 h-2 fill-green-500 text-green-500" />
-              {connectionInfo.user}@{connectionInfo.host}:{connectionInfo.port}
+              {connectionInfo.name}: {connectionInfo.user}@{connectionInfo.host}:{connectionInfo.port}
             </span>
           )}
-          {backendError && (
+          {!connecting && !switching && backendError && (
             <span className="flex items-center gap-1.5 text-xs text-red-400 font-mono">
               <Circle className="w-2 h-2 fill-red-500 text-red-500" />
-              {backendError.envName || 'Disconnected'}
+              {backendError.envName || 'Not connected'}
             </span>
           )}
-          {/* Always show database selector when multiple environments exist */}
-          {environments.length > 1 && (
-            <select
-              value={activeEnvIndex}
-              disabled={switching}
-              onChange={async (e) => {
-                const idx = parseInt(e.target.value);
-                const selectedEnv = environments[idx];
-                setSwitching(true);
-                setBackendError(null);
-                try {
-                  const result = await switchEnvironment(idx);
-                  setActiveEnvIndex(idx);
-                  setConnectionInfo({
-                    name: result.name,
-                    host: result.host,
-                    port: String(result.port),
-                    secure: false,
-                    user: selectedEnv.user,
-                  });
-                  if (!result.connected) {
-                    setBackendError({
-                      message: result.error || 'Connection failed',
-                      envName: selectedEnv.name
-                    });
-                  } else {
-                    // Connection successful - refresh data
-                    refresh();
-                  }
-                } catch (err) {
-                  setBackendError({
-                    message: 'Failed to switch environment',
-                    envName: selectedEnv.name
-                  });
-                } finally {
-                  setSwitching(false);
-                }
-              }}
-              className="bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-gray-300 text-xs"
-            >
-              {environments.map((env, i) => (
-                <option key={i} value={i}>{env.name}</option>
-              ))}
-            </select>
-          )}
+          {/* Connect button */}
+          <button
+            onClick={() => {
+              if (connectedEnvIndex !== null) {
+                setActiveEnvIndex(connectedEnvIndex);
+              }
+              setInitialConnectOpen(true);
+            }}
+            disabled={environments.length === 0}
+            title={environments.length === 0 ? 'No environments configured' : 'Connect to database'}
+            className="bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-gray-300 hover:text-white hover:border-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Network className="w-4 h-4" />
+          </button>
         </div>
       </footer>
 
@@ -392,7 +534,7 @@ function App() {
       {aboutOpen && (
         <>
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setAboutOpen(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 p-6 min-w-[300px]">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 p-6 w-[520px] max-w-[90vw]">
             <button
               onClick={() => setAboutOpen(false)}
               className="absolute top-3 right-3 text-gray-400 hover:text-white"
@@ -416,31 +558,42 @@ function App() {
               >
                 By @BenjaminWootton
               </a>
+              <button
+                onClick={() => setAboutOpen(false)}
+                className="mt-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm font-medium"
+              >
+                Dismiss
+              </button>
             </div>
           </div>
         </>
       )}
 
-      {/* Error Modal */}
-      {error && (
+      {/* Error Modal - only show if no backend error (to avoid double modals) */}
+      {error && !backendError && (
         <>
           <div className="fixed inset-0 bg-black/60 z-50" onClick={() => setError(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-950 border border-red-700 rounded-lg shadow-xl z-50 p-6 min-w-[300px] max-w-[80vw]">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-950 border border-red-700 rounded-lg shadow-xl z-50 p-6 w-[520px] max-w-[90vw]">
             <button
               onClick={() => setError(null)}
               className="absolute top-3 right-3 text-red-200 hover:text-white"
             >
               <X className="w-4 h-4" />
             </button>
-            <div className="flex flex-col items-center gap-3">
-              <AlertTriangle className="w-10 h-10 text-red-300" />
+            <div className="flex flex-col items-center gap-4">
+              <AlertTriangle className="w-12 h-12 text-red-400" />
               <h2 className="text-lg font-semibold text-red-100">Error</h2>
-              <p className="text-sm text-red-100 text-center whitespace-pre-wrap break-words">
+              {environments[activeEnvIndex] && (
+                <div className="bg-red-900/50 border border-red-700 rounded px-4 py-2 w-full text-center">
+                  <span className="text-red-300 text-sm font-mono">{environments[activeEnvIndex].name}</span>
+                </div>
+              )}
+              <p className="text-sm text-red-200 text-center whitespace-pre-wrap break-words">
                 {error}
               </p>
               <button
                 onClick={() => setError(null)}
-                className="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-xs"
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm font-medium"
               >
                 Dismiss
               </button>
@@ -452,10 +605,25 @@ function App() {
       {/* Connection Error Modal */}
       {backendError && (
         <>
-          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => setBackendError(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-950 border border-red-700 rounded-lg shadow-xl z-50 p-6 min-w-[400px] max-w-[500px]">
+          <div
+            className="fixed inset-0 bg-black/60 z-50"
+            onClick={() => {
+              const hadConnection = !!connectionInfo;
+              setBackendError(null);
+              if (!hadConnection) {
+                setInitialConnectOpen(true);
+              }
+            }}
+          />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-950 border border-red-700 rounded-lg shadow-xl z-50 p-6 w-[520px] max-w-[90vw]">
             <button
-              onClick={() => setBackendError(null)}
+              onClick={() => {
+                const hadConnection = !!connectionInfo;
+                setBackendError(null);
+                if (!hadConnection) {
+                  setInitialConnectOpen(true);
+                }
+              }}
               className="absolute top-3 right-3 text-red-200 hover:text-white"
             >
               <X className="w-4 h-4" />
@@ -474,19 +642,84 @@ function App() {
                 {backendError.message}
               </p>
 
-              {!backendError.isBackendServer && environments.length > 1 && (
-                <div className="w-full border-t border-red-800 pt-4 mt-2">
-                  <p className="text-sm text-red-300 text-center mb-3">Select a different database:</p>
-                  <select
-                    value={activeEnvIndex}
-                    disabled={switching}
-                    onChange={async (e) => {
-                      const idx = parseInt(e.target.value);
-                      const selectedEnv = environments[idx];
-                      setSwitching(true);
-                      try {
-                        const result = await switchEnvironment(idx);
-                        setActiveEnvIndex(idx);
+              <div className="flex gap-3 mt-2">
+                <button
+                  onClick={() => {
+                    const hadConnection = !!connectionInfo;
+                    setBackendError(null);
+                    if (!hadConnection) {
+                      setInitialConnectOpen(true);
+                    }
+                  }}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm font-medium"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Initial Connection Modal */}
+      {initialConnectOpen && !aboutOpen && environmentsFetched && environments.length > 0 && (
+        <>
+          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => setInitialConnectOpen(false)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-blue-950 border border-blue-700 rounded-lg shadow-xl z-50 p-6 w-[520px] max-w-[90vw]">
+            <button
+              onClick={() => setInitialConnectOpen(false)}
+              className="absolute top-3 right-3 text-blue-200 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex flex-col items-center gap-4">
+              <Database className="w-12 h-12 text-blue-400" />
+              <h2 className="text-lg font-semibold text-blue-100">Select Database</h2>
+              <div className="w-full">
+                <p className="text-sm text-blue-300 text-center mb-3">Choose a database connection to start:</p>
+                <select
+                  value={environments.length > 0 ? activeEnvIndex : ''}
+                  disabled={switching}
+                  onChange={(e) => {
+                    const idx = parseInt(e.target.value);
+                    if (!Number.isNaN(idx)) setActiveEnvIndex(idx);
+                  }}
+                  className="w-full bg-gray-800 border border-blue-700 rounded px-3 py-2 text-gray-200 text-sm"
+                >
+                  {environments.map((env, i) => (
+                    <option key={i} value={i}>{env.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3 mt-2">
+                <button
+                  onClick={async () => {
+                    const selectedEnv = environments[activeEnvIndex];
+                    if (!selectedEnv) return;
+                    const previousConnection = connectionInfo;
+                    const previousConnectedIndex = connectedEnvIndex;
+                    const hadPreviousConnection = previousConnectedIndex !== null && !!previousConnection;
+                    setSwitching(true);
+                    setBackendError(null);
+                    setConnectingToName(selectedEnv.name);
+                    beginSwitchLoading();
+                    try {
+                      const result = await switchEnvironment(activeEnvIndex);
+                      if (!result.connected) {
+                        if (hadPreviousConnection) {
+                          setActiveEnvIndex(previousConnectedIndex as number);
+                          restorePreviousData();
+                        } else {
+                          setConnectionInfo(null);
+                          setLoading(false);
+                          setGroupedLoading(false);
+                          setPartLogLoading(false);
+                        }
+                        setBackendError({
+                          message: result.error || 'Connection failed',
+                          envName: selectedEnv.name
+                        });
+                      } else {
                         setConnectionInfo({
                           name: result.name,
                           host: result.host,
@@ -494,69 +727,36 @@ function App() {
                           secure: false,
                           user: selectedEnv.user,
                         });
-                        if (!result.connected) {
-                          setBackendError({
-                            message: 'Unable to establish a connection to the ClickHouse database.',
-                            envName: selectedEnv.name,
-                            isBackendServer: false
-                          });
-                        } else {
-                          setBackendError(null);
-                          refresh();
-                        }
-                      } catch (err) {
-                        setBackendError({
-                          message: 'Unable to establish a connection to the ClickHouse database.',
-                          envName: selectedEnv.name,
-                          isBackendServer: false
-                        });
-                      } finally {
-                        setSwitching(false);
-                      }
-                    }}
-                    className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-gray-200 text-sm"
-                  >
-                    {environments.map((env, i) => (
-                      <option key={i} value={i}>{env.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="flex gap-3 mt-2">
-                <button
-                  onClick={() => {
-                    const currentEnv = environments[activeEnvIndex];
-                    setSwitching(true);
-                    fetch('/api/connection-info')
-                      .then(async res => {
-                        const data = await res.json();
-                        if (!res.ok) {
-                          throw new Error(data.error || 'Failed to connect');
-                        }
-                        return data;
-                      })
-                      .then(info => {
-                        setConnectionInfo(info);
-                        setBackendError(null);
+                        setConnectedEnvIndex(activeEnvIndex);
                         refresh();
-                      })
-                      .catch((err) => {
-                        const isBackendServer = err.message === 'Failed to fetch';
-                        const message = isBackendServer
-                          ? 'The QueryDog backend server is not running or cannot be reached.'
-                          : 'Unable to establish a connection to the ClickHouse database.';
-                        setBackendError({ message, envName: currentEnv?.name, isBackendServer });
-                      })
-                      .finally(() => setSwitching(false));
+                      }
+                    } catch (err) {
+                      if (hadPreviousConnection) {
+                        setActiveEnvIndex(previousConnectedIndex as number);
+                        restorePreviousData();
+                      } else {
+                        setConnectionInfo(null);
+                        setLoading(false);
+                        setGroupedLoading(false);
+                        setPartLogLoading(false);
+                      }
+                      setBackendError({
+                        message: (err as Error).message || 'Failed to connect to environment',
+                        envName: selectedEnv.name
+                      });
+                    } finally {
+                      setSwitching(false);
+                      setConnectingToName(null);
+                      setInitialConnectOpen(false);
+                    }
                   }}
                   disabled={switching}
-                  className="px-4 py-2 bg-red-700 hover:bg-red-600 disabled:bg-red-800 disabled:cursor-not-allowed rounded text-white text-sm font-medium"
+                  className="px-4 py-2 bg-blue-700 hover:bg-blue-600 disabled:bg-blue-800 disabled:cursor-not-allowed rounded text-white text-sm font-medium"
                 >
-                  {switching ? 'Connecting...' : 'Retry Connection'}
+                  {switching ? 'Connecting...' : 'Connect'}
                 </button>
                 <button
-                  onClick={() => setBackendError(null)}
+                  onClick={() => setInitialConnectOpen(false)}
                   className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm font-medium"
                 >
                   Dismiss

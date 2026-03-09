@@ -30,12 +30,15 @@ app.use(express.static(path.join(__dirname, '../dist')));
 // ==================== YAML CONFIG ====================
 
 // Load environments from querydog.yaml, falling back to .env
-function loadConfig() {
+function loadConfig(options = {}) {
+  const { quiet = false } = options;
   const yamlPath = path.join(process.cwd(), 'querydog.yaml');
   if (fs.existsSync(yamlPath)) {
     const raw = yaml.load(fs.readFileSync(yamlPath, 'utf-8'));
     if (raw && raw.environments && raw.environments.length > 0) {
-      console.log(`Loaded ${raw.environments.length} environment(s) from querydog.yaml`);
+      if (!quiet) {
+        console.log(`Loaded ${raw.environments.length} environment(s) from querydog.yaml`);
+      }
       return raw.environments.map(env => ({
         name: env.name || 'Default',
         host: env.host,
@@ -51,7 +54,9 @@ function loadConfig() {
     }
   }
   // Fallback to .env
-  console.log('No querydog.yaml found, falling back to .env');
+  if (!quiet) {
+    console.log('No querydog.yaml found, falling back to .env');
+  }
   return [{
     name: 'Default',
     host: process.env.CLICKHOUSE_HOST || 'localhost',
@@ -126,6 +131,17 @@ function switchEnvironment(index) {
 // Initialize first environment
 switchEnvironment(0);
 
+// Helper to ping with timeout (6 seconds)
+const CONNECTION_TIMEOUT_MS = 6000;
+async function pingWithTimeout(timeoutMs = CONNECTION_TIMEOUT_MS) {
+  return Promise.race([
+    client.ping(),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Database connection timed out - server may be unreachable')), timeoutMs)
+    )
+  ]);
+}
+
 const getQueriesPath = () => path.isAbsolute(QUERIES_FOLDER) ? QUERIES_FOLDER : path.join(process.cwd(), QUERIES_FOLDER);
 
 // Helper to get system table reference - uses clusterAllReplicas() if cluster is configured
@@ -136,10 +152,10 @@ function getSystemTable(tableName) {
   return `system.${tableName}`;
 }
 
-// Health check endpoint - tests ClickHouse connection
+// Health check endpoint - tests ClickHouse connection (6 second timeout)
 app.get('/api/health', async (req, res) => {
   try {
-    await client.ping();
+    await pingWithTimeout();
     res.json({
       status: 'healthy',
       clickhouse: 'connected'
@@ -154,11 +170,11 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Connection info endpoint
+// Connection info endpoint (6 second timeout)
 app.get('/api/connection-info', async (req, res) => {
   const env = environments[activeEnvIndex];
   try {
-    await client.ping();
+    await pingWithTimeout();
     res.json({
       name: env.name,
       host: env.host,
@@ -183,6 +199,22 @@ app.get('/api/connection-info', async (req, res) => {
   }
 });
 
+// Read environments directly from querydog.yaml (no ClickHouse connection required)
+app.get('/api/config/environments', (req, res) => {
+  const envs = loadConfig({ quiet: true });
+  res.json({
+    active: activeEnvIndex,
+    environments: envs.map((env, i) => ({
+      index: i,
+      name: env.name,
+      host: env.host,
+      port: env.port,
+      user: env.user,
+      database: env.database,
+    })),
+  });
+});
+
 // List all environments
 app.get('/api/environments', (req, res) => {
   res.json({
@@ -198,7 +230,7 @@ app.get('/api/environments', (req, res) => {
   });
 });
 
-// Switch environment
+// Switch environment (6 second timeout)
 app.post('/api/environments/switch', async (req, res) => {
   const { index } = req.body;
   if (index === undefined || index < 0 || index >= environments.length) {
@@ -206,8 +238,8 @@ app.post('/api/environments/switch', async (req, res) => {
   }
   try {
     switchEnvironment(index);
-    // Test the new connection
-    await client.ping();
+    // Test the new connection with timeout
+    await pingWithTimeout();
     const env = environments[index];
     res.json({
       name: env.name,
@@ -5991,25 +6023,6 @@ async function startup() {
   const env = environments[activeEnvIndex];
   const protocol = env.secure ? 'https' : 'http';
 
-  // Test ClickHouse connection
-  console.log(`Testing connection to "${env.name}" (${protocol}://${env.host}:${env.port})...`);
-  try {
-    await client.ping();
-    console.log('ClickHouse connection successful!\n');
-  } catch (error) {
-    console.error('\n╔══════════════════════════════════════════════════════════════╗');
-    console.error('║  WARNING: Failed to connect to ClickHouse                    ║');
-    console.error('╚══════════════════════════════════════════════════════════════╝\n');
-    console.error(`Environment: ${env.name}`);
-    console.error(`Host: ${env.host}:${env.port}`);
-    console.error(`User: ${env.user}`);
-    console.error(`Database: ${env.database}`);
-    console.error(`Secure: ${env.secure ? 'Yes' : 'No'}\n`);
-    console.error('Error details:', error.message);
-    console.error('\nPlease check your querydog.yaml configuration and ensure ClickHouse is reachable.');
-    console.error('Starting server anyway - you can switch environments from the UI.\n');
-  }
-
   // List available environments
   if (environments.length > 1) {
     console.log(`Available environments (${environments.length}):`);
@@ -6020,8 +6033,27 @@ async function startup() {
     console.log('');
   }
 
-  // Start HTTP server
+  // Start HTTP server FIRST (non-blocking)
   server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on port ${PORT}\n`);
+  });
+
+  // Test ClickHouse connection in background (non-blocking, 6 second timeout)
+  console.log(`Testing connection to "${env.name}" (${protocol}://${env.host}:${env.port})...`);
+  pingWithTimeout().then(() => {
+    console.log('ClickHouse connection successful!');
+  }).catch((error) => {
+    console.error('\n╔══════════════════════════════════════════════════════════════╗');
+    console.error('║  WARNING: Failed to connect to ClickHouse                    ║');
+    console.error('╚══════════════════════════════════════════════════════════════╝\n');
+    console.error(`Environment: ${env.name}`);
+    console.error(`Host: ${env.host}:${env.port}`);
+    console.error(`User: ${env.user}`);
+    console.error(`Database: ${env.database}`);
+    console.error(`Secure: ${env.secure ? 'Yes' : 'No'}\n`);
+    console.error('Error details:', error.message);
+    console.error('\nPlease check your querydog.yaml configuration and ensure ClickHouse is reachable.');
+    console.error('You can switch environments from the UI.\n');
   });
 }
 

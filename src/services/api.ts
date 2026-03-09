@@ -100,6 +100,12 @@ export async function fetchEnvironments(): Promise<{ active: number; environment
   return response.json();
 }
 
+export async function fetchConfigEnvironments(): Promise<{ active: number; environments: EnvironmentInfo[] }> {
+  const response = await fetch(`${API_BASE}/config/environments`);
+  if (!response.ok) throw new Error(`Failed to fetch config environments: ${response.statusText}`);
+  return response.json();
+}
+
 export async function switchEnvironment(index: number): Promise<{ name: string; host: string; port: number; connected: boolean; error?: string }> {
   const response = await fetch(`${API_BASE}/environments/switch`, {
     method: 'POST',
