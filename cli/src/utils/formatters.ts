@@ -186,3 +186,8 @@ export function printSuccess(message: string): void {
 export function printInfo(message: string): void {
   console.log(chalk.blue.bold('ℹ ') + chalk.blue(message));
 }
+
+export function printOutput(output: string): void {
+  console.log(output);
+  console.log('\n');
+}

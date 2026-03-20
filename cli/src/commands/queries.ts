@@ -1,6 +1,6 @@
 import { executeQuery, SystemQueries } from '../utils/clickhouse';
 import { loadCLIConfig } from '../utils/config';
-import { formatOutput, OutputFormat, printHeader } from '../utils/formatters';
+import { formatOutput, OutputFormat, printHeader, printOutput } from '../utils/formatters';
 
 export type QueryMode = 'all' | 'slowest' | 'fastest' | 'highestmemory' | 'rowsread' | 'frequent' | 'bytable' | 'errors';
 
@@ -58,9 +58,11 @@ export async function listQueries(
 
   const data = await executeQuery(query);
   const output = formatOutput(data, format, undefined, config);
-  console.log(output);
 
   if (format === 'table' && data.length > 0) {
-    console.log(`\nTotal: ${data.length} queries`);
+    console.log(output);
+    console.log(`\nTotal: ${data.length} queries\n\n`);
+  } else {
+    printOutput(output);
   }
 }

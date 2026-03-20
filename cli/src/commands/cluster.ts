@@ -1,5 +1,5 @@
 import { executeQuery, SystemQueries } from '../utils/clickhouse';
-import { formatOutput, OutputFormat, printHeader } from '../utils/formatters';
+import { formatOutput, OutputFormat, printHeader, printOutput } from '../utils/formatters';
 
 // Clusters
 export async function listClusters(
@@ -12,7 +12,7 @@ export async function listClusters(
 
   const data = await executeQuery(SystemQueries.clusters());
   const output = formatOutput(data, format);
-  console.log(output);
+  printOutput(output);
 }
 
 // Replicas
@@ -26,7 +26,7 @@ export async function listReplicas(
 
   const data = await executeQuery(SystemQueries.replicas());
   const output = formatOutput(data, format);
-  console.log(output);
+  printOutput(output);
 }
 
 // Replication Queue
@@ -40,7 +40,7 @@ export async function listReplicationQueue(
 
   const data = await executeQuery(SystemQueries.replicationQueue());
   const output = formatOutput(data, format);
-  console.log(output);
+  printOutput(output);
 }
 
 // Zookeeper
@@ -55,7 +55,7 @@ export async function listZookeeper(
 
   const data = await executeQuery(SystemQueries.zookeeper(path));
   const output = formatOutput(data, format);
-  console.log(output);
+  printOutput(output);
 }
 
 // Merges
@@ -69,10 +69,12 @@ export async function listMerges(
 
   const data = await executeQuery(SystemQueries.merges());
   const output = formatOutput(data, format);
-  console.log(output);
 
   if (format === 'table') {
-    console.log(`\nTotal: ${data.length} active merges`);
+    console.log(output);
+    console.log(`\nTotal: ${data.length} active merges\n\n`);
+  } else {
+    printOutput(output);
   }
 }
 
@@ -88,11 +90,11 @@ export async function listBackgroundJobs(
   try {
     const data = await executeQuery(SystemQueries.backgroundJobs());
     const output = formatOutput(data, format);
-    console.log(output);
+    printOutput(output);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes('UNKNOWN_TABLE')) {
-      console.log('system.backups table not available on this server');
+      console.log('system.backups table not available on this server\n\n');
     } else {
       throw err;
     }
@@ -111,11 +113,11 @@ export async function listAsyncInserts(
   try {
     const data = await executeQuery(SystemQueries.asyncInserts());
     const output = formatOutput(data, format);
-    console.log(output);
+    printOutput(output);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes('UNKNOWN_TABLE')) {
-      console.log('system.asynchronous_inserts table not available on this server');
+      console.log('system.asynchronous_inserts table not available on this server\n\n');
     } else {
       throw err;
     }
@@ -134,11 +136,11 @@ export async function listQueryCache(
   try {
     const data = await executeQuery(SystemQueries.queryCache());
     const output = formatOutput(data, format);
-    console.log(output);
+    printOutput(output);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes('UNKNOWN_TABLE')) {
-      console.log('system.query_cache table not available on this server');
+      console.log('system.query_cache table not available on this server\n\n');
     } else {
       throw err;
     }
@@ -157,11 +159,11 @@ export async function listViewRefreshes(
   try {
     const data = await executeQuery(SystemQueries.viewRefreshes());
     const output = formatOutput(data, format);
-    console.log(output);
+    printOutput(output);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes('UNKNOWN_TABLE')) {
-      console.log('system.view_refreshes table not available on this server');
+      console.log('system.view_refreshes table not available on this server\n\n');
     } else {
       throw err;
     }

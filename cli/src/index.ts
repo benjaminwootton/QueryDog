@@ -182,7 +182,10 @@ async function runCommand(
   const env = await getEnvOrPrompt(options.env);
   if (!env) return;
 
-  const spinner = ora('Connecting to ClickHouse...').start();
+  const spinner = ora({
+    text: 'Connecting to ClickHouse...',
+    isSilent: !process.stdout.isTTY,
+  }).start();
 
   try {
     createClickHouseClient(env);
@@ -402,96 +405,6 @@ program
     );
   });
 
-program
-  .command('queries-slow')
-  .alias('slow')
-  .description('Show slowest queries')
-  .action(async () => {
-    const opts = program.opts();
-    const hours = parseInt(opts.hours || '24', 10);
-    const limit = parseInt(opts.limit || '50', 10);
-
-    await runCommand(
-      (format, envName) => listQueries('slowest', format, envName, hours, limit),
-      opts
-    );
-  });
-
-program
-  .command('queries-fastest')
-  .alias('fast')
-  .description('Show fastest queries (baseline performance)')
-  .action(async () => {
-    const opts = program.opts();
-    const hours = parseInt(opts.hours || '24', 10);
-    const limit = parseInt(opts.limit || '50', 10);
-
-    await runCommand(
-      (format, envName) => listQueries('fastest', format, envName, hours, limit),
-      opts
-    );
-  });
-
-program
-  .command('queries-rowsread')
-  .alias('rowsread')
-  .description('Show queries by rows read (find full table scans)')
-  .action(async () => {
-    const opts = program.opts();
-    const hours = parseInt(opts.hours || '24', 10);
-    const limit = parseInt(opts.limit || '50', 10);
-
-    await runCommand(
-      (format, envName) => listQueries('rowsread', format, envName, hours, limit),
-      opts
-    );
-  });
-
-program
-  .command('queries-memory')
-  .alias('highmem')
-  .description('Show highest memory queries')
-  .action(async () => {
-    const opts = program.opts();
-    const hours = parseInt(opts.hours || '24', 10);
-    const limit = parseInt(opts.limit || '50', 10);
-
-    await runCommand(
-      (format, envName) => listQueries('highestmemory', format, envName, hours, limit),
-      opts
-    );
-  });
-
-program
-  .command('queries-frequent')
-  .alias('frequent')
-  .description('Show most frequent queries (grouped)')
-  .action(async () => {
-    const opts = program.opts();
-    const hours = parseInt(opts.hours || '24', 10);
-    const limit = parseInt(opts.limit || '50', 10);
-
-    await runCommand(
-      (format, envName) => listQueries('frequent', format, envName, hours, limit),
-      opts
-    );
-  });
-
-program
-  .command('queries-errors')
-  .alias('errors')
-  .description('Show query errors')
-  .action(async () => {
-    const opts = program.opts();
-    const hours = parseInt(opts.hours || '24', 10);
-    const limit = parseInt(opts.limit || '50', 10);
-
-    await runCommand(
-      (format, envName) => listQueries('errors', format, envName, hours, limit),
-      opts
-    );
-  });
-
 // ==================== SCHEMA COMMANDS ====================
 
 program
@@ -518,7 +431,6 @@ program
 
 program
   .command('materialized-views')
-  .alias('mv')
   .description('List materialized views')
   .action(async () => {
     const opts = program.opts();
@@ -530,7 +442,6 @@ program
 
 program
   .command('databases')
-  .alias('dbs')
   .description('List databases with summary statistics')
   .action(async () => {
     const opts = program.opts();

@@ -1,3 +1,22 @@
+---
+name: querydog-analyse-clickhouse
+description: Analyze a ClickHouse database and produce a structured performance report using QueryDog CLI
+version: 1.0.0
+invocations:
+  - analyze clickhouse
+  - analyse clickhouse
+  - clickhouse performance report
+  - clickhouse analysis
+  - querydog analyze
+  - database performance analysis
+tags:
+  - clickhouse
+  - performance
+  - analysis
+  - querydog
+  - database
+---
+
 # ClickHouse Performance Analysis Report
 
 Use this guide to analyze a ClickHouse database and produce a structured performance report.
@@ -13,7 +32,7 @@ Run these commands in order, collecting outputs for each section of the report.
 ### 1.1 Slowest Queries
 
 ```bash
-querydog -e <env> queries-slow --hours 24 --limit 20
+querydog -e <env> queries --mode slowest --hours 24 --limit 20
 ```
 
 **Document:**
@@ -24,7 +43,7 @@ querydog -e <env> queries-slow --hours 24 --limit 20
 ### 1.2 Memory-Intensive Queries
 
 ```bash
-querydog -e <env> queries-memory --hours 24 --limit 20
+querydog -e <env> queries --mode highestmemory --hours 24 --limit 20
 ```
 
 **Document:**
@@ -35,7 +54,7 @@ querydog -e <env> queries-memory --hours 24 --limit 20
 ### 1.3 Query Patterns by Frequency
 
 ```bash
-querydog -e <env> queries-frequent --hours 24 --limit 30
+querydog -e <env> queries --mode frequent --hours 24 --limit 30
 ```
 
 **Document:**
@@ -78,7 +97,7 @@ querydog -e <env> mutations
 ### 3.1 Query Errors
 
 ```bash
-querydog -e <env> queries-errors --hours 24 --limit 20
+querydog -e <env> queries --mode errors --hours 24 --limit 20
 ```
 
 **Document:**
@@ -235,11 +254,11 @@ For a rapid assessment, run all key commands:
 ```bash
 ENV=3  # Set your environment number
 
-echo "=== SLOW QUERIES ===" && querydog -e $ENV queries-slow --limit 10
-echo "=== MEMORY QUERIES ===" && querydog -e $ENV queries-memory --limit 10
-echo "=== QUERY PATTERNS ===" && querydog -e $ENV queries-frequent --limit 10
+echo "=== SLOW QUERIES ===" && querydog -e $ENV queries --mode slowest --limit 10
+echo "=== MEMORY QUERIES ===" && querydog -e $ENV queries --mode highestmemory --limit 10
+echo "=== QUERY PATTERNS ===" && querydog -e $ENV queries --mode frequent --limit 10
 echo "=== BY TABLE ===" && querydog -e $ENV queries --mode bytable
-echo "=== ERRORS ===" && querydog -e $ENV queries-errors --limit 10
+echo "=== ERRORS ===" && querydog -e $ENV queries --mode errors --limit 10
 echo "=== CURRENT PROCESSES ===" && querydog -e $ENV processes
 echo "=== TABLES ===" && querydog -e $ENV tables
 echo "=== DISKS ===" && querydog -e $ENV disks
@@ -249,8 +268,8 @@ echo "=== DISKS ===" && querydog -e $ENV disks
 
 ```bash
 # Export all data to JSON for processing
-querydog -e $ENV queries-slow --hours 168 --limit 1000 -f json > slow_queries.json
-querydog -e $ENV queries-frequent --hours 168 -f json > query_patterns.json
+querydog -e $ENV queries --mode slowest --hours 168 --limit 1000 -f json > slow_queries.json
+querydog -e $ENV queries --mode frequent --hours 168 -f json > query_patterns.json
 querydog -e $ENV queries --mode bytable -f json > table_stats.json
 querydog -e $ENV tables -f json > tables.json
 ```

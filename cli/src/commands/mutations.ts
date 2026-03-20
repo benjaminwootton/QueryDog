@@ -1,6 +1,6 @@
 import { executeQuery, SystemQueries } from '../utils/clickhouse';
 import { loadCLIConfig } from '../utils/config';
-import { formatOutput, OutputFormat, printHeader } from '../utils/formatters';
+import { formatOutput, OutputFormat, printHeader, printOutput } from '../utils/formatters';
 
 interface MutationInfo {
   table: string;
@@ -28,11 +28,13 @@ export async function listMutations(
 
   const columns = config.mutations.columns;
   const output = formatOutput(data, format, columns, config);
-  console.log(output);
 
   if (format === 'table') {
+    console.log(output);
     const pending = data.filter(m => !m.is_done).length;
     const completed = data.filter(m => m.is_done).length;
-    console.log(`\nTotal: ${data.length} mutations (${pending} pending, ${completed} completed)`);
+    console.log(`\nTotal: ${data.length} mutations (${pending} pending, ${completed} completed)\n\n`);
+  } else {
+    printOutput(output);
   }
 }

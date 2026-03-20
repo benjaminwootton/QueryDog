@@ -1,6 +1,6 @@
 import { executeQuery, SystemQueries } from '../utils/clickhouse';
 import { loadCLIConfig } from '../utils/config';
-import { formatOutput, OutputFormat, printHeader } from '../utils/formatters';
+import { formatOutput, OutputFormat, printHeader, printOutput } from '../utils/formatters';
 
 interface PartitionInfo {
   table: string;
@@ -29,9 +29,11 @@ export async function listPartitions(
 
   const columns = config.partitions.columns;
   const output = formatOutput(data, format, columns, config);
-  console.log(output);
 
   if (format === 'table' && data.length > 0) {
-    console.log(`\nTotal: ${data.length} partitions`);
+    console.log(output);
+    console.log(`\nTotal: ${data.length} partitions\n\n`);
+  } else {
+    printOutput(output);
   }
 }

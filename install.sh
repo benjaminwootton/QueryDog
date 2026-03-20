@@ -78,17 +78,30 @@ QUERYDOG_FUNCTION='
 # QueryDog CLI
 querydog() {
     local DOCKER_IMAGE="ghcr.io/benjaminwootton/querydog"
-    local CONFIG_MOUNT=""
-    local QUERIES_MOUNT=""
+    local CONFIG_FILE=""
+    local QUERIES_DIR=""
 
-    # Mount querydog.yaml if it exists in current directory
+    # Find querydog.yaml: check current dir first, then home dir
     if [ -f "./querydog.yaml" ]; then
-        CONFIG_MOUNT="-v $(pwd)/querydog.yaml:/app/querydog.yaml"
+        CONFIG_FILE="$(pwd)/querydog.yaml"
+    elif [ -f "$HOME/querydog.yaml" ]; then
+        CONFIG_FILE="$HOME/querydog.yaml"
     fi
 
-    # Mount queries folder if it exists
+    # Find queries folder: check current dir first, then home dir
     if [ -d "./queries" ]; then
-        QUERIES_MOUNT="-v $(pwd)/queries:/app/queries"
+        QUERIES_DIR="$(pwd)/queries"
+    elif [ -d "$HOME/queries" ]; then
+        QUERIES_DIR="$HOME/queries"
+    fi
+
+    # Build docker args array for proper quoting
+    local DOCKER_ARGS=()
+    if [ -n "$CONFIG_FILE" ]; then
+        DOCKER_ARGS+=("-v" "${CONFIG_FILE}:/app/querydog.yaml")
+    fi
+    if [ -n "$QUERIES_DIR" ]; then
+        DOCKER_ARGS+=("-v" "${QUERIES_DIR}:/app/queries")
     fi
 
     if [ "$1" = "ui" ]; then
@@ -110,8 +123,7 @@ querydog() {
         docker run -d \
             --name "$CONTAINER_NAME" \
             -p "${PORT}:3001" \
-            $CONFIG_MOUNT \
-            $QUERIES_MOUNT \
+            "${DOCKER_ARGS[@]}" \
             "$DOCKER_IMAGE" server
 
         echo ""
@@ -121,8 +133,7 @@ querydog() {
     else
         # Run CLI command
         docker run --rm -it \
-            $CONFIG_MOUNT \
-            $QUERIES_MOUNT \
+            "${DOCKER_ARGS[@]}" \
             "$DOCKER_IMAGE" "$@"
     fi
 }

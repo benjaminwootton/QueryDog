@@ -1,6 +1,6 @@
 import { executeQuery, SystemQueries } from '../utils/clickhouse';
 import { loadCLIConfig } from '../utils/config';
-import { formatOutput, OutputFormat, printHeader } from '../utils/formatters';
+import { formatOutput, OutputFormat, printHeader, printOutput } from '../utils/formatters';
 
 interface TableInfo {
   name: string;
@@ -29,9 +29,11 @@ export async function listTables(
 
   const columns = config.tables.columns;
   const output = formatOutput(data, format, columns, config);
-  console.log(output);
 
   if (format === 'table' && data.length > 0) {
-    console.log(`\nTotal: ${data.length} tables`);
+    console.log(output);
+    console.log(`\nTotal: ${data.length} tables\n\n`);
+  } else {
+    printOutput(output);
   }
 }

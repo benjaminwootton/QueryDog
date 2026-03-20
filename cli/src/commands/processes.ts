@@ -1,6 +1,6 @@
 import { executeQuery, SystemQueries } from '../utils/clickhouse';
 import { loadCLIConfig } from '../utils/config';
-import { formatOutput, OutputFormat, printHeader } from '../utils/formatters';
+import { formatOutput, OutputFormat, printHeader, printOutput } from '../utils/formatters';
 
 interface ProcessInfo {
   query_id: string;
@@ -26,9 +26,11 @@ export async function listProcesses(
 
   const columns = config.processes.columns;
   const output = formatOutput(data, format, columns, config);
-  console.log(output);
 
   if (format === 'table') {
-    console.log(`\nTotal: ${data.length} running processes`);
+    console.log(output);
+    console.log(`\nTotal: ${data.length} running processes\n\n`);
+  } else {
+    printOutput(output);
   }
 }

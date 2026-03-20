@@ -1,6 +1,6 @@
 import { executeQuery, SystemQueries } from '../utils/clickhouse';
 import { loadCLIConfig } from '../utils/config';
-import { formatOutput, OutputFormat, printHeader } from '../utils/formatters';
+import { formatOutput, OutputFormat, printHeader, printOutput } from '../utils/formatters';
 
 interface ViewInfo {
   name: string;
@@ -32,10 +32,12 @@ export async function listViews(
 
   const columns = config.views.columns;
   const output = formatOutput(data, format, columns, config);
-  console.log(output);
 
   if (format === 'table' && data.length > 0) {
-    console.log(`\nTotal: ${data.length} views`);
+    console.log(output);
+    console.log(`\nTotal: ${data.length} views\n\n`);
+  } else {
+    printOutput(output);
   }
 }
 
@@ -55,9 +57,11 @@ export async function listMaterializedViews(
 
   const columns = config.materialized_views.columns;
   const output = formatOutput(data, format, columns, config);
-  console.log(output);
 
   if (format === 'table' && data.length > 0) {
-    console.log(`\nTotal: ${data.length} materialized views`);
+    console.log(output);
+    console.log(`\nTotal: ${data.length} materialized views\n\n`);
+  } else {
+    printOutput(output);
   }
 }
