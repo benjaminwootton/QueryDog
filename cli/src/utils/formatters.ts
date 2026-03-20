@@ -117,17 +117,57 @@ function formatAsTable(
       }
 
       // Color code certain values
-      if (key === 'is_done' || key === 'active') {
-        return value ? chalk.green('true') : chalk.red('false');
+      if (key === 'is_done' || key === 'active' || key === 'success') {
+        return value ? chalk.green.bold('✓ true') : chalk.red.bold('✗ false');
       }
       if (key === 'type' && strValue === 'ExceptionWhileProcessing') {
-        return chalk.red(strValue);
+        return chalk.red.bold(strValue);
       }
+      if (key === 'type' && strValue === 'QueryFinish') {
+        return chalk.green(strValue);
+      }
+      // Database and table names in magenta
+      if (key === 'database' || key === 'db') {
+        return chalk.magenta(strValue);
+      }
+      if (key === 'table' || key === 'name' || key === 'table_name') {
+        return chalk.cyan(strValue);
+      }
+      // Size/memory values
+      if (key.includes('size') || key.includes('bytes') || key.includes('memory') || key.includes('rows')) {
+        return chalk.green(strValue);
+      }
+      // Time/duration values
+      if (key.includes('time') || key.includes('duration') || key.includes('elapsed')) {
+        return chalk.yellow(strValue);
+      }
+      // Status fields
+      if (key === 'status' || key === 'state') {
+        if (strValue.toLowerCase().includes('error') || strValue.toLowerCase().includes('fail')) {
+          return chalk.red.bold(strValue);
+        }
+        if (strValue.toLowerCase().includes('success') || strValue.toLowerCase().includes('done') || strValue.toLowerCase().includes('complete')) {
+          return chalk.green.bold(strValue);
+        }
+        if (strValue.toLowerCase().includes('running') || strValue.toLowerCase().includes('progress')) {
+          return chalk.yellow(strValue);
+        }
+        return chalk.blue(strValue);
+      }
+      // User names
+      if (key === 'user' || key === 'user_name' || key === 'initial_user') {
+        return chalk.blue(strValue);
+      }
+      // Query text - keep it readable but dimmed
+      if (key === 'query' || key === 'query_text') {
+        return chalk.white(strValue);
+      }
+      // Numbers get yellow
       if (typeof value === 'number') {
         return chalk.yellow(strValue);
       }
 
-      return strValue;
+      return chalk.white(strValue);
     });
 
     table.push(values);
@@ -153,11 +193,11 @@ export function printEnvironments(environments: { name: string; host: string; po
 
   environments.forEach((env, index) => {
     table.push([
-      chalk.yellow(String(index + 1)),
-      chalk.white(env.name),
-      chalk.gray(env.host),
-      chalk.gray(String(env.port)),
-      chalk.blue(env.database),
+      chalk.yellow.bold(String(index + 1)),
+      chalk.green.bold(env.name),
+      chalk.cyan(env.host),
+      chalk.yellow(String(env.port)),
+      chalk.magenta(env.database),
     ]);
   });
 
@@ -166,12 +206,12 @@ export function printEnvironments(environments: { name: string; host: string; po
 
 export function printHeader(title: string, env?: string): void {
   console.log();
-  console.log(chalk.bold.blue('╔══════════════════════════════════════════════════════════════╗'));
-  console.log(chalk.bold.blue('║') + chalk.bold.white(`  QueryDog CLI - ${title}`.padEnd(62)) + chalk.bold.blue('║'));
+  console.log(chalk.bold.cyan('╔══════════════════════════════════════════════════════════════╗'));
+  console.log(chalk.bold.cyan('║') + chalk.bold.yellow(`  🐕 QueryDog CLI - ${title}`.padEnd(63)) + chalk.bold.cyan('║'));
   if (env) {
-    console.log(chalk.bold.blue('║') + chalk.gray(`  Environment: ${env}`.padEnd(62)) + chalk.bold.blue('║'));
+    console.log(chalk.bold.cyan('║') + chalk.magenta(`  Environment: ${env}`.padEnd(62)) + chalk.bold.cyan('║'));
   }
-  console.log(chalk.bold.blue('╚══════════════════════════════════════════════════════════════╝'));
+  console.log(chalk.bold.cyan('╚══════════════════════════════════════════════════════════════╝'));
   console.log();
 }
 

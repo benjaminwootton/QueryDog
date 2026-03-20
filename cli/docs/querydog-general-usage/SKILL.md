@@ -21,9 +21,17 @@ tags:
 
 This document describes how to use the QueryDog CLI tool for querying and managing ClickHouse databases.
 
-## Overview
+## Important: Option Placement
 
-QueryDog CLI (`querydog`) is a command-line tool for interacting with ClickHouse databases. It provides commands for viewing tables, queries, partitions, cluster info, and more.
+**Global options MUST come BEFORE the command:**
+
+```bash
+# CORRECT
+querydog --env 1 --limit 50 queries
+
+# INCORRECT - options after command may not be parsed
+querydog --env 1 queries --limit 50
+```
 
 ## Environment Selection
 
@@ -33,255 +41,219 @@ All commands require an environment to be specified using `--env`:
 # List available environments
 querydog envs
 
-# Use a specific environment
-querydog --env "Playground" tables
-querydog --env Marlink queries
-```
+# Use environment by number
+querydog --env 1 tables
 
-If `--env` is omitted, the CLI will display available environments from `querydog.yaml`.
+# Use environment by name
+querydog --env "Production" tables
+```
 
 ## Output Formats
 
-The CLI supports three output formats:
-
 ```bash
 # Default: Pretty-printed table
-querydog --env Playground tables
+querydog --env 1 tables
 
 # JSON format
-querydog --env Playground tables --format json
+querydog --env 1 --format json tables
 
 # CSV format
-querydog --env Playground tables --format csv
+querydog --env 1 --format csv tables
+```
+
+## Query Log Analysis
+
+The main command for query analysis is `queries` with a `--mode` option:
+
+```bash
+# Recent queries (default mode: all)
+querydog --env 1 queries
+
+# With time/limit options (BEFORE the command)
+querydog --env 1 --hours 4 --limit 20 queries
+
+# Slowest queries
+querydog --env 1 --hours 4 --limit 20 queries --mode slowest
+
+# Highest memory usage
+querydog --env 1 queries --mode highestmemory
+
+# Most frequent queries (grouped)
+querydog --env 1 queries --mode frequent
+
+# Queries grouped by table
+querydog --env 1 queries --mode bytable
+
+# Query errors only
+querydog --env 1 queries --mode errors
 ```
 
 ## Schema Commands
 
 ```bash
 # List tables
-querydog --env <env> tables
-querydog --env <env> tables -d mydb  # Filter by database
+querydog --env 1 tables
+querydog --env 1 -d mydb tables
 
 # List views
-querydog --env <env> views
+querydog --env 1 views
 
 # List materialized views
-querydog --env <env> materialized-views
-querydog --env <env> mv  # Alias
+querydog --env 1 materialized-views
 
 # List databases with statistics
-querydog --env <env> databases
-querydog --env <env> dbs  # Alias
+querydog --env 1 databases
 
 # List indexes
-querydog --env <env> indexes
+querydog --env 1 indexes
 
 # List projections
-querydog --env <env> projections
+querydog --env 1 projections
 
 # List dictionaries
-querydog -e <env> dictionaries
-querydog -e <env> dicts  # Alias
+querydog --env 1 dictionaries
 ```
 
 ## Schema Analysis
 
 ```bash
 # Find Nullable columns (optimization candidates)
-querydog -e <env> schema-nullables
-querydog -e <env> schema-nullables -d mydb
+querydog --env 1 schema-nullables
+querydog --env 1 -d mydb schema-nullables
 
-# Find oversized integer columns (Int64 where Int32 may work)
-querydog -e <env> schema-oversized
-querydog -e <env> schema-oversized -d mydb
+# Find oversized integer columns
+querydog --env 1 schema-oversized
 
 # Column statistics for a specific table
-querydog -e <env> column-stats -d mydb -t mytable
+querydog --env 1 -d mydb -t mytable column-stats
 ```
 
 ## Storage Commands
 
 ```bash
 # List partitions
-querydog --env <env> partitions
-querydog --env <env> partitions -d mydb -t mytable  # Filter
+querydog --env 1 partitions
+querydog --env 1 -d mydb -t mytable partitions
 
 # List mutations
-querydog --env <env> mutations
+querydog --env 1 mutations
 ```
 
 ## Activity Commands
 
 ```bash
 # Show running processes
-querydog --env <env> processes
-querydog --env <env> ps  # Alias
+querydog --env 1 processes
 
 # Show active merges
-querydog --env <env> merges
-```
-
-## Query Log Analysis
-
-The query log commands support time filtering with `--hours` and result limiting with `--limit`:
-
-```bash
-# Recent queries (last 24h by default)
-querydog --env <env> queries
-querydog --env <env> queries --hours 1 --limit 100
-
-# Available query modes
-querydog --env <env> queries --mode all            # Recent queries (default)
-querydog --env <env> queries --mode slowest        # Slowest queries
-querydog --env <env> queries --mode highestmemory  # Highest memory usage
-querydog --env <env> queries --mode frequent       # Most frequent (grouped)
-querydog --env <env> queries --mode bytable        # Grouped by table
-querydog --env <env> queries --mode errors         # Errors only
+querydog --env 1 merges
 ```
 
 ## Cluster Commands
 
 ```bash
 # List clusters
-querydog --env <env> clusters
+querydog --env 1 clusters
 
 # List replicas
-querydog --env <env> replicas
+querydog --env 1 replicas
 
 # Show replication queue
-querydog --env <env> replication-queue
-querydog --env <env> repq  # Alias
+querydog --env 1 replication-queue
 
 # Browse ZooKeeper
-querydog --env <env> zookeeper
-querydog --env <env> zk --path /clickhouse  # Specific path
+querydog --env 1 zookeeper
+querydog --env 1 zookeeper --path /clickhouse
 ```
 
 ## Storage & Metrics
 
 ```bash
 # Disks and storage
-querydog --env <env> disks
-querydog --env <env> storage-policies
-querydog --env <env> policies  # Alias
+querydog --env 1 disks
+querydog --env 1 storage-policies
 
 # System metrics
-querydog --env <env> metrics
-querydog --env <env> async-metrics
-querydog --env <env> events
-querydog --env <env> system-errors
-querydog --env <env> warnings
+querydog --env 1 metrics
+querydog --env 1 async-metrics
+querydog --env 1 events
+querydog --env 1 system-errors
+querydog --env 1 warnings
 ```
 
 ## Users & Security
 
 ```bash
-querydog --env <env> users
-querydog --env <env> roles
-querydog --env <env> grants
-querydog --env <env> quotas
+querydog --env 1 users
+querydog --env 1 roles
+querydog --env 1 grants
+querydog --env 1 quotas
 ```
 
 ## Configuration
 
 ```bash
 # List settings (searchable)
-querydog --env <env> settings
-querydog --env <env> settings --search max_memory
+querydog --env 1 settings
+querydog --env 1 settings --search max_memory
 ```
 
 ## Logs
 
 ```bash
 # Show text log (last 1 hour by default)
-querydog --env <env> text-log
-querydog --env <env> logs  # Alias
-querydog --env <env> logs --hours 2 --level Error
+querydog --env 1 text-log
+querydog --env 1 --hours 2 text-log --level Error
 ```
 
 ## Background Operations
 
 ```bash
-querydog --env <env> async-inserts
-querydog --env <env> query-cache
-querydog --env <env> view-refreshes
-querydog --env <env> background-jobs
-querydog --env <env> jobs  # Alias
+querydog --env 1 async-inserts
+querydog --env 1 query-cache
+querydog --env 1 view-refreshes
+querydog --env 1 background-jobs
 ```
 
 ## Interactive TUI Mode
 
-Launch the interactive terminal UI:
-
 ```bash
 querydog tui
-querydog --env Playground tui  # Pre-select environment
+querydog --env 1 tui
 ```
-
-### TUI Keyboard Shortcuts
-
-- **Navigation**: Arrow keys or j/k to navigate menu
-- **Selection**: Enter to select
-- **Environment**: `e` to select environment
-- **Refresh**: `r` to refresh current view
-- **Quick Views**:
-  - `t` - Tables
-  - `v` - Views
-  - `p` - Partitions
-  - `m` - Mutations
-  - `P` - Processes
-  - `M` - Merges
-- **Help**: `?` to show help
-- **Quit**: `q` or Ctrl+C
 
 ## Common Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--env <name>` | Environment name | (required) |
+| `--env <name\|number>` | Environment name or number | (required) |
 | `--format <fmt>` | Output format: table, json, csv | table |
-| `--hours <n>` | Time range for query log commands | 24 |
+| `--hours <n>` | Time range in hours | 24 |
 | `--limit <n>` | Maximum results | 50 |
 | `-d, --database <db>` | Filter by database | all |
 | `-t, --table <tbl>` | Filter by table | all |
+| `-w, --wide` | Wide output - don't truncate columns | false |
 
 ## Examples
 
 ```bash
 # Check what's happening on a server
-querydog --env Prod processes
-querydog --env Prod merges
-querydog --env Prod mutations
+querydog --env 1 processes
+querydog --env 1 merges
+querydog --env 1 mutations
 
 # Analyze query performance
-querydog --env Prod queries --mode slowest --hours 4 --limit 20
-querydog --env Prod queries --mode frequent --hours 24
+querydog --env 1 --hours 4 --limit 20 queries --mode slowest
+querydog --env 1 --hours 24 queries --mode frequent
 
 # Check storage
-querydog --env Prod disks
-querydog --env Prod partitions -d events
+querydog --env 1 disks
+querydog --env 1 -d events partitions
 
 # Export data as JSON
-querydog --env Prod tables --format json > tables.json
+querydog --env 1 --format json tables > tables.json
 
 # Check cluster health
-querydog --env Prod replicas
-querydog --env Prod replication-queue
+querydog --env 1 replicas
+querydog --env 1 replication-queue
 ```
-
-## Configuration File
-
-The CLI reads environment configurations from `.querydog.yaml`:
-
-```yaml
-environments:
-  - name: "Production"
-    host: "clickhouse.example.com"
-    port: 8443
-    user: "admin"
-    password: "secret"
-    database: "default"
-    secure: true
-```
-
-Column display settings are in `config/querydog-cli.yaml`.

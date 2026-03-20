@@ -58,7 +58,6 @@ import {
   listQueryCache,
   listViewRefreshes,
 } from './commands/cluster';
-import { startTUI } from './tui/app';
 
 const program = new Command();
 
@@ -75,7 +74,8 @@ program
   .option('--limit <limit>', 'Limit number of results', '50')
   .option('-d, --database <database>', 'Filter by database')
   .option('-t, --table <table>', 'Filter by table')
-  .option('-w, --wide', 'Wide output - do not truncate columns to terminal width');
+  .option('-w, --wide', 'Wide output - do not truncate columns to terminal width')
+  .option('-i, --interactive', 'Interactive mode - stay in REPL after each command');
 
 // Helper to prompt for input
 function prompt(rl: readline.Interface, question: string, defaultValue?: string): Promise<string> {
@@ -216,7 +216,7 @@ program
       console.log(chalk.yellow('\n  A querydog.yaml file already exists.'));
       console.log(chalk.gray('  Use --force to overwrite, or edit the file directly.\n'));
       console.log(chalk.cyan('  To add a new environment to an existing config, use:\n'));
-      console.log(chalk.white('    querydog env-add\n'));
+      console.log(chalk.white('    querydog envs --add\n'));
       return;
     }
 
@@ -270,95 +270,9 @@ program
       console.log(chalk.green(`\n  ✓ Configuration saved to: ${savedPath}\n`));
       console.log(chalk.gray('  You can now run commands like:\n'));
       console.log(chalk.white(`    querydog tables --env "${name}"`));
-      console.log(chalk.white(`    querydog queries --env "${name}"`));
-      console.log(chalk.white('    querydog tui\n'));
+      console.log(chalk.white(`    querydog queries --env "${name}"\n`));
     } catch (err) {
       rl.close();
-      const message = err instanceof Error ? err.message : String(err);
-      console.log(chalk.red(`\n  Error: ${message}\n`));
-    }
-  });
-
-program
-  .command('env-add')
-  .description('Add a new environment to querydog.yaml')
-  .action(async () => {
-    if (!configExists()) {
-      console.log(chalk.yellow('\n  No querydog.yaml file found.'));
-      console.log(chalk.cyan('  Run "querydog init" to create one first.\n'));
-      return;
-    }
-
-    console.log(chalk.cyan('\n  Add New Environment'));
-    console.log(chalk.gray('  ════════════════════════════════════════\n'));
-
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    try {
-      // Load existing config
-      const existingEnvs = listEnvironments();
-      console.log(chalk.gray('  Existing environments:'));
-      existingEnvs.forEach(e => console.log(chalk.gray(`    - ${e.name}`)));
-      console.log('');
-
-      const name = await prompt(rl, '  Environment name');
-      if (!name) {
-        console.log(chalk.red('\n  Error: Environment name is required\n'));
-        rl.close();
-        return;
-      }
-      if (existingEnvs.some(e => e.name.toLowerCase() === name.toLowerCase())) {
-        console.log(chalk.red(`\n  Error: Environment "${name}" already exists\n`));
-        rl.close();
-        return;
-      }
-
-      const host = await prompt(rl, '  Host');
-      if (!host) {
-        console.log(chalk.red('\n  Error: Host is required\n'));
-        rl.close();
-        return;
-      }
-      const portStr = await prompt(rl, '  Port', '8443');
-      const port = parseInt(portStr, 10);
-      if (isNaN(port)) {
-        console.log(chalk.red('\n  Error: Invalid port number\n'));
-        rl.close();
-        return;
-      }
-      const user = await prompt(rl, '  User', 'default');
-      const password = await prompt(rl, '  Password (will be stored in plain text)', '');
-      const database = await prompt(rl, '  Database', 'default');
-      const secureStr = await prompt(rl, '  Use HTTPS (true/false)', 'true');
-      const secure = secureStr.toLowerCase() === 'true' || secureStr === '1' || secureStr === 'yes';
-
-      rl.close();
-
-      const environment: Environment = {
-        name,
-        host,
-        port,
-        user,
-        password,
-        database,
-        secure,
-      };
-
-      const config: QuerydogConfig = {
-        environments: [...existingEnvs, environment],
-      };
-
-      const savedPath = saveQuerydogConfig(config);
-      console.log(chalk.green(`\n  ✓ Environment "${name}" added to: ${savedPath}\n`));
-    } catch (err) {
-      rl.close();
-      if (err instanceof ConfigNotFoundError) {
-        handleConfigNotFound(err);
-        return;
-      }
       const message = err instanceof Error ? err.message : String(err);
       console.log(chalk.red(`\n  Error: ${message}\n`));
     }
@@ -366,9 +280,128 @@ program
 
 program
   .command('envs')
-  .description('List available environments')
-  .action(() => {
+  .description('Manage environments (list, add, remove)')
+  .option('--add', 'Add a new environment')
+  .option('--remove <name>', 'Remove an environment by name or number')
+  .action(async (cmdOpts) => {
     try {
+      // Handle --add
+      if (cmdOpts.add) {
+        if (!configExists()) {
+          console.log(chalk.yellow('\n  No querydog.yaml file found.'));
+          console.log(chalk.cyan('  Run "querydog init" to create one first.\n'));
+          return;
+        }
+
+        console.log(chalk.cyan('\n  Add New Environment'));
+        console.log(chalk.gray('  ════════════════════════════════════════\n'));
+
+        const rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+
+        try {
+          const existingEnvs = listEnvironments();
+          console.log(chalk.gray('  Existing environments:'));
+          existingEnvs.forEach(e => console.log(chalk.gray(`    - ${e.name}`)));
+          console.log('');
+
+          const name = await prompt(rl, '  Environment name');
+          if (!name) {
+            console.log(chalk.red('\n  Error: Environment name is required\n'));
+            rl.close();
+            return;
+          }
+          if (existingEnvs.some(e => e.name.toLowerCase() === name.toLowerCase())) {
+            console.log(chalk.red(`\n  Error: Environment "${name}" already exists\n`));
+            rl.close();
+            return;
+          }
+
+          const host = await prompt(rl, '  Host');
+          if (!host) {
+            console.log(chalk.red('\n  Error: Host is required\n'));
+            rl.close();
+            return;
+          }
+          const portStr = await prompt(rl, '  Port', '8443');
+          const port = parseInt(portStr, 10);
+          if (isNaN(port)) {
+            console.log(chalk.red('\n  Error: Invalid port number\n'));
+            rl.close();
+            return;
+          }
+          const user = await prompt(rl, '  User', 'default');
+          const password = await prompt(rl, '  Password (will be stored in plain text)', '');
+          const database = await prompt(rl, '  Database', 'default');
+          const secureStr = await prompt(rl, '  Use HTTPS (true/false)', 'true');
+          const secure = secureStr.toLowerCase() === 'true' || secureStr === '1' || secureStr === 'yes';
+
+          rl.close();
+
+          const environment: Environment = {
+            name,
+            host,
+            port,
+            user,
+            password,
+            database,
+            secure,
+          };
+
+          const config: QuerydogConfig = {
+            environments: [...existingEnvs, environment],
+          };
+
+          const savedPath = saveQuerydogConfig(config);
+          console.log(chalk.green(`\n  ✓ Environment "${name}" added to: ${savedPath}\n`));
+        } catch (err) {
+          rl.close();
+          throw err;
+        }
+        return;
+      }
+
+      // Handle --remove
+      if (cmdOpts.remove) {
+        const existingEnvs = listEnvironments();
+        const identifier = cmdOpts.remove;
+
+        let envToRemove: Environment | undefined;
+        let envIndex = -1;
+
+        // Try numeric index first
+        const index = parseInt(identifier, 10);
+        if (!isNaN(index) && String(index) === identifier) {
+          if (index >= 1 && index <= existingEnvs.length) {
+            envIndex = index - 1;
+            envToRemove = existingEnvs[envIndex];
+          }
+        } else {
+          // Try name match (case-insensitive)
+          envIndex = existingEnvs.findIndex(e => e.name.toLowerCase() === identifier.toLowerCase());
+          if (envIndex !== -1) {
+            envToRemove = existingEnvs[envIndex];
+          }
+        }
+
+        if (!envToRemove) {
+          console.log(chalk.red(`\n  Error: Environment "${identifier}" not found\n`));
+          console.log(chalk.gray('  Available environments:'));
+          existingEnvs.forEach((e, i) => console.log(chalk.gray(`    ${i + 1}. ${e.name}`)));
+          console.log('');
+          return;
+        }
+
+        const remainingEnvs = existingEnvs.filter((_, i) => i !== envIndex);
+        const config: QuerydogConfig = { environments: remainingEnvs };
+        const savedPath = saveQuerydogConfig(config);
+        console.log(chalk.green(`\n  ✓ Environment "${envToRemove.name}" removed from: ${savedPath}\n`));
+        return;
+      }
+
+      // Default: list environments
       printHeader('Environments', '');
       const envs = listEnvironments();
       console.log(printEnvironments(envs.map((e, i) => ({
@@ -535,7 +568,6 @@ program
 
 program
   .command('dictionaries')
-  .alias('dicts')
   .description('List dictionaries')
   .action(async () => {
     const opts = program.opts();
@@ -546,7 +578,6 @@ program
 
 program
   .command('processes')
-  .alias('ps')
   .description('List running processes')
   .action(async () => {
     const opts = program.opts();
@@ -581,7 +612,6 @@ program
 
 program
   .command('replication-queue')
-  .alias('repq')
   .description('Show replication queue')
   .action(async () => {
     const opts = program.opts();
@@ -590,7 +620,6 @@ program
 
 program
   .command('zookeeper')
-  .alias('zk')
   .description('Browse zookeeper')
   .option('--path <path>', 'Zookeeper path', '/')
   .action(async (cmdOpts) => {
@@ -613,7 +642,6 @@ program
 
 program
   .command('storage-policies')
-  .alias('policies')
   .description('List storage policies')
   .action(async () => {
     const opts = program.opts();
@@ -712,7 +740,6 @@ program
 
 program
   .command('text-log')
-  .alias('logs')
   .description('Show text log entries')
   .option('--level <level>', 'Filter by log level (Debug, Information, Warning, Error)')
   .action(async (cmdOpts) => {
@@ -754,22 +781,82 @@ program
 
 program
   .command('background-jobs')
-  .alias('jobs')
   .description('Show background jobs')
   .action(async () => {
     const opts = program.opts();
     await runCommand(listBackgroundJobs, opts);
   });
 
-// ==================== TUI MODE ====================
+// ==================== DDL COMMAND ====================
 
 program
-  .command('tui')
-  .description('Launch interactive TUI mode')
-  .action(async () => {
+  .command('ddl')
+  .description('Show CREATE TABLE DDL statements')
+  .option('--all', 'Show DDL for all tables')
+  .action(async (cmdOpts) => {
     const opts = program.opts();
-    const env = opts.env ? await getEnvOrPrompt(opts.env) : undefined;
-    await startTUI(env || undefined);
+
+    await runCommand(
+      async (format, envName) => {
+        const { getClient } = await import('./utils/clickhouse');
+        const client = getClient();
+
+        let query: string;
+        if (cmdOpts.all) {
+          query = `
+            SELECT database, name as table, create_table_query as ddl
+            FROM system.tables
+            WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')
+            ORDER BY database, name
+          `;
+        } else if (opts.database && opts.table) {
+          query = `
+            SELECT database, name as table, create_table_query as ddl
+            FROM system.tables
+            WHERE database = '${opts.database}' AND name = '${opts.table}'
+          `;
+        } else if (opts.database) {
+          query = `
+            SELECT database, name as table, create_table_query as ddl
+            FROM system.tables
+            WHERE database = '${opts.database}'
+            ORDER BY name
+          `;
+        } else {
+          console.log(chalk.yellow('Usage: querydog ddl --all'));
+          console.log(chalk.yellow('       querydog ddl -d <database>'));
+          console.log(chalk.yellow('       querydog ddl -d <database> -t <table>'));
+          return;
+        }
+
+        const result = await client.query({ query, format: 'JSONEachRow' });
+        const data = await result.json() as { database: string; table: string; ddl: string }[];
+
+        if (data.length === 0) {
+          console.log(chalk.yellow('No tables found.'));
+          return;
+        }
+
+        printHeader('DDL Statements', envName);
+
+        if (format === 'json') {
+          console.log(JSON.stringify(data, null, 2));
+        } else if (format === 'csv') {
+          console.log('database,table,ddl');
+          data.forEach(row => {
+            console.log(`${row.database},${row.table},"${row.ddl.replace(/"/g, '""')}"`);
+          });
+        } else {
+          // Pretty print DDL for table format
+          data.forEach((row, index) => {
+            if (index > 0) console.log('');
+            console.log(chalk.cyan.bold(`-- ${row.database}.${row.table}`));
+            console.log(chalk.green(row.ddl) + ';');
+          });
+        }
+      },
+      opts
+    );
   });
 
 // ==================== UI COMMAND ====================
@@ -790,10 +877,79 @@ program
     console.log(chalk.white('    npm run start\n'));
   });
 
+// Add trailing blank lines after every command
+program.hook('postAction', () => {
+  console.log('\n');
+});
+
+// Interactive REPL mode
+async function startInteractiveMode(): Promise<void> {
+  const opts = program.opts();
+
+  console.log(chalk.cyan.bold('\n  🐕 QueryDog Interactive Mode'));
+  console.log(chalk.gray('  Type a command (without "querydog"), or "exit" to quit.\n'));
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const promptUser = (): void => {
+    rl.question(chalk.yellow.bold('querydog> '), async (input) => {
+      const trimmed = input.trim();
+
+      if (trimmed === 'exit' || trimmed === 'quit' || trimmed === 'q') {
+        console.log(chalk.gray('\n  Goodbye! 🐕\n'));
+        rl.close();
+        process.exit(0);
+      }
+
+      if (trimmed === '') {
+        promptUser();
+        return;
+      }
+
+      if (trimmed === 'help') {
+        program.outputHelp();
+        promptUser();
+        return;
+      }
+
+      try {
+        // Parse the input as command arguments, preserving global options
+        const args = trimmed.split(/\s+/);
+
+        // Preserve env and format from global options
+        if (opts.env && !args.includes('-e') && !args.includes('--env')) {
+          args.push('-e', opts.env);
+        }
+        if (opts.format && !args.includes('-f') && !args.includes('--format')) {
+          args.push('-f', opts.format);
+        }
+        if (opts.wide && !args.includes('-w') && !args.includes('--wide')) {
+          args.push('-w');
+        }
+
+        // Create a fresh program instance for parsing
+        await program.parseAsync(['node', 'querydog', ...args]);
+      } catch (err) {
+        // Errors are already handled by commands
+      }
+
+      promptUser();
+    });
+  };
+
+  promptUser();
+}
+
 // Parse and run
 program.parse();
 
-// Show help if no command provided
-if (!process.argv.slice(2).length) {
+// Check if interactive mode or show help if no command
+const globalOpts = program.opts();
+if (globalOpts.interactive) {
+  startInteractiveMode();
+} else if (!process.argv.slice(2).length) {
   program.outputHelp();
 }
