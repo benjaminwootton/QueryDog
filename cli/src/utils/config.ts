@@ -44,10 +44,10 @@ export interface CLIConfig {
 }
 
 function findProjectRoot(): string {
-  // Start from current directory and walk up to find querydog.yaml
+  // Start from current directory and walk up to find querydog.yml
   let dir = process.cwd();
   while (dir !== path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, 'querydog.yaml'))) {
+    if (fs.existsSync(path.join(dir, 'querydog.yml'))) {
       return dir;
     }
     dir = path.dirname(dir);
@@ -65,11 +65,11 @@ export class ConfigNotFoundError extends Error {
 
 export function getConfigSearchPaths(): string[] {
   return [
-    path.join(findProjectRoot(), 'querydog.yaml'),
-    path.resolve(__dirname, '../../../querydog.yaml'),  // When running from dist
-    path.resolve(__dirname, '../../querydog.yaml'),     // When running with ts-node
-    path.resolve(process.cwd(), '../querydog.yaml'),    // Parent of cwd
-    path.resolve(process.cwd(), 'querydog.yaml'),       // Current dir
+    path.join(findProjectRoot(), 'querydog.yml'),
+    path.resolve(__dirname, '../../../querydog.yml'),  // When running from dist
+    path.resolve(__dirname, '../../querydog.yml'),     // When running with ts-node
+    path.resolve(process.cwd(), '../querydog.yml'),    // Parent of cwd
+    path.resolve(process.cwd(), 'querydog.yml'),       // Current dir
   ];
 }
 
@@ -87,7 +87,7 @@ export function loadQuerydogConfig(): QuerydogConfig {
 }
 
 export function saveQuerydogConfig(config: QuerydogConfig, targetPath?: string): string {
-  const savePath = targetPath || path.resolve(process.cwd(), 'querydog.yaml');
+  const savePath = targetPath || path.resolve(process.cwd(), 'querydog.yml');
   const content = yaml.stringify(config, { indent: 2 });
   fs.writeFileSync(savePath, content, 'utf8');
   return savePath;

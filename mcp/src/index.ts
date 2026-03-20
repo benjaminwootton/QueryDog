@@ -31,7 +31,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'list_environments',
-        description: 'List available ClickHouse environments from querydog.yaml',
+        description: 'List available ClickHouse environments from querydog.yml',
         inputSchema: {
           type: 'object',
           properties: {},

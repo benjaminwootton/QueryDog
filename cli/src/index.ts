@@ -68,7 +68,7 @@ program
 
 // Global options
 program
-  .option('-e, --env <name>', 'Environment name from querydog.yaml')
+  .option('-e, --env <name>', 'Environment name from querydog.yml')
   .option('-f, --format <format>', 'Output format: table, json, csv', 'table')
   .option('--hours <hours>', 'Time range in hours for query log commands', '24')
   .option('--limit <limit>', 'Limit number of results', '50')
@@ -92,15 +92,15 @@ function prompt(rl: readline.Interface, question: string, defaultValue?: string)
 
 // Helper to display config not found error
 function handleConfigNotFound(error: ConfigNotFoundError): void {
-  console.log(chalk.red('\n  Error: querydog.yaml configuration file not found\n'));
+  console.log(chalk.red('\n  Error: querydog.yml configuration file not found\n'));
   console.log(chalk.gray('  Searched locations:'));
   error.searchedPaths.forEach(p => console.log(chalk.gray(`    - ${p}`)));
   console.log('');
   console.log(chalk.cyan('  To create a new configuration file, run:\n'));
   console.log(chalk.white('    querydog init\n'));
-  console.log(chalk.gray('  This will interactively create a querydog.yaml file with your'));
+  console.log(chalk.gray('  This will interactively create a querydog.yml file with your'));
   console.log(chalk.gray('  ClickHouse connection settings.\n'));
-  console.log(chalk.gray('  Example querydog.yaml structure:'));
+  console.log(chalk.gray('  Example querydog.yml structure:'));
   console.log(chalk.gray('  ─────────────────────────────────────'));
   console.log(chalk.yellow('  environments:'));
   console.log(chalk.yellow('    - name: "Production"'));
@@ -208,12 +208,12 @@ async function runCommand(
 
 program
   .command('init')
-  .description('Create a new querydog.yaml configuration file')
+  .description('Create a new querydog.yml configuration file')
   .option('--force', 'Overwrite existing configuration file')
   .action(async (cmdOpts) => {
     // Check if config already exists
     if (configExists() && !cmdOpts.force) {
-      console.log(chalk.yellow('\n  A querydog.yaml file already exists.'));
+      console.log(chalk.yellow('\n  A querydog.yml file already exists.'));
       console.log(chalk.gray('  Use --force to overwrite, or edit the file directly.\n'));
       console.log(chalk.cyan('  To add a new environment to an existing config, use:\n'));
       console.log(chalk.white('    querydog envs --add\n'));
@@ -288,7 +288,7 @@ program
       // Handle --add
       if (cmdOpts.add) {
         if (!configExists()) {
-          console.log(chalk.yellow('\n  No querydog.yaml file found.'));
+          console.log(chalk.yellow('\n  No querydog.yml file found.'));
           console.log(chalk.cyan('  Run "querydog init" to create one first.\n'));
           return;
         }

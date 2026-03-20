@@ -81,11 +81,11 @@ querydog() {
     local CONFIG_FILE=""
     local QUERIES_DIR=""
 
-    # Find querydog.yaml: check current dir first, then home dir
-    if [ -f "./querydog.yaml" ]; then
-        CONFIG_FILE="$(pwd)/querydog.yaml"
-    elif [ -f "$HOME/querydog.yaml" ]; then
-        CONFIG_FILE="$HOME/querydog.yaml"
+    # Find querydog.yml: check current dir first, then home dir
+    if [ -f "./querydog.yml" ]; then
+        CONFIG_FILE="$(pwd)/querydog.yml"
+    elif [ -f "$HOME/querydog.yml" ]; then
+        CONFIG_FILE="$HOME/querydog.yml"
     fi
 
     # Find queries folder: check current dir first, then home dir
@@ -98,7 +98,7 @@ querydog() {
     # Build docker args array for proper quoting
     local DOCKER_ARGS=()
     if [ -n "$CONFIG_FILE" ]; then
-        DOCKER_ARGS+=("-v" "${CONFIG_FILE}:/app/querydog.yaml")
+        DOCKER_ARGS+=("-v" "${CONFIG_FILE}:/app/querydog.yml")
     fi
     if [ -n "$QUERIES_DIR" ]; then
         DOCKER_ARGS+=("-v" "${QUERIES_DIR}:/app/queries")

@@ -12,7 +12,7 @@ dist-ssr
 .env
 .env.local
 .env.*.local
-querydog.yaml
+querydog.yml
 
 # Editor
 .vscode/*

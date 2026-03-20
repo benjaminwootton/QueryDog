@@ -20,13 +20,13 @@ git clone https://github.com/benjaminwootton/querydog
 cd querydog
 ```
 
-Copy `querydog.yaml.example` to `querydog.yaml`:
+Copy `querydog.yml.example` to `querydog.yml`:
 
 ```bash
-cp querydog.yaml.example querydog.yaml
+cp querydog.yml.example querydog.yml
 ```
 
-Edit `querydog.yaml` with your connection details. You can configure multiple environments and switch between them from the UI:
+Edit `querydog.yml` with your connection details. You can configure multiple environments and switch between them from the UI:
 
 ```yaml
 environments:

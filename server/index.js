@@ -29,15 +29,15 @@ app.use(express.static(path.join(__dirname, '../dist')));
 
 // ==================== YAML CONFIG ====================
 
-// Load environments from querydog.yaml, falling back to .env
+// Load environments from querydog.yml, falling back to .env
 function loadConfig(options = {}) {
   const { quiet = false } = options;
-  const yamlPath = path.join(process.cwd(), 'querydog.yaml');
+  const yamlPath = path.join(process.cwd(), 'querydog.yml');
   if (fs.existsSync(yamlPath)) {
     const raw = yaml.load(fs.readFileSync(yamlPath, 'utf-8'));
     if (raw && raw.environments && raw.environments.length > 0) {
       if (!quiet) {
-        console.log(`Loaded ${raw.environments.length} environment(s) from querydog.yaml`);
+        console.log(`Loaded ${raw.environments.length} environment(s) from querydog.yml`);
       }
       return raw.environments.map(env => ({
         name: env.name || 'Default',
@@ -55,7 +55,7 @@ function loadConfig(options = {}) {
   }
   // Fallback to .env
   if (!quiet) {
-    console.log('No querydog.yaml found, falling back to .env');
+    console.log('No querydog.yml found, falling back to .env');
   }
   return [{
     name: 'Default',
@@ -201,7 +201,7 @@ app.get('/api/connection-info', async (req, res) => {
   }
 });
 
-// Read environments directly from querydog.yaml (no ClickHouse connection required)
+// Read environments directly from querydog.yml (no ClickHouse connection required)
 app.get('/api/config/environments', (req, res) => {
   const envs = loadConfig({ quiet: true });
   res.json({
@@ -269,12 +269,12 @@ app.post('/api/environments/switch', async (req, res) => {
 
 // ==================== ENVIRONMENT MANAGEMENT API ====================
 
-// Helper to get querydog.yaml path
+// Helper to get querydog.yml path
 function getYamlPath() {
-  return path.join(process.cwd(), 'querydog.yaml');
+  return path.join(process.cwd(), 'querydog.yml');
 }
 
-// Helper to save environments to querydog.yaml
+// Helper to save environments to querydog.yml
 function saveConfig(envs) {
   const yamlPath = getYamlPath();
   const data = { environments: envs.map(env => {
@@ -6349,7 +6349,7 @@ async function startup() {
     console.error(`Database: ${env.database}`);
     console.error(`Secure: ${env.secure ? 'Yes' : 'No'}\n`);
     console.error('Error details:', error.message);
-    console.error('\nPlease check your querydog.yaml configuration and ensure ClickHouse is reachable.');
+    console.error('\nPlease check your querydog.yml configuration and ensure ClickHouse is reachable.');
     console.error('You can switch environments from the UI.\n');
   });
 }

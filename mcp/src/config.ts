@@ -21,7 +21,7 @@ export interface QuerydogConfig {
 function findProjectRoot(): string {
   let dir = process.cwd();
   while (dir !== path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, 'querydog.yaml'))) {
+    if (fs.existsSync(path.join(dir, 'querydog.yml'))) {
       return dir;
     }
     dir = path.dirname(dir);
@@ -31,9 +31,9 @@ function findProjectRoot(): string {
 
 export function loadConfig(): QuerydogConfig {
   const locations = [
-    path.join(findProjectRoot(), 'querydog.yaml'),
-    path.resolve(process.cwd(), 'querydog.yaml'),
-    path.resolve(process.cwd(), '../querydog.yaml'),
+    path.join(findProjectRoot(), 'querydog.yml'),
+    path.resolve(process.cwd(), 'querydog.yml'),
+    path.resolve(process.cwd(), '../querydog.yml'),
   ];
 
   for (const configPath of locations) {
@@ -43,7 +43,7 @@ export function loadConfig(): QuerydogConfig {
     }
   }
 
-  throw new Error(`querydog.yaml not found. Searched: ${locations.join(', ')}`);
+  throw new Error(`querydog.yml not found. Searched: ${locations.join(', ')}`);
 }
 
 export function listEnvironments(): Environment[] {
