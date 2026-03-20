@@ -3,12 +3,17 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
+import * as readline from 'readline';
 import {
   listEnvironments,
   getEnvironment,
   getEnvironmentByIndex,
   findEnvironmentByPartialName,
   Environment,
+  ConfigNotFoundError,
+  configExists,
+  saveQuerydogConfig,
+  QuerydogConfig,
 } from './utils/config';
 import { createClickHouseClient, closeClient } from './utils/clickhouse';
 import { printEnvironments, printError, printHeader, OutputFormat, setFormatOptions } from './utils/formatters';
@@ -72,56 +77,100 @@ program
   .option('-t, --table <table>', 'Filter by table')
   .option('-w, --wide', 'Wide output - do not truncate columns to terminal width');
 
+// Helper to prompt for input
+function prompt(rl: readline.Interface, question: string, defaultValue?: string): Promise<string> {
+  const displayQuestion = defaultValue
+    ? `${question} ${chalk.gray(`[${defaultValue}]`)}: `
+    : `${question}: `;
+
+  return new Promise((resolve) => {
+    rl.question(displayQuestion, (answer) => {
+      resolve(answer.trim() || defaultValue || '');
+    });
+  });
+}
+
+// Helper to display config not found error
+function handleConfigNotFound(error: ConfigNotFoundError): void {
+  console.log(chalk.red('\n  Error: querydog.yaml configuration file not found\n'));
+  console.log(chalk.gray('  Searched locations:'));
+  error.searchedPaths.forEach(p => console.log(chalk.gray(`    - ${p}`)));
+  console.log('');
+  console.log(chalk.cyan('  To create a new configuration file, run:\n'));
+  console.log(chalk.white('    querydog init\n'));
+  console.log(chalk.gray('  This will interactively create a querydog.yaml file with your'));
+  console.log(chalk.gray('  ClickHouse connection settings.\n'));
+  console.log(chalk.gray('  Example querydog.yaml structure:'));
+  console.log(chalk.gray('  ─────────────────────────────────────'));
+  console.log(chalk.yellow('  environments:'));
+  console.log(chalk.yellow('    - name: "Production"'));
+  console.log(chalk.yellow('      host: "clickhouse.example.com"'));
+  console.log(chalk.yellow('      port: 8443'));
+  console.log(chalk.yellow('      user: "default"'));
+  console.log(chalk.yellow('      password: ""'));
+  console.log(chalk.yellow('      database: "default"'));
+  console.log(chalk.yellow('      secure: true'));
+  console.log('');
+}
+
 // Helper to get environment
 async function getEnvOrPrompt(envName?: string): Promise<Environment | null> {
-  if (!envName) {
-    console.log(chalk.yellow('\nAvailable environments:'));
-    const envs = listEnvironments();
-    console.log(printEnvironments(envs.map((e, i) => ({
-      '#': i + 1,
-      name: e.name,
-      host: e.host,
-      port: e.port,
-      database: e.database,
-    }))));
-    console.log(chalk.gray('\nUse --env <name|number> to select an environment\n'));
-    return null;
-  }
+  try {
+    if (!envName) {
+      console.log(chalk.yellow('\nAvailable environments:'));
+      const envs = listEnvironments();
+      console.log(printEnvironments(envs.map((e, i) => ({
+        '#': i + 1,
+        name: e.name,
+        host: e.host,
+        port: e.port,
+        database: e.database,
+      }))));
+      console.log(chalk.gray('\nUse --env <name|number> to select an environment\n'));
+      return null;
+    }
 
-  let env: Environment | undefined;
+    let env: Environment | undefined;
 
-  // Try numeric index first
-  const index = parseInt(envName, 10);
-  if (!isNaN(index) && String(index) === envName) {
-    env = getEnvironmentByIndex(index);
+    // Try numeric index first
+    const index = parseInt(envName, 10);
+    if (!isNaN(index) && String(index) === envName) {
+      env = getEnvironmentByIndex(index);
+      if (!env) {
+        printError(`Environment #${index} not found (valid range: 1-${listEnvironments().length})`);
+        return null;
+      }
+      return env;
+    }
+
+    // Try exact match
+    env = getEnvironment(envName);
+
+    // Try partial match
     if (!env) {
-      printError(`Environment #${index} not found (valid range: 1-${listEnvironments().length})`);
+      const matches = findEnvironmentByPartialName(envName);
+      if (matches.length === 1) {
+        env = matches[0];
+      } else if (matches.length > 1) {
+        console.log(chalk.yellow(`Multiple environments match "${envName}":`));
+        matches.forEach(e => console.log(`  - ${e.name}`));
+        return null;
+      }
+    }
+
+    if (!env) {
+      printError(`Environment "${envName}" not found`);
       return null;
     }
+
     return env;
-  }
-
-  // Try exact match
-  env = getEnvironment(envName);
-
-  // Try partial match
-  if (!env) {
-    const matches = findEnvironmentByPartialName(envName);
-    if (matches.length === 1) {
-      env = matches[0];
-    } else if (matches.length > 1) {
-      console.log(chalk.yellow(`Multiple environments match "${envName}":`));
-      matches.forEach(e => console.log(`  - ${e.name}`));
-      return null;
+  } catch (error) {
+    if (error instanceof ConfigNotFoundError) {
+      handleConfigNotFound(error);
+      process.exit(1);
     }
+    throw error;
   }
-
-  if (!env) {
-    printError(`Environment "${envName}" not found`);
-    return null;
-  }
-
-  return env;
 }
 
 // Wrapper for commands
@@ -152,21 +201,187 @@ async function runCommand(
   }
 }
 
-// ==================== ENVIRONMENT LISTING ====================
+// ==================== ENVIRONMENT MANAGEMENT ====================
+
+program
+  .command('init')
+  .description('Create a new querydog.yaml configuration file')
+  .option('--force', 'Overwrite existing configuration file')
+  .action(async (cmdOpts) => {
+    // Check if config already exists
+    if (configExists() && !cmdOpts.force) {
+      console.log(chalk.yellow('\n  A querydog.yaml file already exists.'));
+      console.log(chalk.gray('  Use --force to overwrite, or edit the file directly.\n'));
+      console.log(chalk.cyan('  To add a new environment to an existing config, use:\n'));
+      console.log(chalk.white('    querydog env-add\n'));
+      return;
+    }
+
+    console.log(chalk.cyan('\n  QueryDog Configuration Setup'));
+    console.log(chalk.gray('  ════════════════════════════════════════\n'));
+    console.log(chalk.gray('  Enter your ClickHouse connection details:\n'));
+
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    try {
+      const name = await prompt(rl, '  Environment name', 'Production');
+      const host = await prompt(rl, '  Host');
+      if (!host) {
+        console.log(chalk.red('\n  Error: Host is required\n'));
+        rl.close();
+        return;
+      }
+      const portStr = await prompt(rl, '  Port', '8443');
+      const port = parseInt(portStr, 10);
+      if (isNaN(port)) {
+        console.log(chalk.red('\n  Error: Invalid port number\n'));
+        rl.close();
+        return;
+      }
+      const user = await prompt(rl, '  User', 'default');
+      const password = await prompt(rl, '  Password (will be stored in plain text)', '');
+      const database = await prompt(rl, '  Database', 'default');
+      const secureStr = await prompt(rl, '  Use HTTPS (true/false)', 'true');
+      const secure = secureStr.toLowerCase() === 'true' || secureStr === '1' || secureStr === 'yes';
+
+      rl.close();
+
+      const environment: Environment = {
+        name,
+        host,
+        port,
+        user,
+        password,
+        database,
+        secure,
+      };
+
+      const config: QuerydogConfig = {
+        environments: [environment],
+      };
+
+      const savedPath = saveQuerydogConfig(config);
+      console.log(chalk.green(`\n  ✓ Configuration saved to: ${savedPath}\n`));
+      console.log(chalk.gray('  You can now run commands like:\n'));
+      console.log(chalk.white(`    querydog tables --env "${name}"`));
+      console.log(chalk.white(`    querydog queries --env "${name}"`));
+      console.log(chalk.white('    querydog tui\n'));
+    } catch (err) {
+      rl.close();
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(chalk.red(`\n  Error: ${message}\n`));
+    }
+  });
+
+program
+  .command('env-add')
+  .description('Add a new environment to querydog.yaml')
+  .action(async () => {
+    if (!configExists()) {
+      console.log(chalk.yellow('\n  No querydog.yaml file found.'));
+      console.log(chalk.cyan('  Run "querydog init" to create one first.\n'));
+      return;
+    }
+
+    console.log(chalk.cyan('\n  Add New Environment'));
+    console.log(chalk.gray('  ════════════════════════════════════════\n'));
+
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    try {
+      // Load existing config
+      const existingEnvs = listEnvironments();
+      console.log(chalk.gray('  Existing environments:'));
+      existingEnvs.forEach(e => console.log(chalk.gray(`    - ${e.name}`)));
+      console.log('');
+
+      const name = await prompt(rl, '  Environment name');
+      if (!name) {
+        console.log(chalk.red('\n  Error: Environment name is required\n'));
+        rl.close();
+        return;
+      }
+      if (existingEnvs.some(e => e.name.toLowerCase() === name.toLowerCase())) {
+        console.log(chalk.red(`\n  Error: Environment "${name}" already exists\n`));
+        rl.close();
+        return;
+      }
+
+      const host = await prompt(rl, '  Host');
+      if (!host) {
+        console.log(chalk.red('\n  Error: Host is required\n'));
+        rl.close();
+        return;
+      }
+      const portStr = await prompt(rl, '  Port', '8443');
+      const port = parseInt(portStr, 10);
+      if (isNaN(port)) {
+        console.log(chalk.red('\n  Error: Invalid port number\n'));
+        rl.close();
+        return;
+      }
+      const user = await prompt(rl, '  User', 'default');
+      const password = await prompt(rl, '  Password (will be stored in plain text)', '');
+      const database = await prompt(rl, '  Database', 'default');
+      const secureStr = await prompt(rl, '  Use HTTPS (true/false)', 'true');
+      const secure = secureStr.toLowerCase() === 'true' || secureStr === '1' || secureStr === 'yes';
+
+      rl.close();
+
+      const environment: Environment = {
+        name,
+        host,
+        port,
+        user,
+        password,
+        database,
+        secure,
+      };
+
+      const config: QuerydogConfig = {
+        environments: [...existingEnvs, environment],
+      };
+
+      const savedPath = saveQuerydogConfig(config);
+      console.log(chalk.green(`\n  ✓ Environment "${name}" added to: ${savedPath}\n`));
+    } catch (err) {
+      rl.close();
+      if (err instanceof ConfigNotFoundError) {
+        handleConfigNotFound(err);
+        return;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(chalk.red(`\n  Error: ${message}\n`));
+    }
+  });
 
 program
   .command('envs')
   .description('List available environments')
   .action(() => {
-    printHeader('Environments', '');
-    const envs = listEnvironments();
-    console.log(printEnvironments(envs.map((e, i) => ({
-      '#': i + 1,
-      name: e.name,
-      host: e.host,
-      port: e.port,
-      database: e.database,
-    }))));
+    try {
+      printHeader('Environments', '');
+      const envs = listEnvironments();
+      console.log(printEnvironments(envs.map((e, i) => ({
+        '#': i + 1,
+        name: e.name,
+        host: e.host,
+        port: e.port,
+        database: e.database,
+      }))));
+    } catch (error) {
+      if (error instanceof ConfigNotFoundError) {
+        handleConfigNotFound(error);
+        process.exit(1);
+      }
+      throw error;
+    }
   });
 
 // ==================== QUERY LOG COMMANDS ====================

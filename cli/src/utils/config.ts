@@ -56,15 +56,25 @@ function findProjectRoot(): string {
   return path.resolve(__dirname, '../../..');
 }
 
-export function loadQuerydogConfig(): QuerydogConfig {
-  // Try multiple locations
-  const locations = [
+export class ConfigNotFoundError extends Error {
+  constructor(public searchedPaths: string[]) {
+    super('Configuration file not found');
+    this.name = 'ConfigNotFoundError';
+  }
+}
+
+export function getConfigSearchPaths(): string[] {
+  return [
     path.join(findProjectRoot(), 'querydog.yaml'),
     path.resolve(__dirname, '../../../querydog.yaml'),  // When running from dist
     path.resolve(__dirname, '../../querydog.yaml'),     // When running with ts-node
     path.resolve(process.cwd(), '../querydog.yaml'),    // Parent of cwd
     path.resolve(process.cwd(), 'querydog.yaml'),       // Current dir
   ];
+}
+
+export function loadQuerydogConfig(): QuerydogConfig {
+  const locations = getConfigSearchPaths();
 
   for (const configPath of locations) {
     if (fs.existsSync(configPath)) {
@@ -73,7 +83,19 @@ export function loadQuerydogConfig(): QuerydogConfig {
     }
   }
 
-  throw new Error(`Configuration file not found. Searched: ${locations.join(', ')}`);
+  throw new ConfigNotFoundError(locations);
+}
+
+export function saveQuerydogConfig(config: QuerydogConfig, targetPath?: string): string {
+  const savePath = targetPath || path.resolve(process.cwd(), 'querydog.yaml');
+  const content = yaml.stringify(config, { indent: 2 });
+  fs.writeFileSync(savePath, content, 'utf8');
+  return savePath;
+}
+
+export function configExists(): boolean {
+  const locations = getConfigSearchPaths();
+  return locations.some(p => fs.existsSync(p));
 }
 
 export function loadCLIConfig(): CLIConfig {
