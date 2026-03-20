@@ -1,0 +1,57 @@
+environments:
+
+  - name: "Hetzner"
+    host: "37.27.255.95"
+    port: 8123
+    user: "default"
+    password: "contino17"
+    database: "default"
+    secure: false
+
+  - name: "Marlink"
+    host: "snwizys8w6.eu-west-1.aws.clickhouse.cloud"
+    port: 8443
+    user: "benjaminwootton"
+    password: "2026B3ejamin!"
+    database: "starlink"
+    secure: true
+
+  - name: "Moralis B"
+    host: "single-node-b.moralis-byoc.altinity.cloud"
+    port: 8443
+    user: "user_readonly"
+    password: "fJxUD19yVpTb06tfMfY!"
+    database: "default"
+    secure: true
+
+  - name: "Moralis C"
+    host: "single-node-c.moralis-byoc.altinity.cloud"
+    port: 8443
+    user: "user_readonly"
+    password: "fJxUD19yVpTb06tfMfY!"
+    database: "default"
+    secure: true
+
+  - name: "Guestrix Prod"
+    host: "178.128.140.38"
+    port: 8123
+    user: "guestrix"
+    password: "KH!AE*j3MFezhVZrA!v.4ywpozAuYnWXX6s__sGZbpic@Eju4B"
+    database: "default"
+    secure: false
+
+  - name: "Guestrix Staging"
+    host: "24.144.79.178"
+    port: 8123
+    user: "guestrix"
+    password: "P*zvjXJpnU*_vNAN-zan.dNLTgjrJ6LbfUCP@aiCWwEqZpb9L8"
+    database: "default"
+    secure: false
+
+  - name: "Playground"
+    host: "play.clickhouse.com"
+    port: 443
+    user: "explorer"
+    password: ""
+    database: "default"
+    secure: true

@@ -1911,7 +1911,7 @@ export async function fetchExplainPlan(query: string): Promise<Record<string, un
   return response.json();
 }
 
-export type ExplainType = 'plan' | 'indexes' | 'actions' | 'pipeline' | 'ast' | 'syntax' | 'estimate';
+export type ExplainType = 'plan' | 'indexes' | 'actions' | 'pipeline' | 'ast' | 'syntax' | 'estimate' | 'json' | 'json-plan';
 
 export async function fetchExplainByType(query: string, type: ExplainType): Promise<Record<string, unknown>[]> {
   const response = await fetch(`${API_BASE}/explain/${type}`, {
@@ -1922,6 +1922,21 @@ export async function fetchExplainByType(query: string, type: ExplainType): Prom
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || `Failed to run explain ${type}`);
+  }
+  return response.json();
+}
+
+// Fetch JSON explain plan with indexes - returns structured ClickHouse plan data
+export async function fetchExplainJson(query: string, includeIndexes = true): Promise<Record<string, unknown>[]> {
+  const type = includeIndexes ? 'json' : 'json-plan';
+  const response = await fetch(`${API_BASE}/explain/${type}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || `Failed to run explain json`);
   }
   return response.json();
 }

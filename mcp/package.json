@@ -1,0 +1,27 @@
+{
+  "name": "querydog-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for QueryDog ClickHouse analysis",
+  "main": "dist/index.js",
+  "bin": {
+    "querydog-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "keywords": ["mcp", "clickhouse", "querydog"],
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@clickhouse/client": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "yaml": "^2.3.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.2"
+  }
+}

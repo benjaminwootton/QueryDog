@@ -577,7 +577,11 @@ export function PartsPage() {
       width: 250,
       sortable: true,
       cellStyle: { color: '#a5b4fc' },
-      valueFormatter: (params) => params.value || '-',
+      valueFormatter: (params) => {
+        const val = params.value || '-';
+        return val.length > 30 ? val.substring(0, 30) + '...' : val;
+      },
+      tooltipValueGetter: (params) => params.value || '',
     },
     {
       headerName: 'Partitions',

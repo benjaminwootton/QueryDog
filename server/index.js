@@ -106,7 +106,8 @@ function createClientForEnv(env) {
     request_timeout: 3600000,
     http_agent: agent,
     clickhouse_settings: { max_execution_time: 0 },
-    keep_alive: { enabled: true },
+    keep_alive: { enabled: false },  // Disabled - chproxy blocks ping requests
+    tls: env.secure ? { rejectUnauthorized: env.tls_reject_unauthorized } : undefined,
   });
 }
 
@@ -131,11 +132,12 @@ function switchEnvironment(index) {
 // Initialize first environment
 switchEnvironment(0);
 
-// Helper to ping with timeout (6 seconds)
+// Helper to check connection with timeout (6 seconds)
+// Uses SELECT 1 instead of ping because chproxy blocks ping requests
 const CONNECTION_TIMEOUT_MS = 6000;
 async function pingWithTimeout(timeoutMs = CONNECTION_TIMEOUT_MS) {
   return Promise.race([
-    client.ping(),
+    client.query({ query: 'SELECT 1', format: 'JSONEachRow' }).then(r => r.json()),
     new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Database connection timed out - server may be unreachable')), timeoutMs)
     )
@@ -284,6 +286,47 @@ function buildFilterCondition(field, values, params, paramIndex) {
   if (field === 'primary_table') {
     params[paramName] = values;
     return `tables[1] IN {${paramName}:Array(String)}`;
+  }
+
+  // Special case: query_kind filtering
+  // 1. 'Insert' should also match 'AsyncInsertFlush'
+  // 2. In clusters, secondary/forwarded queries have empty query_kind, so also match by query text
+  if (field === 'query_kind') {
+    const expandedValues = [...values];
+    if (values.includes('Insert') && !values.includes('AsyncInsertFlush')) {
+      expandedValues.push('AsyncInsertFlush');
+    }
+    params[paramName] = expandedValues;
+
+    // Build conditions: either query_kind matches OR (query_kind is empty AND query text matches)
+    const conditions = [`toString(${field}) IN {${paramName}:Array(String)}`];
+
+    // For clusters: also match queries with empty query_kind by inspecting query text
+    const textMatches = [];
+    if (values.includes('Insert')) {
+      textMatches.push("upper(trimLeft(query)) LIKE 'INSERT%'");
+    }
+    if (values.includes('Select')) {
+      textMatches.push("upper(trimLeft(query)) LIKE 'SELECT%'");
+    }
+    if (values.includes('Delete')) {
+      textMatches.push("upper(trimLeft(query)) LIKE 'DELETE%'");
+    }
+    if (values.includes('Create')) {
+      textMatches.push("upper(trimLeft(query)) LIKE 'CREATE%'");
+    }
+    if (values.includes('Alter')) {
+      textMatches.push("upper(trimLeft(query)) LIKE 'ALTER%'");
+    }
+    if (values.includes('Drop')) {
+      textMatches.push("upper(trimLeft(query)) LIKE 'DROP%'");
+    }
+
+    if (textMatches.length > 0) {
+      conditions.push(`(toString(${field}) = '' AND (${textMatches.join(' OR ')}))`);
+    }
+
+    return `(${conditions.join(' OR ')})`;
   }
 
   if (ARRAY_FIELDS.includes(field)) {
@@ -589,13 +632,17 @@ app.get('/api/query-log/timeseries-stacked', async (req, res) => {
         truncFunc = 'toStartOfMinute(event_time)';
     }
 
+    // In clusters, secondary/forwarded queries have empty query_kind, so also match by query text
     const query = `
       SELECT
         ${truncFunc} as time,
-        countIf(query_kind = 'Select') as Select,
-        countIf(query_kind = 'Insert') as Insert,
-        countIf(query_kind = 'Delete') as Delete,
-        countIf(query_kind NOT IN ('Select', 'Insert', 'Delete')) as Other
+        countIf(query_kind = 'Select' OR (query_kind = '' AND upper(trimLeft(query)) LIKE 'SELECT%')) as Select,
+        countIf(query_kind IN ('Insert', 'AsyncInsertFlush') OR (query_kind = '' AND upper(trimLeft(query)) LIKE 'INSERT%')) as Insert,
+        countIf(query_kind = 'Delete' OR (query_kind = '' AND upper(trimLeft(query)) LIKE 'DELETE%')) as Delete,
+        countIf(
+          query_kind NOT IN ('Select', 'Insert', 'AsyncInsertFlush', 'Delete', '')
+          OR (query_kind = '' AND upper(trimLeft(query)) NOT LIKE 'SELECT%' AND upper(trimLeft(query)) NOT LIKE 'INSERT%' AND upper(trimLeft(query)) NOT LIKE 'DELETE%')
+        ) as Other
       FROM ${getSystemTable('query_log')}
       ${whereClause}
       GROUP BY time
@@ -967,7 +1014,7 @@ app.get('/api/parts/grouped', async (req, res) => {
 
     // Apply search filter
     if (search) {
-      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String})');
+      whereConditions.push('(t.name ILIKE {search:String} OR t.database ILIKE {search:String})');
       params.search = `%${search}%`;
     }
 
@@ -976,10 +1023,15 @@ app.get('/api/parts/grouped', async (req, res) => {
       const parsedFilters = JSON.parse(filters);
       let paramIndex = 0;
       for (const [field, values] of Object.entries(parsedFilters)) {
+        // Skip 'active' filter - it's already handled in the JOIN clause (p.active = 1)
+        // and applying it to WHERE would exclude tables with no parts
+        if (field === 'active') continue;
         if (values && values.length > 0) {
           const paramName = `filter_${paramIndex++}`;
           params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
+          // Map field names to table aliases
+          const fieldRef = field === 'table' ? 't.name' : field === 'database' ? 't.database' : `toString(${field})`;
+          whereConditions.push(`${fieldRef} IN {${paramName}:Array(String)}`);
         }
       }
     }
@@ -988,22 +1040,24 @@ app.get('/api/parts/grouped', async (req, res) => {
 
     const query = `
       SELECT
-        p.database,
-        p.table,
-        any(t.engine_full) as engine_full,
+        t.database,
+        t.name as table,
+        t.engine_full as engine_full,
         count(DISTINCT p.partition_id) as partition_count,
-        count() as part_count,
+        count(p.name) as part_count,
         sum(p.rows) as total_rows,
         sum(p.bytes_on_disk) as total_bytes,
         sum(p.data_compressed_bytes) as compressed_bytes,
         sum(p.data_uncompressed_bytes) as uncompressed_bytes,
         round((sum(p.data_uncompressed_bytes) - sum(p.data_compressed_bytes)) / nullIf(sum(p.data_uncompressed_bytes), 0) * 100, 1) as savings_pct,
         max(p.modification_time) as last_modification_time
-      FROM ${getSystemTable('parts')} p
-      LEFT JOIN system.tables t ON p.database = t.database AND p.table = t.name
-      ${whereClause ? whereClause.replace(/\b(database|table)\b/g, 'p.$1') : ''}
-      GROUP BY p.database, p.table
-      ORDER BY total_bytes DESC
+      FROM system.tables t
+      LEFT JOIN ${getSystemTable('parts')} p ON t.database = p.database AND t.name = p.table AND p.active = 1
+      WHERE t.database != 'information_schema'
+        AND t.engine NOT IN ('Dictionary', 'View', 'MaterializedView')
+      ${whereConditions.length > 0 ? 'AND ' + whereConditions.join(' AND ') : ''}
+      GROUP BY t.database, t.name, t.engine_full
+      ORDER BY total_bytes DESC NULLS LAST
     `;
 
     const result = await client.query({
@@ -3497,6 +3551,8 @@ app.post('/api/explain/:type', async (req, res) => {
       'ast': 'EXPLAIN AST',
       'syntax': 'EXPLAIN SYNTAX',
       'estimate': 'EXPLAIN ESTIMATE',
+      'json': 'EXPLAIN json = 1, indexes = 1',
+      'json-plan': 'EXPLAIN json = 1',
     };
 
     const explainPrefix = explainTypes[type];

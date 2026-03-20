@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Dog, Database, HardDrive, Activity, Server, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network, Circle } from 'lucide-react';
+import { Dog, Database, HardDrive, Activity, Server, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network, Circle, RefreshCw } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
 import { PartsPage } from './components/pages/PartsPage';
@@ -459,6 +459,13 @@ function App() {
           >
             <Terminal className="w-3.5 h-3.5" />
             Query
+          </button>
+          <button
+            onClick={refresh}
+            className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 hover:text-white"
+            title="Refresh data"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
           </button>
           <AutoRefreshToggle
             interval={refreshInterval}

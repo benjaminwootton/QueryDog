@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Play, X, Loader2, Copy, Check, ChevronDown, ChevronRight, Clock, Table as TableIcon, AlertCircle, Activity } from 'lucide-react';
-import { executeQuery, fetchExplainByType, type ExplainType, type QueryResult } from '../services/api';
+import { Play, X, Loader2, Copy, Check, ChevronDown, ChevronRight, Clock, Table as TableIcon, AlertCircle, Activity, GitBranch } from 'lucide-react';
+import { executeQuery, fetchExplainByType, fetchExplainJson, type ExplainType, type QueryResult } from '../services/api';
+import { QueryPlanVisualizer } from './QueryPlanVisualizer';
 
 interface QueryEditorProps {
   initialQuery?: string;
@@ -77,6 +78,11 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
 
   const [showResults, setShowResults] = useState(true);
   const [showExplain, setShowExplain] = useState(true);
+
+  // Visualizer state
+  const [visualizerOpen, setVisualizerOpen] = useState(false);
+  const [visualizerJsonPlan, setVisualizerJsonPlan] = useState<Record<string, unknown>[] | null>(null);
+  const [visualizerLoading, setVisualizerLoading] = useState(false);
 
   // Auto-run explain when query changes and is valid
   useEffect(() => {
@@ -156,6 +162,30 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
     loadExplain(tab);
   };
 
+  const openVisualizer = async () => {
+    // If no query, just open the visualizer for manual paste
+    if (!query.trim()) {
+      setVisualizerJsonPlan(null);
+      setVisualizerOpen(true);
+      return;
+    }
+
+    setVisualizerLoading(true);
+    try {
+      // Fetch JSON plan with indexes
+      const jsonPlan = await fetchExplainJson(query, true);
+      setVisualizerJsonPlan(jsonPlan);
+      setVisualizerOpen(true);
+    } catch (err) {
+      console.error('Failed to fetch JSON plan:', err);
+      // Still open visualizer - user can paste JSON manually
+      setVisualizerJsonPlan(null);
+      setVisualizerOpen(true);
+    } finally {
+      setVisualizerLoading(false);
+    }
+  };
+
   const handleCopyQuery = async () => {
     await navigator.clipboard.writeText(query);
     setCopied(true);
@@ -205,14 +235,25 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
             spellCheck={false}
           />
           <div className="flex items-center justify-between mt-2">
-            <button
-              onClick={handleExecute}
-              disabled={executing || !query.trim()}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-white text-sm font-medium"
-            >
-              {executing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-              Run Query
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExecute}
+                disabled={executing || !query.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-white text-sm font-medium"
+              >
+                {executing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                Run Query
+              </button>
+              <button
+                onClick={openVisualizer}
+                disabled={visualizerLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-white text-sm font-medium"
+                title="Visualize query plan (or paste JSON)"
+              >
+                {visualizerLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <GitBranch className="w-4 h-4" />}
+                Visualize
+              </button>
+            </div>
             <button
               onClick={handleCopyQuery}
               className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded"
@@ -321,7 +362,7 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
                       navigator.clipboard.writeText(content);
                     }
                   }}
-                  className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded mr-2"
+                  className="p-2 mr-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
                   title="Copy to clipboard"
                 >
                   <Copy className="w-3.5 h-3.5" />
@@ -429,6 +470,17 @@ export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {
           <span>Dangerous operations (DROP, DELETE, etc.) are blocked</span>
         </div>
       </div>
+
+      {/* Query Plan Visualizer Modal */}
+      {visualizerOpen && (
+        <QueryPlanVisualizer
+          planJson={visualizerJsonPlan as any}
+          onClose={() => {
+            setVisualizerOpen(false);
+            setVisualizerJsonPlan(null);
+          }}
+        />
+      )}
     </div>
   );
 }

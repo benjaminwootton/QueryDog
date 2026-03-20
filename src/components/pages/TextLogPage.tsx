@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { FileText, ChevronLeft, ChevronRight, Filter, X, Search, Activity, AlertTriangle } from 'lucide-react';
+import { FileText, ChevronLeft, ChevronRight, Filter, X, Search, AlertTriangle } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, RowClickedEvent, SortChangedEvent, SortDirection } from 'ag-grid-community';
@@ -383,8 +383,8 @@ export function TextLogPage() {
                 : 'border-transparent text-gray-400 hover:text-gray-300'
             }`}
           >
-            <Activity className="w-3 h-3" />
-            Count
+            <FileText className="w-3 h-3" />
+            Text Log
           </button>
           <button
             onClick={() => handleChartTabChange('errors')}

@@ -1,0 +1,95 @@
+# QueryDog CLI Configuration
+# This file controls default column display for each command
+
+tables:
+  columns:
+    - name
+    - engine
+    - total_rows
+    - total_bytes
+    - partition_key
+    - sorting_key
+  order_by: name
+
+views:
+  columns:
+    - name
+    - is_materialized
+    - create_table_query
+  order_by: name
+
+materialized_views:
+  columns:
+    - name
+    - engine
+    - as_select
+    - total_rows
+    - total_bytes
+  order_by: name
+
+partitions:
+  columns:
+    - table
+    - partition
+    - name
+    - rows
+    - bytes_on_disk
+    - modification_time
+    - active
+  order_by: modification_time
+
+mutations:
+  columns:
+    - table
+    - mutation_id
+    - command
+    - create_time
+    - is_done
+    - parts_to_do
+  order_by: create_time
+
+processes:
+  columns:
+    - query_id
+    - user
+    - elapsed
+    - read_rows
+    - memory_usage
+    - query
+  order_by: elapsed
+
+queries:
+  all:
+    columns:
+      - event_time
+      - query_duration_ms
+      - read_rows
+      - memory_usage
+      - query
+    order_by: event_time
+    limit: 100
+  slowest:
+    columns:
+      - event_time
+      - query_duration_ms
+      - read_rows
+      - written_rows
+      - memory_usage
+      - query
+    order_by: query_duration_ms
+    limit: 50
+  highestmemory:
+    columns:
+      - event_time
+      - memory_usage
+      - peak_memory_usage
+      - query_duration_ms
+      - query
+    order_by: peak_memory_usage
+    limit: 50
+
+# Output settings
+output:
+  max_column_width: 80
+  truncate_queries: true
+  query_max_length: 100
