@@ -1,5 +1,5 @@
-# Build stage
-FROM node:22-alpine AS builder
+# Build stage for frontend
+FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app
 
@@ -15,6 +15,23 @@ COPY . .
 # Build the frontend
 RUN npm run build
 
+# Build stage for CLI
+FROM node:22-alpine AS cli-builder
+
+WORKDIR /app/cli
+
+# Copy CLI package files
+COPY cli/package*.json ./
+
+# Install CLI dependencies
+RUN npm ci
+
+# Copy CLI source
+COPY cli/ ./
+
+# Build CLI
+RUN npm run build
+
 # Production stage
 FROM node:22-slim
 
@@ -23,20 +40,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files for server
 COPY package*.json ./
 
-# Install only production dependencies
+# Install only production dependencies for server
 RUN npm ci --omit=dev
 
 # Copy server files
 COPY server ./server
 
 # Copy built frontend from builder stage
-COPY --from=builder /app/dist ./dist
+COPY --from=frontend-builder /app/dist ./dist
+
+# Copy CLI package files and install dependencies
+COPY cli/package*.json ./cli/
+RUN cd cli && npm ci --omit=dev
+
+# Copy built CLI from builder stage
+COPY --from=cli-builder /app/cli/dist ./cli/dist
+COPY cli/config ./cli/config
+
+# Copy entrypoint script
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose port
 EXPOSE 3001
 
-# Start the server
-CMD ["node", "server/index.js"]
+# Use entrypoint script
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
+# Default to showing help
+CMD []

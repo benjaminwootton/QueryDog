@@ -646,6 +646,24 @@ program
     await startTUI(env || undefined);
   });
 
+// ==================== UI COMMAND ====================
+
+program
+  .command('ui')
+  .description('Show the port the web UI is running on')
+  .option('--port <port>', 'Specify the port to use', '3001')
+  .action((cmdOpts) => {
+    const port = cmdOpts.port || process.env.PORT || '3001';
+    console.log(chalk.cyan('\n  QueryDog Web UI'));
+    console.log(chalk.gray('  ================\n'));
+    console.log(`  Port: ${chalk.green(port)}`);
+    console.log(`  URL:  ${chalk.blue(`http://localhost:${port}`)}\n`);
+    console.log(chalk.gray('  To start the UI via Docker:'));
+    console.log(chalk.white('    querydog ui\n'));
+    console.log(chalk.gray('  Or start the server directly:'));
+    console.log(chalk.white('    npm run start\n'));
+  });
+
 // Parse and run
 program.parse();
 
