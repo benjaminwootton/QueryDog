@@ -115,6 +115,62 @@ export async function switchEnvironment(index: number): Promise<{ name: string; 
   return response.json();
 }
 
+// ==================== ENVIRONMENT MANAGEMENT API ====================
+
+export interface FullEnvironmentInfo {
+  index: number;
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+  secure: boolean;
+  tls_reject_unauthorized: boolean;
+  cluster: string;
+  queries_folder: string;
+}
+
+export async function fetchFullEnvironments(): Promise<{ active: number; environments: FullEnvironmentInfo[] }> {
+  const response = await fetch(`${API_BASE}/config/environments/full`);
+  if (!response.ok) throw new Error(`Failed to fetch environments: ${response.statusText}`);
+  return response.json();
+}
+
+export async function addEnvironment(env: Omit<FullEnvironmentInfo, 'index'>): Promise<{ success: boolean; index?: number; error?: string }> {
+  const response = await fetch(`${API_BASE}/config/environments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(env),
+  });
+  return response.json();
+}
+
+export async function updateEnvironment(index: number, env: Omit<FullEnvironmentInfo, 'index'>): Promise<{ success: boolean; error?: string }> {
+  const response = await fetch(`${API_BASE}/config/environments/${index}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(env),
+  });
+  return response.json();
+}
+
+export async function deleteEnvironment(index: number): Promise<{ success: boolean; error?: string }> {
+  const response = await fetch(`${API_BASE}/config/environments/${index}`, {
+    method: 'DELETE',
+  });
+  return response.json();
+}
+
+export async function testEnvironmentConnection(env: Partial<FullEnvironmentInfo>): Promise<{ success: boolean; error?: string; message?: string }> {
+  const response = await fetch(`${API_BASE}/config/environments/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(env),
+  });
+  return response.json();
+}
+
 function formatDateTime(date: Date): string {
   return date.toISOString().slice(0, 19).replace('T', ' ');
 }

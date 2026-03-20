@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Dog, Database, HardDrive, Activity, Server, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network, Circle, RefreshCw } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
@@ -13,10 +13,11 @@ import { MyQueriesPage } from './components/pages/MyQueriesPage';
 import { DataExplorerPage } from './components/pages/DataExplorerPage';
 import { ProfileEventsModal } from './components/ProfileEventsModal';
 import { DatabaseBrowser } from './components/DatabaseBrowser';
+import { DatabaseManager } from './components/DatabaseManager';
 import { QueryEditor } from './components/QueryEditor';
 import { useQueryStore } from './stores/queryStore';
 import { useQueryData } from './hooks/useQueryData';
-import { fetchEnvironments, switchEnvironment, type EnvironmentInfo } from './services/api';
+import { fetchEnvironments, type EnvironmentInfo } from './services/api';
 
 type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'users' | 'cluster' | 'instance' | 'myqueries';
 type RefreshInterval = 'off' | 5 | 10 | 60 | 600;
@@ -64,7 +65,7 @@ function App() {
   const [activeEnvIndex, setActiveEnvIndex] = useState(0);
   const [connectedEnvIndex, setConnectedEnvIndex] = useState<number | null>(null);
   const [environmentsFetched, setEnvironmentsFetched] = useState(false);
-  const [switching, setSwitching] = useState(false);
+  const [switching] = useState(false);
   const [connecting] = useState(false);
   const [connectingToName, setConnectingToName] = useState<string | null>(null);
   const {
@@ -77,106 +78,13 @@ function App() {
     setFieldFilter,
     clearAllFilters,
     setError,
-    setLoading,
-    setGroupedLoading,
-    setPartLogLoading,
-    setEntries,
-    setTimeSeries,
-    setStackedTimeSeries,
-    setTotalCount,
-    setGroupedEntries,
-    setPartLogEntries,
-    setPartLogTimeSeries,
-    setPartLogStackedTimeSeries,
-    setPartLogTotalCount,
   } = useQueryStore();
   const connectionReady = !!connectionInfo && !backendError;
   const { refresh } = useQueryData(connectionReady);
   const activeEnvName = environments[activeEnvIndex]?.name;
   const [initialConnectOpen, setInitialConnectOpen] = useState(false);
   const [checkedExistingConnection, setCheckedExistingConnection] = useState(false);
-  const previousDataRef = useRef<null | {
-    entries: ReturnType<typeof useQueryStore.getState>['entries'];
-    timeSeries: ReturnType<typeof useQueryStore.getState>['timeSeries'];
-    stackedTimeSeries: ReturnType<typeof useQueryStore.getState>['stackedTimeSeries'];
-    totalCount: ReturnType<typeof useQueryStore.getState>['totalCount'];
-    groupedEntries: ReturnType<typeof useQueryStore.getState>['groupedEntries'];
-    partLogEntries: ReturnType<typeof useQueryStore.getState>['partLogEntries'];
-    partLogTimeSeries: ReturnType<typeof useQueryStore.getState>['partLogTimeSeries'];
-    partLogStackedTimeSeries: ReturnType<typeof useQueryStore.getState>['partLogStackedTimeSeries'];
-    partLogTotalCount: ReturnType<typeof useQueryStore.getState>['partLogTotalCount'];
-  }>(null);
 
-  const beginSwitchLoading = useCallback(() => {
-    const state = useQueryStore.getState();
-    previousDataRef.current = {
-      entries: state.entries,
-      timeSeries: state.timeSeries,
-      stackedTimeSeries: state.stackedTimeSeries,
-      totalCount: state.totalCount,
-      groupedEntries: state.groupedEntries,
-      partLogEntries: state.partLogEntries,
-      partLogTimeSeries: state.partLogTimeSeries,
-      partLogStackedTimeSeries: state.partLogStackedTimeSeries,
-      partLogTotalCount: state.partLogTotalCount,
-    };
-
-    setLoading(true);
-    setGroupedLoading(true);
-    setPartLogLoading(true);
-    setEntries([]);
-    setTimeSeries([]);
-    setStackedTimeSeries([]);
-    setTotalCount(0);
-    setGroupedEntries([]);
-    setPartLogEntries([]);
-    setPartLogTimeSeries([]);
-    setPartLogStackedTimeSeries([]);
-    setPartLogTotalCount(0);
-  }, [
-    setEntries,
-    setGroupedEntries,
-    setGroupedLoading,
-    setLoading,
-    setPartLogEntries,
-    setPartLogLoading,
-    setPartLogStackedTimeSeries,
-    setPartLogTimeSeries,
-    setPartLogTotalCount,
-    setStackedTimeSeries,
-    setTimeSeries,
-    setTotalCount,
-  ]);
-
-  const restorePreviousData = useCallback(() => {
-    const previous = previousDataRef.current;
-    if (!previous) return;
-    setEntries(previous.entries);
-    setTimeSeries(previous.timeSeries);
-    setStackedTimeSeries(previous.stackedTimeSeries);
-    setTotalCount(previous.totalCount);
-    setGroupedEntries(previous.groupedEntries);
-    setPartLogEntries(previous.partLogEntries);
-    setPartLogTimeSeries(previous.partLogTimeSeries);
-    setPartLogStackedTimeSeries(previous.partLogStackedTimeSeries);
-    setPartLogTotalCount(previous.partLogTotalCount);
-    setLoading(false);
-    setGroupedLoading(false);
-    setPartLogLoading(false);
-  }, [
-    setEntries,
-    setGroupedEntries,
-    setGroupedLoading,
-    setLoading,
-    setPartLogEntries,
-    setPartLogLoading,
-    setPartLogStackedTimeSeries,
-    setPartLogTimeSeries,
-    setPartLogTotalCount,
-    setStackedTimeSeries,
-    setTimeSeries,
-    setTotalCount,
-  ]);
   const ENV_CACHE_KEY = 'querydog_envs';
 
   const loadCachedEnvironments = useCallback(() => {
@@ -685,111 +593,32 @@ function App() {
         </>
       )}
 
-      {/* Initial Connection Modal */}
-      {initialConnectOpen && !aboutOpen && environmentsFetched && environments.length > 0 && (
-        <>
-          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => setInitialConnectOpen(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-blue-950 border border-blue-700 rounded-lg shadow-xl z-50 p-6 w-[520px] max-w-[90vw]">
-            <button
-              onClick={() => setInitialConnectOpen(false)}
-              className="absolute top-3 right-3 text-blue-200 hover:text-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <div className="flex flex-col items-center gap-4">
-              <Database className="w-12 h-12 text-blue-400" />
-              <h2 className="text-lg font-semibold text-blue-100">Select Database</h2>
-              <div className="w-full">
-                <p className="text-sm text-blue-300 text-center mb-3">Choose a database connection to start:</p>
-                <select
-                  value={environments.length > 0 ? activeEnvIndex : ''}
-                  disabled={switching}
-                  onChange={(e) => {
-                    const idx = parseInt(e.target.value);
-                    if (!Number.isNaN(idx)) setActiveEnvIndex(idx);
-                  }}
-                  className="w-full bg-gray-800 border border-blue-700 rounded px-3 py-2 text-gray-200 text-sm"
-                >
-                  {environments.map((env, i) => (
-                    <option key={i} value={i}>{env.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex gap-3 mt-2">
-                <button
-                  onClick={async () => {
-                    const selectedEnv = environments[activeEnvIndex];
-                    if (!selectedEnv) return;
-                    const previousConnection = connectionInfo;
-                    const previousConnectedIndex = connectedEnvIndex;
-                    const hadPreviousConnection = previousConnectedIndex !== null && !!previousConnection;
-                    setSwitching(true);
-                    setBackendError(null);
-                    setConnectingToName(selectedEnv.name);
-                    beginSwitchLoading();
-                    try {
-                      const result = await switchEnvironment(activeEnvIndex);
-                      if (!result.connected) {
-                        if (hadPreviousConnection) {
-                          setActiveEnvIndex(previousConnectedIndex as number);
-                          restorePreviousData();
-                        } else {
-                          setConnectionInfo(null);
-                          setLoading(false);
-                          setGroupedLoading(false);
-                          setPartLogLoading(false);
-                        }
-                        setBackendError({
-                          message: result.error || 'Connection failed',
-                          envName: selectedEnv.name
-                        });
-                      } else {
-                        setConnectionInfo({
-                          name: result.name,
-                          host: result.host,
-                          port: String(result.port),
-                          secure: false,
-                          user: selectedEnv.user,
-                        });
-                        setConnectedEnvIndex(activeEnvIndex);
-                        refresh();
-                      }
-                    } catch (err) {
-                      if (hadPreviousConnection) {
-                        setActiveEnvIndex(previousConnectedIndex as number);
-                        restorePreviousData();
-                      } else {
-                        setConnectionInfo(null);
-                        setLoading(false);
-                        setGroupedLoading(false);
-                        setPartLogLoading(false);
-                      }
-                      setBackendError({
-                        message: (err as Error).message || 'Failed to connect to environment',
-                        envName: selectedEnv.name
-                      });
-                    } finally {
-                      setSwitching(false);
-                      setConnectingToName(null);
-                      setInitialConnectOpen(false);
-                    }
-                  }}
-                  disabled={switching}
-                  className="px-4 py-2 bg-blue-700 hover:bg-blue-600 disabled:bg-blue-800 disabled:cursor-not-allowed rounded text-white text-sm font-medium"
-                >
-                  {switching ? 'Connecting...' : 'Connect'}
-                </button>
-                <button
-                  onClick={() => setInitialConnectOpen(false)}
-                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm font-medium"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      {/* Database Manager Modal */}
+      <DatabaseManager
+        isOpen={initialConnectOpen && !aboutOpen}
+        onClose={() => setInitialConnectOpen(false)}
+        onConnect={(result, envIndex) => {
+          if (result.connected) {
+            setConnectionInfo({
+              name: result.name,
+              host: result.host,
+              port: String(result.port),
+              secure: false,
+              user: environments[envIndex]?.user || 'default',
+            });
+            setConnectedEnvIndex(envIndex);
+            setActiveEnvIndex(envIndex);
+            setBackendError(null);
+            refresh();
+          } else {
+            setBackendError({
+              message: result.error || 'Connection failed',
+              envName: result.name
+            });
+          }
+        }}
+        connectedEnvIndex={connectedEnvIndex}
+      />
     </div>
   );
 }

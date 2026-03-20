@@ -267,6 +267,247 @@ app.post('/api/environments/switch', async (req, res) => {
   }
 });
 
+// ==================== ENVIRONMENT MANAGEMENT API ====================
+
+// Helper to get querydog.yaml path
+function getYamlPath() {
+  return path.join(process.cwd(), 'querydog.yaml');
+}
+
+// Helper to save environments to querydog.yaml
+function saveConfig(envs) {
+  const yamlPath = getYamlPath();
+  const data = { environments: envs.map(env => {
+    const result = {
+      name: env.name,
+      host: env.host,
+      port: env.port,
+      user: env.user,
+      password: env.password,
+      database: env.database,
+      secure: env.secure,
+    };
+    // Only include optional fields if they have values
+    if (env.tls_reject_unauthorized === false) {
+      result.tls_reject_unauthorized = false;
+    }
+    if (env.cluster) {
+      result.cluster = env.cluster;
+    }
+    if (env.queries_folder && env.queries_folder !== 'queries') {
+      result.queries_folder = env.queries_folder;
+    }
+    return result;
+  })};
+  fs.writeFileSync(yamlPath, yaml.dump(data, { lineWidth: -1, quotingType: '"' }), 'utf-8');
+}
+
+// Helper to reload environments from disk
+function reloadEnvironments() {
+  const newEnvs = loadConfig({ quiet: true });
+  environments.length = 0;
+  environments.push(...newEnvs);
+}
+
+// Get full environment details (including secure fields for editing)
+app.get('/api/config/environments/full', (req, res) => {
+  const envs = loadConfig({ quiet: true });
+  res.json({
+    active: activeEnvIndex,
+    environments: envs.map((env, i) => ({
+      index: i,
+      name: env.name,
+      host: env.host,
+      port: env.port,
+      user: env.user,
+      password: env.password,
+      database: env.database,
+      secure: env.secure,
+      tls_reject_unauthorized: env.tls_reject_unauthorized,
+      cluster: env.cluster || '',
+      queries_folder: env.queries_folder || 'queries',
+    })),
+  });
+});
+
+// Add new environment
+app.post('/api/config/environments', (req, res) => {
+  try {
+    const { name, host, port, user, password, database, secure, tls_reject_unauthorized, cluster, queries_folder } = req.body;
+
+    // Validate required fields
+    if (!name || !host) {
+      return res.status(400).json({ error: 'Name and host are required' });
+    }
+
+    const envs = loadConfig({ quiet: true });
+    const newEnv = {
+      name,
+      host,
+      port: parseInt(port) || (secure ? 8443 : 8123),
+      user: user || 'default',
+      password: password || '',
+      database: database || 'default',
+      secure: secure || false,
+      tls_reject_unauthorized: tls_reject_unauthorized !== false,
+      cluster: cluster || null,
+      queries_folder: queries_folder || 'queries',
+    };
+
+    envs.push(newEnv);
+    saveConfig(envs);
+    reloadEnvironments();
+
+    console.log(`Added new environment: "${name}"`);
+    res.json({
+      success: true,
+      index: envs.length - 1,
+      environment: {
+        index: envs.length - 1,
+        name: newEnv.name,
+        host: newEnv.host,
+        port: newEnv.port,
+        user: newEnv.user,
+        database: newEnv.database,
+      }
+    });
+  } catch (error) {
+    console.error('Failed to add environment:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update environment
+app.put('/api/config/environments/:index', (req, res) => {
+  try {
+    const index = parseInt(req.params.index);
+    const envs = loadConfig({ quiet: true });
+
+    if (index < 0 || index >= envs.length) {
+      return res.status(400).json({ error: 'Invalid environment index' });
+    }
+
+    const { name, host, port, user, password, database, secure, tls_reject_unauthorized, cluster, queries_folder } = req.body;
+
+    // Validate required fields
+    if (!name || !host) {
+      return res.status(400).json({ error: 'Name and host are required' });
+    }
+
+    envs[index] = {
+      name,
+      host,
+      port: parseInt(port) || (secure ? 8443 : 8123),
+      user: user || 'default',
+      password: password || '',
+      database: database || 'default',
+      secure: secure || false,
+      tls_reject_unauthorized: tls_reject_unauthorized !== false,
+      cluster: cluster || null,
+      queries_folder: queries_folder || 'queries',
+    };
+
+    saveConfig(envs);
+    reloadEnvironments();
+
+    // If we updated the active environment, reconnect
+    if (index === activeEnvIndex) {
+      switchEnvironment(index);
+    }
+
+    console.log(`Updated environment ${index}: "${name}"`);
+    res.json({
+      success: true,
+      environment: {
+        index,
+        name: envs[index].name,
+        host: envs[index].host,
+        port: envs[index].port,
+        user: envs[index].user,
+        database: envs[index].database,
+      }
+    });
+  } catch (error) {
+    console.error('Failed to update environment:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete environment
+app.delete('/api/config/environments/:index', (req, res) => {
+  try {
+    const index = parseInt(req.params.index);
+    const envs = loadConfig({ quiet: true });
+
+    if (index < 0 || index >= envs.length) {
+      return res.status(400).json({ error: 'Invalid environment index' });
+    }
+
+    if (envs.length <= 1) {
+      return res.status(400).json({ error: 'Cannot delete the last environment' });
+    }
+
+    const deletedName = envs[index].name;
+    envs.splice(index, 1);
+    saveConfig(envs);
+    reloadEnvironments();
+
+    // Adjust active index if needed
+    if (activeEnvIndex >= envs.length) {
+      switchEnvironment(envs.length - 1);
+    } else if (activeEnvIndex === index) {
+      // Reconnect to same index (now different env)
+      switchEnvironment(activeEnvIndex);
+    }
+
+    console.log(`Deleted environment: "${deletedName}"`);
+    res.json({ success: true, message: `Deleted environment: ${deletedName}` });
+  } catch (error) {
+    console.error('Failed to delete environment:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Test connection without switching
+app.post('/api/config/environments/test', async (req, res) => {
+  const { host, port, user, password, database, secure, tls_reject_unauthorized } = req.body;
+
+  if (!host) {
+    return res.status(400).json({ error: 'Host is required' });
+  }
+
+  const testEnv = {
+    host,
+    port: parseInt(port) || (secure ? 8443 : 8123),
+    user: user || 'default',
+    password: password || '',
+    database: database || 'default',
+    secure: secure || false,
+    tls_reject_unauthorized: tls_reject_unauthorized !== false,
+  };
+
+  let testClient = null;
+  try {
+    testClient = createClientForEnv(testEnv);
+
+    // Test with timeout
+    await Promise.race([
+      testClient.query({ query: 'SELECT 1', format: 'JSONEachRow' }).then(r => r.json()),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Connection timed out')), CONNECTION_TIMEOUT_MS)
+      )
+    ]);
+
+    res.json({ success: true, message: 'Connection successful' });
+  } catch (error) {
+    res.json({ success: false, error: error.message });
+  } finally {
+    if (testClient) {
+      testClient.close().catch(() => {});
+    }
+  }
+});
+
 // Define which fields are arrays for proper filtering
 const ARRAY_FIELDS = [
   'databases', 'tables', 'columns', 'partitions', 'projections', 'views',

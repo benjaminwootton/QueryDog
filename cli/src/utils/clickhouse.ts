@@ -353,8 +353,8 @@ export const SystemQueries = {
     SELECT
       name,
       path,
-      formatReadableSize(free_space) as free_space,
-      formatReadableSize(total_space) as total_space,
+      formatReadableSize(free_space) as free_space_readable,
+      formatReadableSize(total_space) as total_space_readable,
       if(total_space > 0, round(100 * (1 - toFloat64(free_space) / toFloat64(total_space)), 2), 0) as used_pct,
       type
     FROM system.disks
@@ -537,32 +537,29 @@ export const SystemQueries = {
   // Background Operations
   backgroundJobs: () => `
     SELECT
-      type,
-      database,
-      table,
-      uuid,
-      part_name,
+      id,
+      name,
       status,
-      num_restarts,
-      scheduled_time,
-      duration,
-      message
+      error,
+      start_time,
+      end_time,
+      num_files,
+      formatReadableSize(total_size) as total_size,
+      formatReadableSize(uncompressed_size) as uncompressed_size,
+      formatReadableSize(compressed_size) as compressed_size
     FROM system.backups
-    ORDER BY scheduled_time DESC
+    ORDER BY start_time DESC
     LIMIT 50
   `,
 
   asyncInserts: () => `
     SELECT
-      query_id,
       query,
       database,
       table,
       format,
       first_update,
-      total_bytes,
-      entries,
-      bytes
+      formatReadableSize(total_bytes) as total_bytes
     FROM system.asynchronous_inserts
     ORDER BY first_update DESC
     LIMIT 50
@@ -588,9 +585,8 @@ export const SystemQueries = {
       view,
       status,
       last_refresh_time,
-      last_refresh_result,
       next_refresh_time,
-      remaining_dependencies,
+      last_refresh_replica,
       exception
     FROM system.view_refreshes
     ORDER BY last_refresh_time DESC
@@ -617,12 +613,15 @@ export const SystemQueries = {
       database,
       table,
       name,
-      type,
-      sorting_key,
-      query
+      partition,
+      rows,
+      formatReadableSize(bytes_on_disk) as bytes_on_disk,
+      formatReadableSize(data_compressed_bytes) as compressed_bytes,
+      formatReadableSize(data_uncompressed_bytes) as uncompressed_bytes,
+      marks
     FROM system.projection_parts
-    WHERE ${database ? `database = '${database}'` : '1=1'}
-    GROUP BY database, table, name, type, sorting_key, query
+    WHERE active = 1
+      AND ${database ? `database = '${database}'` : '1=1'}
     ORDER BY database, table, name
   `,
 
