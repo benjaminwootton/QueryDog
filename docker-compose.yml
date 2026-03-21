@@ -7,5 +7,6 @@ services:
       - "3001:3001"
     volumes:
       - ./queries:/app/queries
-      - ./querydog.yml:/app/querydog.yml
+      # Mount querydog.yml from current directory or home directory
+      - ${QUERYDOG_CONFIG:-./querydog.yml}:/app/querydog.yml
     restart: unless-stopped

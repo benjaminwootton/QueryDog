@@ -79,7 +79,14 @@ export function loadQuerydogConfig(): QuerydogConfig {
   for (const configPath of locations) {
     if (fs.existsSync(configPath)) {
       const content = fs.readFileSync(configPath, 'utf8');
-      return yaml.parse(content) as QuerydogConfig;
+      const parsed = yaml.parse(content);
+      // Handle empty file, null, or missing environments key
+      if (!parsed || typeof parsed !== 'object') {
+        return { environments: [] };
+      }
+      return {
+        environments: Array.isArray(parsed.environments) ? parsed.environments : [],
+      };
     }
   }
 
@@ -143,7 +150,7 @@ export function getEnvironment(name: string): Environment | undefined {
 
 export function listEnvironments(): Environment[] {
   const config = loadQuerydogConfig();
-  return config.environments;
+  return config.environments || [];
 }
 
 export function findEnvironmentByPartialName(partial: string): Environment[] {

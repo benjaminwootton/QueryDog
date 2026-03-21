@@ -343,7 +343,7 @@ export function DatabaseManager({ isOpen, onClose, onConnect, connectedEnvIndex 
           No connections configured
         </div>
       ) : (
-        <div className="bg-gray-800 rounded max-h-80 overflow-y-auto">
+        <div className="bg-gray-800 rounded max-h-[30rem] overflow-y-auto">
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-gray-800">
               <tr className="border-b border-gray-700">
@@ -440,7 +440,7 @@ export function DatabaseManager({ isOpen, onClose, onConnect, connectedEnvIndex 
   return (
     <>
       <div className="fixed inset-0 bg-black/60 z-50" onClick={() => mode === 'list' ? onClose() : setMode('list')} />
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-6 w-[640px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-6 w-[960px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
         <button
           onClick={() => mode === 'list' ? onClose() : setMode('list')}
           className="absolute top-3 right-3 text-gray-400 hover:text-white"

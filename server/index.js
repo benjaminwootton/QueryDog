@@ -29,15 +29,44 @@ app.use(express.static(path.join(__dirname, '../dist')));
 
 // ==================== YAML CONFIG ====================
 
+// Get home directory cross-platform
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
+
+// Search paths for querydog.yml in priority order
+function getConfigSearchPaths() {
+  return [
+    path.join(process.cwd(), 'querydog.yml'),           // Current working directory
+    path.join(HOME_DIR, 'querydog.yml'),                // Home directory ~/querydog.yml
+    path.join(__dirname, '../querydog.yml'),            // Relative to server dir
+    '/app/querydog.yml',                                // Docker mount path
+  ].filter(Boolean);
+}
+
+// Track which config file was loaded
+let loadedConfigPath = null;
+
+// Find first existing config file
+function findConfigPath() {
+  const searchPaths = getConfigSearchPaths();
+  for (const configPath of searchPaths) {
+    if (fs.existsSync(configPath)) {
+      return configPath;
+    }
+  }
+  return null;
+}
+
 // Load environments from querydog.yml, falling back to .env
 function loadConfig(options = {}) {
   const { quiet = false } = options;
-  const yamlPath = path.join(process.cwd(), 'querydog.yml');
-  if (fs.existsSync(yamlPath)) {
+  const yamlPath = findConfigPath();
+
+  if (yamlPath) {
     const raw = yaml.load(fs.readFileSync(yamlPath, 'utf-8'));
     if (raw && raw.environments && raw.environments.length > 0) {
+      loadedConfigPath = yamlPath;
       if (!quiet) {
-        console.log(`Loaded ${raw.environments.length} environment(s) from querydog.yml`);
+        console.log(`Loaded ${raw.environments.length} environment(s) from ${yamlPath}`);
       }
       return raw.environments.map(env => ({
         name: env.name || 'Default',
@@ -53,9 +82,12 @@ function loadConfig(options = {}) {
       }));
     }
   }
+
   // Fallback to .env
   if (!quiet) {
-    console.log('No querydog.yml found, falling back to .env');
+    const searchPaths = getConfigSearchPaths();
+    console.log('No querydog.yml found in:', searchPaths.join(', '));
+    console.log('Falling back to .env');
   }
   return [{
     name: 'Default',
@@ -217,8 +249,21 @@ app.get('/api/config/environments', (req, res) => {
   });
 });
 
+// Get config file info (useful for debugging)
+app.get('/api/config/info', (req, res) => {
+  res.json({
+    loadedPath: loadedConfigPath,
+    searchPaths: getConfigSearchPaths(),
+    cwd: process.cwd(),
+    homeDir: HOME_DIR,
+  });
+});
+
 // List all environments
 app.get('/api/environments', (req, res) => {
+  // Reload from disk to pick up any external config changes
+  reloadEnvironments();
+
   res.json({
     active: activeEnvIndex,
     environments: environments.map((env, i) => ({
@@ -234,6 +279,9 @@ app.get('/api/environments', (req, res) => {
 
 // Switch environment (6 second timeout)
 app.post('/api/environments/switch', async (req, res) => {
+  // Reload from disk to pick up any external config changes
+  reloadEnvironments();
+
   const { index } = req.body;
   if (index === undefined || index < 0 || index >= environments.length) {
     return res.status(400).json({ error: 'Invalid environment index' });
@@ -269,9 +317,10 @@ app.post('/api/environments/switch', async (req, res) => {
 
 // ==================== ENVIRONMENT MANAGEMENT API ====================
 
-// Helper to get querydog.yml path
+// Helper to get querydog.yml path (uses loaded path or falls back to home dir)
 function getYamlPath() {
-  return path.join(process.cwd(), 'querydog.yml');
+  // Return the path that was loaded, or default to home directory
+  return loadedConfigPath || path.join(HOME_DIR, 'querydog.yml');
 }
 
 // Helper to save environments to querydog.yml
