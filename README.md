@@ -48,8 +48,40 @@ environments:
 
 ### Run With Docker Compose (Preferred)
 
+This builds the image locally from the `Dockerfile` and starts the web UI:
+
 ```bash
 docker compose up --build
+```
+
+Subsequent starts (no source changes) can just use:
+
+```bash
+docker compose up
+```
+
+Access the UI at http://localhost:3001.
+
+### Running The CLI Through Docker
+
+The same image also ships the QueryDog CLI. Anything other than `server` passed to the container falls through to the CLI, so you can run one-off CLI commands against the built image with `docker compose run`:
+
+```bash
+docker compose run --rm querydog help
+docker compose run --rm querydog tables
+docker compose run --rm querydog query "SELECT 1"
+```
+
+`--rm` cleans up the container after the command exits, and your `querydog.yml` and `./queries` mounts are preserved automatically.
+
+For convenience, add a shell alias so you can call the CLI like a local binary:
+
+```bash
+alias qd='docker compose run --rm querydog'
+# then:
+qd help
+qd tables
+qd query "SELECT 1"
 ```
 
 ### Run From Source

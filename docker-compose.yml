@@ -1,8 +1,8 @@
 services:
   querydog:
-    image: ghcr.io/benjaminwootton/querydog:latest
-    # To build locally instead, comment out 'image' and uncomment 'build':
-    # build: .
+    build: .
+    image: querydog:local
+    command: ["server"]
     ports:
       - "3001:3001"
     volumes:
