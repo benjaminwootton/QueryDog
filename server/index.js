@@ -45,11 +45,16 @@ function getConfigSearchPaths() {
 // Track which config file was loaded
 let loadedConfigPath = null;
 
-// Find first existing config file
+// Find first existing config file (must be a file, not a directory)
 function findConfigPath() {
   const searchPaths = getConfigSearchPaths();
   for (const configPath of searchPaths) {
     if (fs.existsSync(configPath)) {
+      const stat = fs.statSync(configPath);
+      if (stat.isDirectory()) {
+        console.error(`ERROR: ${configPath} is a directory, not a file. Skipping.`);
+        continue;
+      }
       return configPath;
     }
   }

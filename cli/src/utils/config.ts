@@ -47,7 +47,8 @@ function findProjectRoot(): string {
   // Start from current directory and walk up to find querydog.yml
   let dir = process.cwd();
   while (dir !== path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, 'querydog.yml'))) {
+    const candidate = path.join(dir, 'querydog.yml');
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
       return dir;
     }
     dir = path.dirname(dir);
@@ -78,6 +79,11 @@ export function loadQuerydogConfig(): QuerydogConfig {
 
   for (const configPath of locations) {
     if (fs.existsSync(configPath)) {
+      const stat = fs.statSync(configPath);
+      if (stat.isDirectory()) {
+        // Skip directories (e.g. Docker creates a directory when the source file doesn't exist)
+        continue;
+      }
       const content = fs.readFileSync(configPath, 'utf8');
       const parsed = yaml.parse(content);
       // Handle empty file, null, or missing environments key
@@ -102,7 +108,7 @@ export function saveQuerydogConfig(config: QuerydogConfig, targetPath?: string):
 
 export function configExists(): boolean {
   const locations = getConfigSearchPaths();
-  return locations.some(p => fs.existsSync(p));
+  return locations.some(p => fs.existsSync(p) && fs.statSync(p).isFile());
 }
 
 export function loadCLIConfig(): CLIConfig {
