@@ -1,27 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
 import type { QueryLogEntry } from '../types/queryLog';
+import { formatBytes, formatNumber, formatDuration } from '../utils/formatters';
 
 interface QueryCompareModalProps {
   entries: QueryLogEntry[];
   onClose: () => void;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function formatNumber(num: number): string {
-  return num.toLocaleString();
-}
-
-function formatDuration(ms: number): string {
-  if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
-  return ms + 'ms';
 }
 
 // Color palette for query column headers

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef } from 'ag-grid-community';
 import { Settings, HardDrive, Database, BarChart2, Clock, Zap, AlertTriangle, AlertCircle, Search, RefreshCw, LayoutDashboard } from 'lucide-react';
 import { SystemTable } from '../SystemTable';
@@ -20,25 +20,9 @@ import {
   fetchWarnings,
   fetchWarningsColumns,
 } from '../../services/api';
+import { useGridTheme } from '../../hooks/useTheme';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
 
 type InstanceTab = 'dashboard' | 'metrics' | 'async' | 'events' | 'errors' | 'warnings' | 'settings' | 'disks' | 'storagePolicies';
 
@@ -83,6 +67,7 @@ const STORAGE_POLICIES_DEFAULT_VISIBLE_FIELDS = [
 ];
 
 export function InstancePage() {
+  const gridTheme = useGridTheme();
   const [activeTab, setActiveTab] = useState<InstanceTab>('dashboard');
   const [metrics, setMetrics] = useState<MetricRow[]>([]);
   const [asyncMetrics, setAsyncMetrics] = useState<MetricRow[]>([]);
@@ -235,7 +220,7 @@ export function InstancePage() {
         {isDashboardTab && <DashboardTab filterBarContainer={dashboardFilterBarEl} />}
         {isMetricsTab && (
           <AgGridReact<MetricRow | EventRow>
-            theme={darkTheme}
+            theme={gridTheme}
             rowData={filteredData}
             columnDefs={columnDefs}
             defaultColDef={defaultColDef}

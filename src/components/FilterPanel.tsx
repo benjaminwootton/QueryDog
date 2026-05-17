@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Filter, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import { fetchDistinctValues } from '../services/api';
+import { formatBytes, formatDuration } from '../utils/formatters';
 
 // Range filter configuration
 const RANGE_FILTERS = [
@@ -23,18 +24,6 @@ const FILTERABLE_FIELDS = [
   { field: 'used_aggregate_functions', label: 'Aggregate Functions', isArray: true },
   { field: 'used_table_functions', label: 'Table Functions', isArray: true },
 ];
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(0) + ' GB';
-  if (bytes >= 1048576) return (bytes / 1048576).toFixed(0) + ' MB';
-  if (bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
-  return bytes + ' B';
-}
-
-function formatDuration(ms: number): string {
-  if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
-  return ms + 'ms';
-}
 
 export function FilterPanel() {
   const [isOpen, setIsOpen] = useState(false);

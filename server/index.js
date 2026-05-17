@@ -191,6 +191,21 @@ function getSystemTable(tableName) {
   return `system.${tableName}`;
 }
 
+// Wrap an async route handler so thrown errors propagate to the Express
+// error middleware below instead of needing a try/catch per route.
+function asyncHandler(fn) {
+  return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
+
+// Build an Express handler that returns column metadata for a system.<table>.
+function columnsHandler(systemTable) {
+  return asyncHandler(async (req, res) => {
+    const query = `SELECT name, type, comment FROM system.columns WHERE database = 'system' AND table = '${systemTable}' ORDER BY position`;
+    const result = await client.query({ query, format: 'JSONEachRow' });
+    res.json(await result.json());
+  });
+}
+
 // Health check endpoint - tests ClickHouse connection (6 second timeout)
 app.get('/api/health', async (req, res) => {
   try {
@@ -702,94 +717,66 @@ function getEffectiveEndTime(start, end, bucket = 'minute') {
 }
 
 // Get query log entries
-app.get('/api/query-log', async (req, res) => {
-  try {
-    const { start, end, bucket = 'minute', search, limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters, rangeFilters } = req.query;
+app.get('/api/query-log', asyncHandler(async (req, res) => {
+  const { start, end, bucket = 'minute', search, limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters, rangeFilters } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end, bucket);
-    }
-    applyQueryLogSearch(search, whereConditions, params);
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end, bucket);
+  }
+  applyQueryLogSearch(search, whereConditions, params);
 
-    // Parse and apply field filters with array support
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
-        }
+  // Parse and apply field filters with array support
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
       }
     }
-
-    // Apply range filters
-    buildRangeFilterConditions(rangeFilters, whereConditions, params);
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    // Allow sorting by most columns (alphanumeric only for safety)
-    const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField) ? sortField : 'event_time';
-    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-
-    const query = `
-      SELECT *
-      FROM ${getSystemTable('query_log')}
-      ${whereClause}
-      ORDER BY ${safeSortField} ${safeSortOrder}
-      LIMIT {limit:UInt32}
-      OFFSET {offset:UInt32}
-    `;
-
-    params.limit = parseInt(limit);
-    params.offset = parseInt(offset);
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching query log:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  // Apply range filters
+  buildRangeFilterConditions(rangeFilters, whereConditions, params);
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  // Allow sorting by most columns (alphanumeric only for safety)
+  const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField) ? sortField : 'event_time';
+  const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+  const query = `
+    SELECT *
+    FROM ${getSystemTable('query_log')}
+    ${whereClause}
+    ORDER BY ${safeSortField} ${safeSortOrder}
+    LIMIT {limit:UInt32}
+    OFFSET {offset:UInt32}
+  `;
+
+  params.limit = parseInt(limit);
+  params.offset = parseInt(offset);
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get column metadata from system.columns (must be before :field routes)
-app.get('/api/query-log/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT
-        name,
-        type,
-        comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'query_log'
-      ORDER BY position
-    `;
-
-    const result = await client.query({
-      query,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching column metadata:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/query-log/columns', columnsHandler('query_log'));
 
 // Get time series data for chart
 app.get('/api/query-log/timeseries', async (req, res) => {
@@ -883,421 +870,375 @@ app.get('/api/query-log/timeseries', async (req, res) => {
 });
 
 // Get stacked time series data for chart (grouped by query_kind)
-app.get('/api/query-log/timeseries-stacked', async (req, res) => {
-  try {
-    const { start, end, bucket = 'minute', search, filters, rangeFilters } = req.query;
+app.get('/api/query-log/timeseries-stacked', asyncHandler(async (req, res) => {
+  const { start, end, bucket = 'minute', search, filters, rangeFilters } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end, bucket);
-    }
-    applyQueryLogSearch(search, whereConditions, params);
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end, bucket);
+  }
+  applyQueryLogSearch(search, whereConditions, params);
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
-        }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
       }
     }
-
-    // Apply range filters
-    buildRangeFilterConditions(rangeFilters, whereConditions, params);
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    let truncFunc;
-    switch (bucket) {
-      case 'second':
-        truncFunc = 'toDateTime(event_time_microseconds)';
-        break;
-      case 'hour':
-        truncFunc = 'toStartOfHour(event_time)';
-        break;
-      default:
-        truncFunc = 'toStartOfMinute(event_time)';
-    }
-
-    // In clusters, secondary/forwarded queries have empty query_kind, so also match by query text
-    const query = `
-      SELECT
-        ${truncFunc} as time,
-        countIf(query_kind = 'Select' OR (query_kind = '' AND upper(trimLeft(query)) LIKE 'SELECT%')) as Select,
-        countIf(query_kind IN ('Insert', 'AsyncInsertFlush') OR (query_kind = '' AND upper(trimLeft(query)) LIKE 'INSERT%')) as Insert,
-        countIf(query_kind = 'Delete' OR (query_kind = '' AND upper(trimLeft(query)) LIKE 'DELETE%')) as Delete,
-        countIf(
-          query_kind NOT IN ('Select', 'Insert', 'AsyncInsertFlush', 'Delete', '')
-          OR (query_kind = '' AND upper(trimLeft(query)) NOT LIKE 'SELECT%' AND upper(trimLeft(query)) NOT LIKE 'INSERT%' AND upper(trimLeft(query)) NOT LIKE 'DELETE%')
-        ) as Other
-      FROM ${getSystemTable('query_log')}
-      ${whereClause}
-      GROUP BY time
-      ORDER BY time ASC
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching stacked time series:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  // Apply range filters
+  buildRangeFilterConditions(rangeFilters, whereConditions, params);
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  let truncFunc;
+  switch (bucket) {
+    case 'second':
+      truncFunc = 'toDateTime(event_time_microseconds)';
+      break;
+    case 'hour':
+      truncFunc = 'toStartOfHour(event_time)';
+      break;
+    default:
+      truncFunc = 'toStartOfMinute(event_time)';
+  }
+
+  // In clusters, secondary/forwarded queries have empty query_kind, so also match by query text
+  const query = `
+    SELECT
+      ${truncFunc} as time,
+      countIf(query_kind = 'Select' OR (query_kind = '' AND upper(trimLeft(query)) LIKE 'SELECT%')) as Select,
+      countIf(query_kind IN ('Insert', 'AsyncInsertFlush') OR (query_kind = '' AND upper(trimLeft(query)) LIKE 'INSERT%')) as Insert,
+      countIf(query_kind = 'Delete' OR (query_kind = '' AND upper(trimLeft(query)) LIKE 'DELETE%')) as Delete,
+      countIf(
+        query_kind NOT IN ('Select', 'Insert', 'AsyncInsertFlush', 'Delete', '')
+        OR (query_kind = '' AND upper(trimLeft(query)) NOT LIKE 'SELECT%' AND upper(trimLeft(query)) NOT LIKE 'INSERT%' AND upper(trimLeft(query)) NOT LIKE 'DELETE%')
+      ) as Other
+    FROM ${getSystemTable('query_log')}
+    ${whereClause}
+    GROUP BY time
+    ORDER BY time ASC
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get profile events from query_log
-app.get('/api/query-log/profile-events', async (req, res) => {
-  try {
-    const { start, end, bucket = 'minute', limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters, rangeFilters, eventColumns, search } = req.query;
+app.get('/api/query-log/profile-events', asyncHandler(async (req, res) => {
+  const { start, end, bucket = 'minute', limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters, rangeFilters, eventColumns, search } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end, bucket);
-    }
-    applyQueryLogSearch(search, whereConditions, params);
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end, bucket);
+  }
+  applyQueryLogSearch(search, whereConditions, params);
 
-    // Apply field filters
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
-        }
+  // Apply field filters
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
       }
     }
-
-    // Apply range filters
-    buildRangeFilterConditions(rangeFilters, whereConditions, params);
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    // Allow sorting by most columns (alphanumeric only for safety)
-    const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField) ? sortField : 'event_time';
-    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-
-    // Parse the event columns to extract from ProfileEvents map
-    const eventColumnsList = eventColumns ? eventColumns.split(',') : [];
-    const eventSelects = eventColumnsList.map(col => {
-      // Sanitize column name (alphanumeric and underscore only)
-      const safeName = col.replace(/[^a-zA-Z0-9_]/g, '');
-      return `ProfileEvents['${safeName}'] as ${safeName}`;
-    }).join(',\n        ');
-
-    const query = `
-      SELECT
-        event_time,
-        query_id,
-        query as query_text,
-        query_duration_ms,
-        ${eventSelects}
-      FROM ${getSystemTable('query_log')}
-      ${whereClause}
-      ORDER BY ${safeSortField} ${safeSortOrder}
-      LIMIT {limit:UInt32}
-      OFFSET {offset:UInt32}
-    `;
-
-    params.limit = parseInt(limit);
-    params.offset = parseInt(offset);
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching profile events:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  // Apply range filters
+  buildRangeFilterConditions(rangeFilters, whereConditions, params);
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  // Allow sorting by most columns (alphanumeric only for safety)
+  const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField) ? sortField : 'event_time';
+  const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+  // Parse the event columns to extract from ProfileEvents map
+  const eventColumnsList = eventColumns ? eventColumns.split(',') : [];
+  const eventSelects = eventColumnsList.map(col => {
+    // Sanitize column name (alphanumeric and underscore only)
+    const safeName = col.replace(/[^a-zA-Z0-9_]/g, '');
+    return `ProfileEvents['${safeName}'] as ${safeName}`;
+  }).join(',\n        ');
+
+  const query = `
+    SELECT
+      event_time,
+      query_id,
+      query as query_text,
+      query_duration_ms,
+      ${eventSelects}
+    FROM ${getSystemTable('query_log')}
+    ${whereClause}
+    ORDER BY ${safeSortField} ${safeSortOrder}
+    LIMIT {limit:UInt32}
+    OFFSET {offset:UInt32}
+  `;
+
+  params.limit = parseInt(limit);
+  params.offset = parseInt(offset);
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get histogram data for a specific field
-app.get('/api/query-log/histogram/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const { start, end, bucket = 'minute', limit = 20, search, filters } = req.query;
+app.get('/api/query-log/histogram/:field', asyncHandler(async (req, res) => {
+  const { field } = req.params;
+  const { start, end, bucket = 'minute', limit = 20, search, filters } = req.query;
 
-    const scalarFields = [
-      'client_name', 'user', 'type', 'query_kind', 'current_database',
-      'exception_code', 'is_initial_query', 'client_hostname'
-    ];
+  const scalarFields = [
+    'client_name', 'user', 'type', 'query_kind', 'current_database',
+    'exception_code', 'is_initial_query', 'client_hostname'
+  ];
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end, bucket);
-    }
-    applyQueryLogSearch(search, whereConditions, params);
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end, bucket);
+  }
+  applyQueryLogSearch(search, whereConditions, params);
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [f, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          whereConditions.push(buildFilterCondition(f, values, params, paramIndex++));
-        }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [f, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        whereConditions.push(buildFilterCondition(f, values, params, paramIndex++));
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    params.limit = parseInt(limit);
-
-    let query;
-    if (ARRAY_FIELDS.includes(field)) {
-      query = `
-        SELECT
-          arrayJoin(${field}) as name,
-          count() as count
-        FROM ${getSystemTable('query_log')}
-        ${whereClause}
-        GROUP BY name
-        HAVING name != ''
-        ORDER BY count DESC
-        LIMIT {limit:UInt32}
-      `;
-    } else if (scalarFields.includes(field)) {
-      query = `
-        SELECT
-          toString(${field}) as name,
-          count() as count
-        FROM ${getSystemTable('query_log')}
-        ${whereClause}
-        GROUP BY name
-        ORDER BY count DESC
-        LIMIT {limit:UInt32}
-      `;
-    } else {
-      return res.status(400).json({ error: 'Invalid field' });
-    }
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching histogram:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+  params.limit = parseInt(limit);
+
+  let query;
+  if (ARRAY_FIELDS.includes(field)) {
+    query = `
+      SELECT
+        arrayJoin(${field}) as name,
+        count() as count
+      FROM ${getSystemTable('query_log')}
+      ${whereClause}
+      GROUP BY name
+      HAVING name != ''
+      ORDER BY count DESC
+      LIMIT {limit:UInt32}
+    `;
+  } else if (scalarFields.includes(field)) {
+    query = `
+      SELECT
+        toString(${field}) as name,
+        count() as count
+      FROM ${getSystemTable('query_log')}
+      ${whereClause}
+      GROUP BY name
+      ORDER BY count DESC
+      LIMIT {limit:UInt32}
+    `;
+  } else {
+    return res.status(400).json({ error: 'Invalid field' });
+  }
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get distinct values for a field (for filters) - supports both scalar and array fields
-app.get('/api/query-log/distinct/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const { start, end, bucket = 'minute', limit = 100 } = req.query;
+app.get('/api/query-log/distinct/:field', asyncHandler(async (req, res) => {
+  const { field } = req.params;
+  const { start, end, bucket = 'minute', limit = 100 } = req.query;
 
-    const scalarFields = [
-      'client_name', 'user', 'type', 'query_kind', 'current_database',
-      'exception_code', 'is_initial_query', 'client_hostname'
-    ];
+  const scalarFields = [
+    'client_name', 'user', 'type', 'query_kind', 'current_database',
+    'exception_code', 'is_initial_query', 'client_hostname'
+  ];
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end, bucket);
-    }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    params.limit = parseInt(limit);
-
-    let query;
-    if (ARRAY_FIELDS.includes(field)) {
-      query = `
-        SELECT DISTINCT arrayJoin(${field}) as value
-        FROM ${getSystemTable('query_log')}
-        ${whereClause}
-        ORDER BY value
-        LIMIT {limit:UInt32}
-      `;
-    } else if (scalarFields.includes(field)) {
-      query = `
-        SELECT DISTINCT toString(${field}) as value
-        FROM ${getSystemTable('query_log')}
-        ${whereClause}
-        ORDER BY value
-        LIMIT {limit:UInt32}
-      `;
-    } else {
-      return res.status(400).json({ error: 'Invalid field' });
-    }
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data.map(row => row.value).filter(v => v !== ''));
-  } catch (error) {
-    console.error('Error fetching distinct values:', error);
-    res.status(500).json({ error: error.message });
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
   }
-});
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end, bucket);
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+  params.limit = parseInt(limit);
+
+  let query;
+  if (ARRAY_FIELDS.includes(field)) {
+    query = `
+      SELECT DISTINCT arrayJoin(${field}) as value
+      FROM ${getSystemTable('query_log')}
+      ${whereClause}
+      ORDER BY value
+      LIMIT {limit:UInt32}
+    `;
+  } else if (scalarFields.includes(field)) {
+    query = `
+      SELECT DISTINCT toString(${field}) as value
+      FROM ${getSystemTable('query_log')}
+      ${whereClause}
+      ORDER BY value
+      LIMIT {limit:UInt32}
+    `;
+  } else {
+    return res.status(400).json({ error: 'Invalid field' });
+  }
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data.map(row => row.value).filter(v => v !== ''));
+}));
 
 // ==================== SYSTEM PARTS ENDPOINTS ====================
 
 // Get system.parts data
-app.get('/api/parts', async (req, res) => {
-  try {
-    const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters, search } = req.query;
+app.get('/api/parts', asyncHandler(async (req, res) => {
+  const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters, search } = req.query;
 
-    let whereConditions = [];
-    const params = { limit: parseInt(limit), offset: parseInt(offset) };
+  let whereConditions = [];
+  const params = { limit: parseInt(limit), offset: parseInt(offset) };
 
-    // Apply search filter (searches table, database, partition_id, name)
-    if (search) {
-      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
-      params.search = `%${search}%`;
-    }
+  // Apply search filter (searches table, database, partition_id, name)
+  if (search) {
+    whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
+    params.search = `%${search}%`;
+  }
 
-    // Apply field filters
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  // Apply field filters
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField) ? sortField : 'modification_time';
-    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-
-    const query = `
-      SELECT *
-      FROM ${getSystemTable('parts')}
-      ${whereClause}
-      ORDER BY ${safeSortField} ${safeSortOrder}
-      LIMIT {limit:UInt32} OFFSET {offset:UInt32}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching parts:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField) ? sortField : 'modification_time';
+  const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+  const query = `
+    SELECT *
+    FROM ${getSystemTable('parts')}
+    ${whereClause}
+    ORDER BY ${safeSortField} ${safeSortOrder}
+    LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.parts columns
-app.get('/api/parts/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'parts'
-      ORDER BY position
-    `;
-
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching parts columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/parts/columns', columnsHandler('parts'));
 
 // Get system.parts count
-app.get('/api/parts/count', async (req, res) => {
-  try {
-    const { filters, search } = req.query;
+app.get('/api/parts/count', asyncHandler(async (req, res) => {
+  const { filters, search } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    // Apply search filter
-    if (search) {
-      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
-      params.search = `%${search}%`;
-    }
+  // Apply search filter
+  if (search) {
+    whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
+    params.search = `%${search}%`;
+  }
 
-    // Apply field filters
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  // Apply field filters
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const query = `
-      SELECT count() as count
-      FROM ${getSystemTable('parts')}
-      ${whereClause}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json({ count: data[0]?.count || 0 });
-  } catch (error) {
-    console.error('Error fetching parts count:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const query = `
+    SELECT count() as count
+    FROM ${getSystemTable('parts')}
+    ${whereClause}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json({ count: data[0]?.count || 0 });
+}));
 
 // Get grouped parts by table
 app.get('/api/parts/grouped', async (req, res) => {
@@ -1403,111 +1344,101 @@ app.get('/api/parts/grouped', async (req, res) => {
 });
 
 // Get column compression details for a table
-app.get('/api/table-compression/:database/:table', async (req, res) => {
-  try {
-    const { database, table } = req.params;
+app.get('/api/table-compression/:database/:table', asyncHandler(async (req, res) => {
+  const { database, table } = req.params;
 
-    const query = `
-      SELECT
-        name,
-        type,
-        sum(data_compressed_bytes) AS compressed_bytes,
-        sum(data_uncompressed_bytes) AS uncompressed_bytes,
-        round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) AS savings_pct
-      FROM ${getSystemTable('columns')}
-      WHERE database = {database:String} AND table = {table:String}
-      GROUP BY name, type
-      ORDER BY compressed_bytes DESC
-    `;
+  const query = `
+    SELECT
+      name,
+      type,
+      sum(data_compressed_bytes) AS compressed_bytes,
+      sum(data_uncompressed_bytes) AS uncompressed_bytes,
+      round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) AS savings_pct
+    FROM ${getSystemTable('columns')}
+    WHERE database = {database:String} AND table = {table:String}
+    GROUP BY name, type
+    ORDER BY compressed_bytes DESC
+  `;
 
-    const result = await client.query({
-      query,
-      query_params: { database, table },
-      format: 'JSONEachRow',
-    });
+  const result = await client.query({
+    query,
+    query_params: { database, table },
+    format: 'JSONEachRow',
+  });
 
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching table compression:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get aggregated partitions data (grouped by partition)
-app.get('/api/partitions-summary', async (req, res) => {
-  try {
-    const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters, search } = req.query;
+app.get('/api/partitions-summary', asyncHandler(async (req, res) => {
+  const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters, search } = req.query;
 
-    let whereConditions = ['active = 1'];
-    const params = { limit: parseInt(limit), offset: parseInt(offset) };
+  let whereConditions = ['active = 1'];
+  const params = { limit: parseInt(limit), offset: parseInt(offset) };
 
-    // Apply search filter
-    if (search) {
-      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String})');
-      params.search = `%${search}%`;
-    }
+  // Apply search filter
+  if (search) {
+    whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String})');
+    params.search = `%${search}%`;
+  }
 
-    // Apply field filters
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  // Apply field filters
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    // Map sort field to aggregated field if needed
-    const sortFieldMap = {
-      'rows': 'total_rows',
-      'bytes_on_disk': 'total_bytes',
-      'modification_time': 'latest_modification'
-    };
-    const mappedSortField = sortFieldMap[sortField] || sortField;
-    const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(mappedSortField) ? mappedSortField : 'latest_modification';
-    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-
-    const query = `
-      SELECT
-        database,
-        table,
-        partition_id,
-        partition,
-        count() as parts_count,
-        sum(rows) as total_rows,
-        sum(bytes_on_disk) as total_bytes,
-        sum(data_compressed_bytes) as total_compressed,
-        sum(data_uncompressed_bytes) as total_uncompressed,
-        round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) AS savings_pct,
-        max(modification_time) as latest_modification,
-        min(min_block_number) as min_block,
-        max(max_block_number) as max_block
-      FROM ${getSystemTable('parts')}
-      ${whereClause}
-      GROUP BY database, table, partition_id, partition
-      ORDER BY database ASC, table ASC, ${safeSortField} ${safeSortOrder}
-      LIMIT {limit:UInt32} OFFSET {offset:UInt32}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching partitions summary:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  // Map sort field to aggregated field if needed
+  const sortFieldMap = {
+    'rows': 'total_rows',
+    'bytes_on_disk': 'total_bytes',
+    'modification_time': 'latest_modification'
+  };
+  const mappedSortField = sortFieldMap[sortField] || sortField;
+  const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(mappedSortField) ? mappedSortField : 'latest_modification';
+  const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+  const query = `
+    SELECT
+      database,
+      table,
+      partition_id,
+      partition,
+      count() as parts_count,
+      sum(rows) as total_rows,
+      sum(bytes_on_disk) as total_bytes,
+      sum(data_compressed_bytes) as total_compressed,
+      sum(data_uncompressed_bytes) as total_uncompressed,
+      round((sum(data_uncompressed_bytes) - sum(data_compressed_bytes)) / nullIf(sum(data_uncompressed_bytes), 0) * 100, 1) AS savings_pct,
+      max(modification_time) as latest_modification,
+      min(min_block_number) as min_block,
+      max(max_block_number) as max_block
+    FROM ${getSystemTable('parts')}
+    ${whereClause}
+    GROUP BY database, table, partition_id, partition
+    ORDER BY database ASC, table ASC, ${safeSortField} ${safeSortOrder}
+    LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get aggregated partitions count
 app.get('/api/partitions-summary/count', async (req, res) => {
@@ -1593,697 +1524,531 @@ app.get('/api/partitions-summary/count', async (req, res) => {
 });
 
 // Get partitions summary columns (virtual columns for the aggregated view)
-app.get('/api/partitions-summary/columns', async (req, res) => {
-  try {
-    // Return virtual column definitions for the aggregated view
-    const columns = [
-      { name: 'database', type: 'String', comment: 'Database name' },
-      { name: 'table', type: 'String', comment: 'Table name' },
-      { name: 'partition_id', type: 'String', comment: 'Partition ID' },
-      { name: 'partition', type: 'String', comment: 'Partition value' },
-      { name: 'parts_count', type: 'UInt64', comment: 'Number of parts in partition' },
-      { name: 'total_rows', type: 'UInt64', comment: 'Total rows in partition' },
-      { name: 'total_bytes', type: 'UInt64', comment: 'Total bytes on disk' },
-      { name: 'total_compressed', type: 'UInt64', comment: 'Total compressed bytes' },
-      { name: 'total_uncompressed', type: 'UInt64', comment: 'Total uncompressed bytes' },
-      { name: 'savings_pct', type: 'Float64', comment: 'Compression savings percentage' },
-      { name: 'latest_modification', type: 'DateTime', comment: 'Latest modification time' },
-      { name: 'min_block', type: 'UInt64', comment: 'Minimum block number' },
-      { name: 'max_block', type: 'UInt64', comment: 'Maximum block number' },
-    ];
-    res.json(columns);
-  } catch (error) {
-    console.error('Error fetching partitions summary columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/partitions-summary/columns', asyncHandler(async (req, res) => {
+  // Return virtual column definitions for the aggregated view
+  const columns = [
+    { name: 'database', type: 'String', comment: 'Database name' },
+    { name: 'table', type: 'String', comment: 'Table name' },
+    { name: 'partition_id', type: 'String', comment: 'Partition ID' },
+    { name: 'partition', type: 'String', comment: 'Partition value' },
+    { name: 'parts_count', type: 'UInt64', comment: 'Number of parts in partition' },
+    { name: 'total_rows', type: 'UInt64', comment: 'Total rows in partition' },
+    { name: 'total_bytes', type: 'UInt64', comment: 'Total bytes on disk' },
+    { name: 'total_compressed', type: 'UInt64', comment: 'Total compressed bytes' },
+    { name: 'total_uncompressed', type: 'UInt64', comment: 'Total uncompressed bytes' },
+    { name: 'savings_pct', type: 'Float64', comment: 'Compression savings percentage' },
+    { name: 'latest_modification', type: 'DateTime', comment: 'Latest modification time' },
+    { name: 'min_block', type: 'UInt64', comment: 'Minimum block number' },
+    { name: 'max_block', type: 'UInt64', comment: 'Maximum block number' },
+  ];
+  res.json(columns);
+}));
 
 // Get system.partitions data
-app.get('/api/partitions', async (req, res) => {
-  try {
-    const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters, search } = req.query;
+app.get('/api/partitions', asyncHandler(async (req, res) => {
+  const { limit = 2500, offset = 0, sortField = 'modification_time', sortOrder = 'DESC', filters, search } = req.query;
 
-    let whereConditions = [];
-    const params = { limit: parseInt(limit), offset: parseInt(offset) };
+  let whereConditions = [];
+  const params = { limit: parseInt(limit), offset: parseInt(offset) };
 
-    // Apply search filter (searches table, database, partition_id, name)
-    if (search) {
-      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
-      params.search = `%${search}%`;
-    }
+  // Apply search filter (searches table, database, partition_id, name)
+  if (search) {
+    whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
+    params.search = `%${search}%`;
+  }
 
-    // Apply field filters
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  // Apply field filters
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField) ? sortField : 'modification_time';
-    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-
-    const query = `
-      SELECT *
-      FROM ${getSystemTable('parts')}
-      ${whereClause}
-      ORDER BY ${safeSortField} ${safeSortOrder}
-      LIMIT {limit:UInt32} OFFSET {offset:UInt32}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching partitions:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const safeSortField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField) ? sortField : 'modification_time';
+  const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+  const query = `
+    SELECT *
+    FROM ${getSystemTable('parts')}
+    ${whereClause}
+    ORDER BY ${safeSortField} ${safeSortOrder}
+    LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.partitions count
-app.get('/api/partitions/count', async (req, res) => {
-  try {
-    const { filters, search } = req.query;
+app.get('/api/partitions/count', asyncHandler(async (req, res) => {
+  const { filters, search } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    // Apply search filter
-    if (search) {
-      whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
-      params.search = `%${search}%`;
-    }
+  // Apply search filter
+  if (search) {
+    whereConditions.push('(table ILIKE {search:String} OR database ILIKE {search:String} OR partition_id ILIKE {search:String} OR name ILIKE {search:String})');
+    params.search = `%${search}%`;
+  }
 
-    // Apply field filters
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  // Apply field filters
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const query = `
-      SELECT count() as count
-      FROM ${getSystemTable('parts')}
-      ${whereClause}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json({ count: data[0]?.count || 0 });
-  } catch (error) {
-    console.error('Error fetching partitions count:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const query = `
+    SELECT count() as count
+    FROM ${getSystemTable('parts')}
+    ${whereClause}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json({ count: data[0]?.count || 0 });
+}));
 
 // Get system.partitions columns
-app.get('/api/partitions/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'parts'
-      ORDER BY position
-    `;
-
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching partitions columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/partitions/columns', columnsHandler('parts'));
 
 // Get parts for a specific partition
-app.get('/api/partition-parts/:database/:table/:partitionId', async (req, res) => {
-  try {
-    const { database, table, partitionId } = req.params;
-    const { activeOnly = '1' } = req.query;
+app.get('/api/partition-parts/:database/:table/:partitionId', asyncHandler(async (req, res) => {
+  const { database, table, partitionId } = req.params;
+  const { activeOnly = '1' } = req.query;
 
-    const query = `
-      SELECT
-        name,
-        rows,
-        bytes_on_disk,
-        data_compressed_bytes,
-        data_uncompressed_bytes,
-        marks,
-        modification_time,
-        min_block_number,
-        max_block_number,
-        level,
-        primary_key_bytes_in_memory,
-        active
-      FROM ${getSystemTable('parts')}
-      WHERE database = {database:String}
-        AND table = {table:String}
-        AND partition_id = {partitionId:String}
-        ${activeOnly === '1' ? 'AND active = 1' : ''}
-      ORDER BY modification_time DESC
-    `;
+  const query = `
+    SELECT
+      name,
+      rows,
+      bytes_on_disk,
+      data_compressed_bytes,
+      data_uncompressed_bytes,
+      marks,
+      modification_time,
+      min_block_number,
+      max_block_number,
+      level,
+      primary_key_bytes_in_memory,
+      active
+    FROM ${getSystemTable('parts')}
+    WHERE database = {database:String}
+      AND table = {table:String}
+      AND partition_id = {partitionId:String}
+      ${activeOnly === '1' ? 'AND active = 1' : ''}
+    ORDER BY modification_time DESC
+  `;
 
-    const result = await client.query({
-      query,
-      query_params: { database, table, partitionId },
-      format: 'JSONEachRow',
-    });
+  const result = await client.query({
+    query,
+    query_params: { database, table, partitionId },
+    format: 'JSONEachRow',
+  });
 
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching partition parts:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get partition details for a specific table
-app.get('/api/table-partitions/:database/:table', async (req, res) => {
-  try {
-    const { database, table } = req.params;
-    const { activeOnly = '1' } = req.query;
+app.get('/api/table-partitions/:database/:table', asyncHandler(async (req, res) => {
+  const { database, table } = req.params;
+  const { activeOnly = '1' } = req.query;
 
-    const params = { database, table };
-    const activeFilter = activeOnly === '1' ? 'AND active = 1' : '';
+  const params = { database, table };
+  const activeFilter = activeOnly === '1' ? 'AND active = 1' : '';
 
-    const query = `
-      SELECT
-        partition_id,
-        count() as parts_count,
-        sum(rows) as total_rows,
-        sum(bytes_on_disk) as total_bytes,
-        min(min_block_number) as min_block,
-        max(max_block_number) as max_block,
-        min(modification_time) as oldest_part,
-        max(modification_time) as newest_part
-      FROM ${getSystemTable('parts')}
-      WHERE database = {database:String} AND table = {table:String} ${activeFilter}
-      GROUP BY partition_id
-      ORDER BY partition_id
-    `;
+  const query = `
+    SELECT
+      partition_id,
+      count() as parts_count,
+      sum(rows) as total_rows,
+      sum(bytes_on_disk) as total_bytes,
+      min(min_block_number) as min_block,
+      max(max_block_number) as max_block,
+      min(modification_time) as oldest_part,
+      max(modification_time) as newest_part
+    FROM ${getSystemTable('parts')}
+    WHERE database = {database:String} AND table = {table:String} ${activeFilter}
+    GROUP BY partition_id
+    ORDER BY partition_id
+  `;
 
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
 
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching table partitions:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get MergeTree index information for a specific table
-app.get('/api/table-mergetree-index/:database/:table', async (req, res) => {
-  try {
-    const { database, table } = req.params;
+app.get('/api/table-mergetree-index/:database/:table', asyncHandler(async (req, res) => {
+  const { database, table } = req.params;
 
-    // Escape single quotes to prevent SQL injection
-    const safeDatabase = database.replace(/'/g, "''");
-    const safeTable = table.replace(/'/g, "''");
+  // Escape single quotes to prevent SQL injection
+  const safeDatabase = database.replace(/'/g, "''");
+  const safeTable = table.replace(/'/g, "''");
 
-    // Query mergeTreeIndex table function for granule boundaries (limit 50 for performance)
-    const query = `SELECT * FROM mergeTreeIndex('${safeDatabase}', '${safeTable}') LIMIT 50`;
+  // Query mergeTreeIndex table function for granule boundaries (limit 50 for performance)
+  const query = `SELECT * FROM mergeTreeIndex('${safeDatabase}', '${safeTable}') LIMIT 50`;
 
-    console.log('MergeTree index query:', query);
+  console.log('MergeTree index query:', query);
 
-    const result = await client.query({
-      query,
-      format: 'JSONEachRow',
-    });
+  const result = await client.query({
+    query,
+    format: 'JSONEachRow',
+  });
 
-    const data = await result.json();
-    console.log('MergeTree index result count:', data.length);
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching MergeTree index:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  const data = await result.json();
+  console.log('MergeTree index result count:', data.length);
+  res.json(data);
+}));
 
 // Get table definition (SHOW CREATE TABLE)
-app.get('/api/table-definition/:database/:table', async (req, res) => {
-  try {
-    const { database, table } = req.params;
+app.get('/api/table-definition/:database/:table', asyncHandler(async (req, res) => {
+  const { database, table } = req.params;
 
-    const query = `SHOW CREATE TABLE \`${database}\`.\`${table}\``;
+  const query = `SHOW CREATE TABLE \`${database}\`.\`${table}\``;
 
-    const result = await client.query({
-      query,
-      format: 'JSONEachRow',
-    });
+  const result = await client.query({
+    query,
+    format: 'JSONEachRow',
+  });
 
-    const data = await result.json();
-    // SHOW CREATE TABLE returns a single row with 'statement' column containing the SQL
-    const definition = data[0]?.statement || '';
-    res.json({ definition });
-  } catch (error) {
-    console.error('Error fetching table definition:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  const data = await result.json();
+  // SHOW CREATE TABLE returns a single row with 'statement' column containing the SQL
+  const definition = data[0]?.statement || '';
+  res.json({ definition });
+}));
 
 // Get table statistics (null percent and cardinality per column)
-app.post('/api/table-stats', async (req, res) => {
-  try {
-    const { database, table } = req.body;
+app.post('/api/table-stats', asyncHandler(async (req, res) => {
+  const { database, table } = req.body;
 
-    // First get all columns with type information
-    const columnsQuery = `
-      SELECT
-        name,
-        type,
-        type LIKE 'Nullable%' AS is_nullable,
-        type LIKE 'LowCardinality%' AS is_low_cardinality
-      FROM system.columns
-      WHERE database = {database:String} AND table = {table:String}
-      ORDER BY position
+  // First get all columns with type information
+  const columnsQuery = `
+    SELECT
+      name,
+      type,
+      type LIKE 'Nullable%' AS is_nullable,
+      type LIKE 'LowCardinality%' AS is_low_cardinality
+    FROM system.columns
+    WHERE database = {database:String} AND table = {table:String}
+    ORDER BY position
+  `;
+
+  const columnsResult = await client.query({
+    query: columnsQuery,
+    query_params: { database, table },
+    format: 'JSONEachRow',
+  });
+
+  const columns = await columnsResult.json();
+
+  // Build dynamic query to calculate null percent and cardinality for each column
+  const selectStatements = columns.map(col => {
+    const colName = col.name;
+    // Use backticks for column names that might be reserved keywords
+    const quotedCol = `\`${colName}\``;
+    return `
+      countIf(${quotedCol} IS NULL) * 100.0 / count() AS \`null_percent_${colName}\`,
+      uniq(${quotedCol}) AS \`cardinality_${colName}\`
     `;
+  }).join(',\n');
 
-    const columnsResult = await client.query({
-      query: columnsQuery,
-      query_params: { database, table },
-      format: 'JSONEachRow',
-    });
+  const statsQuery = `
+    SELECT
+      ${selectStatements}
+    FROM \`${database}\`.\`${table}\`
+    LIMIT 1
+  `;
 
-    const columns = await columnsResult.json();
+  console.log('Stats query:', statsQuery);
 
-    // Build dynamic query to calculate null percent and cardinality for each column
-    const selectStatements = columns.map(col => {
-      const colName = col.name;
-      // Use backticks for column names that might be reserved keywords
-      const quotedCol = `\`${colName}\``;
-      return `
-        countIf(${quotedCol} IS NULL) * 100.0 / count() AS \`null_percent_${colName}\`,
-        uniq(${quotedCol}) AS \`cardinality_${colName}\`
-      `;
-    }).join(',\n');
+  const statsResult = await client.query({
+    query: statsQuery,
+    format: 'JSONEachRow',
+  });
 
-    const statsQuery = `
-      SELECT
-        ${selectStatements}
-      FROM \`${database}\`.\`${table}\`
-      LIMIT 1
-    `;
+  const statsData = await statsResult.json();
 
-    console.log('Stats query:', statsQuery);
+  // Transform the result into the expected format
+  const result = columns.map(col => ({
+    column: col.name,
+    null_percent: statsData[0]?.[`null_percent_${col.name}`] || 0,
+    cardinality: statsData[0]?.[`cardinality_${col.name}`] || 0,
+    is_nullable: col.is_nullable,
+    is_low_cardinality: col.is_low_cardinality,
+  }));
 
-    const statsResult = await client.query({
-      query: statsQuery,
-      format: 'JSONEachRow',
-    });
-
-    const statsData = await statsResult.json();
-
-    // Transform the result into the expected format
-    const result = columns.map(col => ({
-      column: col.name,
-      null_percent: statsData[0]?.[`null_percent_${col.name}`] || 0,
-      cardinality: statsData[0]?.[`cardinality_${col.name}`] || 0,
-      is_nullable: col.is_nullable,
-      is_low_cardinality: col.is_low_cardinality,
-    }));
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error fetching table stats:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  res.json(result);
+}));
 
 // Get distinct values for system.parts field (for filters)
-app.get('/api/parts/distinct/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const { limit = 100 } = req.query;
+app.get('/api/parts/distinct/:field', asyncHandler(async (req, res) => {
+  const { field } = req.params;
+  const { limit = 100 } = req.query;
 
-    const allowedFields = ['database', 'table', 'partition_id', 'part_type', 'active', 'disk_name'];
+  const allowedFields = ['database', 'table', 'partition_id', 'part_type', 'active', 'disk_name'];
 
-    if (!allowedFields.includes(field)) {
-      return res.status(400).json({ error: 'Invalid field' });
-    }
-
-    const params = { limit: parseInt(limit) };
-
-    const query = `
-      SELECT DISTINCT toString(${field}) as value
-      FROM ${getSystemTable('parts')}
-      ORDER BY value
-      LIMIT {limit:UInt32}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data.map(row => row.value).filter(v => v !== ''));
-  } catch (error) {
-    console.error('Error fetching parts distinct values:', error);
-    res.status(500).json({ error: error.message });
+  if (!allowedFields.includes(field)) {
+    return res.status(400).json({ error: 'Invalid field' });
   }
-});
+
+  const params = { limit: parseInt(limit) };
+
+  const query = `
+    SELECT DISTINCT toString(${field}) as value
+    FROM ${getSystemTable('parts')}
+    ORDER BY value
+    LIMIT {limit:UInt32}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data.map(row => row.value).filter(v => v !== ''));
+}));
 
 // Get histogram data for system.parts field
-app.get('/api/parts/histogram/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const { limit = 20, filters } = req.query;
+app.get('/api/parts/histogram/:field', asyncHandler(async (req, res) => {
+  const { field } = req.params;
+  const { limit = 20, filters } = req.query;
 
-    const allowedFields = ['database', 'table', 'partition_id', 'part_type', 'disk_name', 'active'];
-    if (!allowedFields.includes(field)) {
-      return res.status(400).json({ error: 'Invalid field for histogram' });
-    }
+  const allowedFields = ['database', 'table', 'partition_id', 'part_type', 'disk_name', 'active'];
+  if (!allowedFields.includes(field)) {
+    return res.status(400).json({ error: 'Invalid field for histogram' });
+  }
 
-    let whereConditions = [];
-    const params = { limit: parseInt(limit) };
+  let whereConditions = [];
+  const params = { limit: parseInt(limit) };
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [f, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex}`;
-          whereConditions.push(`toString(${f}) IN {${paramName}:Array(String)}`);
-          params[paramName] = values;
-          paramIndex++;
-        }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [f, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex}`;
+        whereConditions.push(`toString(${f}) IN {${paramName}:Array(String)}`);
+        params[paramName] = values;
+        paramIndex++;
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const query = `
-      SELECT
-        toString(${field}) as name,
-        count() as count
-      FROM ${getSystemTable('parts')}
-      ${whereClause}
-      GROUP BY name
-      ORDER BY count DESC
-      LIMIT {limit:UInt32}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching parts histogram:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const query = `
+    SELECT
+      toString(${field}) as name,
+      count() as count
+    FROM ${getSystemTable('parts')}
+    ${whereClause}
+    GROUP BY name
+    ORDER BY count DESC
+    LIMIT {limit:UInt32}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // ==================== ACTIVITY ENDPOINTS ====================
 
 // Get system.processes
-app.get('/api/processes', async (req, res) => {
-  try {
-    const { filters } = req.query;
-    let whereConditions = [];
-    const params = {};
+app.get('/api/processes', asyncHandler(async (req, res) => {
+  const { filters } = req.query;
+  let whereConditions = [];
+  const params = {};
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM ${getSystemTable('processes')} ${whereClause} ORDER BY elapsed DESC`;
-    const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching processes:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+  const query = `SELECT * FROM ${getSystemTable('processes')} ${whereClause} ORDER BY elapsed DESC`;
+  const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.processes columns
-app.get('/api/processes/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'processes'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching processes columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/processes/columns', columnsHandler('processes'));
 
 // Get distinct values for processes
-app.get('/api/processes/distinct/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'user';
-    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('processes')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data.map(row => row.value).filter(v => v !== ''));
-  } catch (error) {
-    console.error('Error fetching processes distinct:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/processes/distinct/:field', asyncHandler(async (req, res) => {
+  const { field } = req.params;
+  const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'user';
+  const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('processes')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data.map(row => row.value).filter(v => v !== ''));
+}));
 
 // Get system.merges
-app.get('/api/merges', async (req, res) => {
-  try {
-    const { filters } = req.query;
-    let whereConditions = [];
-    const params = {};
+app.get('/api/merges', asyncHandler(async (req, res) => {
+  const { filters } = req.query;
+  let whereConditions = [];
+  const params = {};
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM ${getSystemTable('merges')} ${whereClause} ORDER BY progress DESC`;
-    const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching merges:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+  const query = `SELECT * FROM ${getSystemTable('merges')} ${whereClause} ORDER BY progress DESC`;
+  const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.merges columns
-app.get('/api/merges/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'merges'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching merges columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/merges/columns', columnsHandler('merges'));
 
 // Get distinct values for merges
-app.get('/api/merges/distinct/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
-    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('merges')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data.map(row => row.value).filter(v => v !== ''));
-  } catch (error) {
-    console.error('Error fetching merges distinct:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/merges/distinct/:field', asyncHandler(async (req, res) => {
+  const { field } = req.params;
+  const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
+  const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('merges')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data.map(row => row.value).filter(v => v !== ''));
+}));
 
 // Get system.mutations
-app.get('/api/mutations', async (req, res) => {
-  try {
-    const { filters } = req.query;
-    let whereConditions = [];
-    const params = {};
+app.get('/api/mutations', asyncHandler(async (req, res) => {
+  const { filters } = req.query;
+  let whereConditions = [];
+  const params = {};
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM ${getSystemTable('mutations')} ${whereClause} ORDER BY create_time DESC`;
-    const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching mutations:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+  const query = `SELECT * FROM ${getSystemTable('mutations')} ${whereClause} ORDER BY create_time DESC`;
+  const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.mutations columns
-app.get('/api/mutations/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'mutations'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching mutations columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/mutations/columns', columnsHandler('mutations'));
 
 // Get distinct values for mutations
-app.get('/api/mutations/distinct/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
-    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('mutations')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data.map(row => row.value).filter(v => v !== ''));
-  } catch (error) {
-    console.error('Error fetching mutations distinct:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/mutations/distinct/:field', asyncHandler(async (req, res) => {
+  const { field } = req.params;
+  const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
+  const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('mutations')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data.map(row => row.value).filter(v => v !== ''));
+}));
 
 // ==================== VIEW REFRESHES ENDPOINTS ====================
 
 // Get system.view_refreshes
-app.get('/api/view-refreshes', async (req, res) => {
-  try {
-    const { filters } = req.query;
-    let whereConditions = [];
-    let params = {};
+app.get('/api/view-refreshes', asyncHandler(async (req, res) => {
+  const { filters } = req.query;
+  let whereConditions = [];
+  let params = {};
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (Array.isArray(values) && values.length > 0) {
-          const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : null;
-          if (safeField) {
-            whereConditions.push(`toString(${safeField}) IN ({${safeField}_values:Array(String)})`);
-            params[`${safeField}_values`] = values;
-          }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (Array.isArray(values) && values.length > 0) {
+        const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : null;
+        if (safeField) {
+          whereConditions.push(`toString(${safeField}) IN ({${safeField}_values:Array(String)})`);
+          params[`${safeField}_values`] = values;
         }
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM ${getSystemTable('view_refreshes')} ${whereClause} ORDER BY next_refresh_time ASC`;
-    const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching view_refreshes:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+  const query = `SELECT * FROM ${getSystemTable('view_refreshes')} ${whereClause} ORDER BY next_refresh_time ASC`;
+  const result = await client.query({ query, query_params: params, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.view_refreshes columns
-app.get('/api/view-refreshes/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'view_refreshes'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching view_refreshes columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/view-refreshes/columns', columnsHandler('view_refreshes'));
 
 // Get distinct values for view_refreshes
-app.get('/api/view-refreshes/distinct/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
-    const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('view_refreshes')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data.map(row => row.value).filter(v => v !== ''));
-  } catch (error) {
-    console.error('Error fetching view_refreshes distinct:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/view-refreshes/distinct/:field', asyncHandler(async (req, res) => {
+  const { field } = req.params;
+  const safeField = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field) ? field : 'database';
+  const query = `SELECT DISTINCT toString(${safeField}) as value FROM ${getSystemTable('view_refreshes')} WHERE ${safeField} != '' ORDER BY value LIMIT 100`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data.map(row => row.value).filter(v => v !== ''));
+}));
 
 // ==================== QUERY CACHE ENDPOINTS ====================
 
@@ -2322,26 +2087,7 @@ app.get('/api/query-cache', async (req, res) => {
 });
 
 // Get system.query_cache columns
-app.get('/api/query-cache/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'query_cache'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching query_cache columns:', error);
-    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
-      res.json([]);
-    } else {
-      res.status(500).json({ error: error.message });
-    }
-  }
-});
+app.get('/api/query-cache/columns', columnsHandler('query_cache'));
 
 // ==================== BACKGROUND JOBS ENDPOINTS ====================
 
@@ -2380,26 +2126,7 @@ app.get('/api/background-jobs', async (req, res) => {
 });
 
 // Get system.background_schedule_pool_log columns
-app.get('/api/background-jobs/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'backup_log'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching background jobs columns:', error);
-    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
-      res.json([]);
-    } else {
-      res.status(500).json({ error: error.message });
-    }
-  }
-});
+app.get('/api/background-jobs/columns', columnsHandler('backup_log'));
 
 // Get distinct values for background jobs
 app.get('/api/background-jobs/distinct/:field', async (req, res) => {
@@ -2457,26 +2184,7 @@ app.get('/api/async-inserts', async (req, res) => {
 });
 
 // Get system.asynchronous_inserts columns
-app.get('/api/async-inserts/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'asynchronous_inserts'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching async inserts columns:', error);
-    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
-      res.json([]);
-    } else {
-      res.status(500).json({ error: error.message });
-    }
-  }
-});
+app.get('/api/async-inserts/columns', columnsHandler('asynchronous_inserts'));
 
 // Get distinct values for async inserts
 app.get('/api/async-inserts/distinct/:field', async (req, res) => {
@@ -2532,26 +2240,7 @@ app.get('/api/async-insert-log', async (req, res) => {
 });
 
 // Get system.asynchronous_insert_log columns
-app.get('/api/async-insert-log/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'asynchronous_insert_log'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching async insert log columns:', error);
-    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
-      res.json([]);
-    } else {
-      res.status(500).json({ error: error.message });
-    }
-  }
-});
+app.get('/api/async-insert-log/columns', columnsHandler('asynchronous_insert_log'));
 
 // Get distinct values for async insert log
 app.get('/api/async-insert-log/distinct/:field', async (req, res) => {
@@ -2609,26 +2298,7 @@ app.get('/api/distributed-ddl', async (req, res) => {
 });
 
 // Get system.distributed_ddl_queue columns
-app.get('/api/distributed-ddl/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'distributed_ddl_queue'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching distributed DDL columns:', error);
-    if (error.message?.includes('UNKNOWN_TABLE') || error.message?.includes('doesn\'t exist')) {
-      res.json([]);
-    } else {
-      res.status(500).json({ error: error.message });
-    }
-  }
-});
+app.get('/api/distributed-ddl/columns', columnsHandler('distributed_ddl_queue'));
 
 // Get distinct values for distributed DDL
 app.get('/api/distributed-ddl/distinct/:field', async (req, res) => {
@@ -2652,1501 +2322,1081 @@ app.get('/api/distributed-ddl/distinct/:field', async (req, res) => {
 // ==================== DISKS ENDPOINTS ====================
 
 // Get system.disks
-app.get('/api/disks', async (req, res) => {
-  try {
-    const query = `SELECT * FROM ${getSystemTable('disks')} ORDER BY name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching disks:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/disks', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM ${getSystemTable('disks')} ORDER BY name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.disks columns
-app.get('/api/disks/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'disks'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching disks columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/disks/columns', columnsHandler('disks'));
 
 // ==================== STORAGE POLICIES ENDPOINTS ====================
 
 // Get system.storage_policies
-app.get('/api/storage-policies', async (req, res) => {
-  try {
-    const query = `SELECT * FROM ${getSystemTable('storage_policies')} ORDER BY policy_name, volume_name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching storage policies:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/storage-policies', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM ${getSystemTable('storage_policies')} ORDER BY policy_name, volume_name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.storage_policies columns
-app.get('/api/storage-policies/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'storage_policies'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching storage policies columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/storage-policies/columns', columnsHandler('storage_policies'));
 
 // ==================== DATABASE BROWSER ENDPOINTS ====================
 
 // Get all databases
-app.get('/api/browser/databases', async (req, res) => {
-  try {
-    // Filter out lowercase information_schema (duplicate of INFORMATION_SCHEMA)
-    const query = `SELECT name, engine, data_path, metadata_path, uuid FROM system.databases WHERE name != 'information_schema' ORDER BY name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching databases:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/browser/databases', asyncHandler(async (req, res) => {
+  // Filter out lowercase information_schema (duplicate of INFORMATION_SCHEMA)
+  const query = `SELECT name, engine, data_path, metadata_path, uuid FROM system.databases WHERE name != 'information_schema' ORDER BY name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get database summary with statistics
-app.get('/api/databases/summary', async (req, res) => {
-  try {
-    const query = `
-      SELECT
-        d.name AS database,
-        d.engine AS engine,
-        COUNT(DISTINCT t.name) AS table_count,
-        SUM(t.total_rows) AS total_rows,
-        SUM(t.total_bytes) AS total_bytes,
-        COUNT(DISTINCT p.partition) AS partition_count,
-        COUNT(p.name) AS part_count,
-        SUM(p.rows) AS part_rows,
-        SUM(p.bytes_on_disk) AS bytes_on_disk,
-        SUM(p.data_compressed_bytes) AS compressed_bytes,
-        SUM(p.data_uncompressed_bytes) AS uncompressed_bytes,
-        CASE
-          WHEN SUM(p.data_uncompressed_bytes) > 0
-          THEN ROUND(((SUM(p.data_uncompressed_bytes) - SUM(p.data_compressed_bytes)) / SUM(p.data_uncompressed_bytes)) * 100, 1)
-          ELSE 0
-        END AS compression_ratio,
-        MAX(t.metadata_modification_time) AS latest_modification
-      FROM ${getSystemTable('databases')} d
-      LEFT JOIN ${getSystemTable('tables')} t ON d.name = t.database
-      LEFT JOIN ${getSystemTable('parts')} p ON d.name = p.database AND t.name = p.table AND p.active = 1
-      WHERE d.name != 'information_schema'
-      GROUP BY d.name, d.engine
-      ORDER BY total_bytes DESC NULLS LAST, d.name
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching database summary:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/databases/summary', asyncHandler(async (req, res) => {
+  const query = `
+    SELECT
+      d.name AS database,
+      d.engine AS engine,
+      COUNT(DISTINCT t.name) AS table_count,
+      SUM(t.total_rows) AS total_rows,
+      SUM(t.total_bytes) AS total_bytes,
+      COUNT(DISTINCT p.partition) AS partition_count,
+      COUNT(p.name) AS part_count,
+      SUM(p.rows) AS part_rows,
+      SUM(p.bytes_on_disk) AS bytes_on_disk,
+      SUM(p.data_compressed_bytes) AS compressed_bytes,
+      SUM(p.data_uncompressed_bytes) AS uncompressed_bytes,
+      CASE
+        WHEN SUM(p.data_uncompressed_bytes) > 0
+        THEN ROUND(((SUM(p.data_uncompressed_bytes) - SUM(p.data_compressed_bytes)) / SUM(p.data_uncompressed_bytes)) * 100, 1)
+        ELSE 0
+      END AS compression_ratio,
+      MAX(t.metadata_modification_time) AS latest_modification
+    FROM ${getSystemTable('databases')} d
+    LEFT JOIN ${getSystemTable('tables')} t ON d.name = t.database
+    LEFT JOIN ${getSystemTable('parts')} p ON d.name = p.database AND t.name = p.table AND p.active = 1
+    WHERE d.name != 'information_schema'
+    GROUP BY d.name, d.engine
+    ORDER BY total_bytes DESC NULLS LAST, d.name
+  `;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get tables for a database
-app.get('/api/browser/tables/:database', async (req, res) => {
-  try {
-    const { database } = req.params;
-    const query = `
-      SELECT
-        t.name,
-        t.engine,
-        t.total_rows,
-        t.total_bytes,
-        t.metadata_modification_time,
-        COUNT(DISTINCT p.partition) AS partition_count
-      FROM system.tables t
-      LEFT JOIN system.parts p ON t.database = p.database AND t.name = p.table AND p.active = 1
-      WHERE t.database = {database:String}
-      GROUP BY t.name, t.engine, t.total_rows, t.total_bytes, t.metadata_modification_time
-      ORDER BY t.name
-    `;
-    const result = await client.query({
-      query,
-      query_params: { database },
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching tables:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/browser/tables/:database', asyncHandler(async (req, res) => {
+  const { database } = req.params;
+  const query = `
+    SELECT
+      t.name,
+      t.engine,
+      t.total_rows,
+      t.total_bytes,
+      t.metadata_modification_time,
+      COUNT(DISTINCT p.partition) AS partition_count
+    FROM system.tables t
+    LEFT JOIN system.parts p ON t.database = p.database AND t.name = p.table AND p.active = 1
+    WHERE t.database = {database:String}
+    GROUP BY t.name, t.engine, t.total_rows, t.total_bytes, t.metadata_modification_time
+    ORDER BY t.name
+  `;
+  const result = await client.query({
+    query,
+    query_params: { database },
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get partitions for a table (aggregated from system.parts)
-app.get('/api/browser/partitions/:database/:table', async (req, res) => {
-  try {
-    const { database, table } = req.params;
-    const query = `
-      SELECT
-        partition_id,
-        partition,
-        count() as part_count,
-        sum(rows) as total_rows,
-        sum(bytes_on_disk) as total_bytes,
-        min(min_time) as min_time,
-        max(max_time) as max_time
-      FROM ${getSystemTable('parts')}
-      WHERE database = {database:String} AND table = {table:String} AND active = 1
-      GROUP BY partition_id, partition
-      ORDER BY partition_id
-    `;
-    const result = await client.query({
-      query,
-      query_params: { database, table },
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching partitions:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/browser/partitions/:database/:table', asyncHandler(async (req, res) => {
+  const { database, table } = req.params;
+  const query = `
+    SELECT
+      partition_id,
+      partition,
+      count() as part_count,
+      sum(rows) as total_rows,
+      sum(bytes_on_disk) as total_bytes,
+      min(min_time) as min_time,
+      max(max_time) as max_time
+    FROM ${getSystemTable('parts')}
+    WHERE database = {database:String} AND table = {table:String} AND active = 1
+    GROUP BY partition_id, partition
+    ORDER BY partition_id
+  `;
+  const result = await client.query({
+    query,
+    query_params: { database, table },
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get columns for a table
-app.get('/api/browser/columns/:database/:table', async (req, res) => {
-  try {
-    const { database, table } = req.params;
-    const query = `
-      SELECT
-        name,
-        type,
-        default_kind,
-        default_expression,
-        comment,
-        is_in_partition_key,
-        is_in_sorting_key,
-        is_in_primary_key,
-        compression_codec
-      FROM system.columns
-      WHERE database = {database:String} AND table = {table:String}
-      ORDER BY position
-    `;
-    const result = await client.query({
-      query,
-      query_params: { database, table },
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/browser/columns/:database/:table', asyncHandler(async (req, res) => {
+  const { database, table } = req.params;
+  const query = `
+    SELECT
+      name,
+      type,
+      default_kind,
+      default_expression,
+      comment,
+      is_in_partition_key,
+      is_in_sorting_key,
+      is_in_primary_key,
+      compression_codec
+    FROM system.columns
+    WHERE database = {database:String} AND table = {table:String}
+    ORDER BY position
+  `;
+  const result = await client.query({
+    query,
+    query_params: { database, table },
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get sample data from a table (first 100 rows)
-app.get('/api/browser/sample/:database/:table', async (req, res) => {
-  try {
-    const { database, table } = req.params;
-    // Use proper quoting for database and table names
-    const query = `SELECT * FROM "${database}"."${table}" LIMIT 100`;
-    const result = await client.query({
-      query,
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching sample data:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/browser/sample/:database/:table', asyncHandler(async (req, res) => {
+  const { database, table } = req.params;
+  // Use proper quoting for database and table names
+  const query = `SELECT * FROM "${database}"."${table}" LIMIT 100`;
+  const result = await client.query({
+    query,
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get parts for a partition
-app.get('/api/browser/parts/:database/:table/:partition', async (req, res) => {
-  try {
-    const { database, table, partition } = req.params;
-    const query = `
-      SELECT
-        name,
-        partition_id,
-        rows,
-        bytes_on_disk,
-        data_compressed_bytes,
-        data_uncompressed_bytes,
-        marks,
-        modification_time,
-        min_time,
-        max_time,
-        level,
-        primary_key_bytes_in_memory
-      FROM ${getSystemTable('parts')}
-      WHERE database = {database:String} AND table = {table:String} AND partition_id = {partition:String} AND active = 1
-      ORDER BY name
-    `;
-    const result = await client.query({
-      query,
-      query_params: { database, table, partition },
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching parts:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/browser/parts/:database/:table/:partition', asyncHandler(async (req, res) => {
+  const { database, table, partition } = req.params;
+  const query = `
+    SELECT
+      name,
+      partition_id,
+      rows,
+      bytes_on_disk,
+      data_compressed_bytes,
+      data_uncompressed_bytes,
+      marks,
+      modification_time,
+      min_time,
+      max_time,
+      level,
+      primary_key_bytes_in_memory
+    FROM ${getSystemTable('parts')}
+    WHERE database = {database:String} AND table = {table:String} AND partition_id = {partition:String} AND active = 1
+    ORDER BY name
+  `;
+  const result = await client.query({
+    query,
+    query_params: { database, table, partition },
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // ==================== PROJECTIONS ENDPOINTS ====================
 
 // Get all projections (system-wide)
-app.get('/api/projections', async (req, res) => {
-  try {
-    const { filters, search } = req.query;
+app.get('/api/projections', asyncHandler(async (req, res) => {
+  const { filters, search } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (filters) {
-      const parsed = JSON.parse(filters);
-      Object.entries(parsed).forEach(([field, values], idx) => {
-        if (!values || !Array.isArray(values) || values.length === 0) return;
-        const condition = buildFilterCondition(field, values, params, idx);
-        whereConditions.push(condition);
-      });
-    }
-
-    if (search) {
-      params.search = `%${search}%`;
-      whereConditions.push(`(database ILIKE {search:String} OR table ILIKE {search:String} OR name ILIKE {search:String})`);
-    }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const query = `
-      SELECT
-        database,
-        table,
-        name,
-        type,
-        sorting_key,
-        query
-      FROM ${getSystemTable('projections')}
-      ${whereClause}
-      ORDER BY database, table, name
-    `;
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow'
+  if (filters) {
+    const parsed = JSON.parse(filters);
+    Object.entries(parsed).forEach(([field, values], idx) => {
+      if (!values || !Array.isArray(values) || values.length === 0) return;
+      const condition = buildFilterCondition(field, values, params, idx);
+      whereConditions.push(condition);
     });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching projections:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  if (search) {
+    params.search = `%${search}%`;
+    whereConditions.push(`(database ILIKE {search:String} OR table ILIKE {search:String} OR name ILIKE {search:String})`);
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const query = `
+    SELECT
+      database,
+      table,
+      name,
+      type,
+      sorting_key,
+      query
+    FROM ${getSystemTable('projections')}
+    ${whereClause}
+    ORDER BY database, table, name
+  `;
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get projection parts (for a specific projection)
-app.get('/api/projection-parts/:database/:table/:projection', async (req, res) => {
-  try {
-    const { database, table, projection } = req.params;
-    const query = `
-      SELECT
-        name,
-        part_name,
-        partition_id,
-        rows,
-        bytes_on_disk,
-        data_compressed_bytes,
-        data_uncompressed_bytes,
-        marks,
-        modification_time,
-        parent_part_name,
-        is_broken
-      FROM ${getSystemTable('projection_parts')}
-      WHERE database = {database:String} AND table = {table:String} AND name = {projection:String} AND active = 1
-      ORDER BY part_name
-    `;
-    const result = await client.query({
-      query,
-      query_params: { database, table, projection },
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching projection parts:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/projection-parts/:database/:table/:projection', asyncHandler(async (req, res) => {
+  const { database, table, projection } = req.params;
+  const query = `
+    SELECT
+      name,
+      part_name,
+      partition_id,
+      rows,
+      bytes_on_disk,
+      data_compressed_bytes,
+      data_uncompressed_bytes,
+      marks,
+      modification_time,
+      parent_part_name,
+      is_broken
+    FROM ${getSystemTable('projection_parts')}
+    WHERE database = {database:String} AND table = {table:String} AND name = {projection:String} AND active = 1
+    ORDER BY part_name
+  `;
+  const result = await client.query({
+    query,
+    query_params: { database, table, projection },
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get projections for a table (browser endpoint)
-app.get('/api/browser/projections/:database/:table', async (req, res) => {
-  try {
-    const { database, table } = req.params;
-    const query = `
-      SELECT
-        name,
-        type,
-        sorting_key,
-        query,
-        toString(storage_policy) as storage_policy,
-        toString(partition_key) as partition_key,
-        toString(primary_key) as primary_key
-      FROM ${getSystemTable('projections')}
-      WHERE database = {database:String} AND table = {table:String}
-      ORDER BY name
-    `;
-    const result = await client.query({
+app.get('/api/browser/projections/:database/:table', asyncHandler(async (req, res) => {
+  const { database, table } = req.params;
+  const query = `
+    SELECT
+      name,
+      type,
+      sorting_key,
       query,
-      query_params: { database, table },
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching projections:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+      toString(storage_policy) as storage_policy,
+      toString(partition_key) as partition_key,
+      toString(primary_key) as primary_key
+    FROM ${getSystemTable('projections')}
+    WHERE database = {database:String} AND table = {table:String}
+    ORDER BY name
+  `;
+  const result = await client.query({
+    query,
+    query_params: { database, table },
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get projection parts for a projection
-app.get('/api/browser/projection-parts/:database/:table/:projection', async (req, res) => {
-  try {
-    const { database, table, projection } = req.params;
-    const query = `
-      SELECT
-        name,
-        part_name,
-        partition_id,
-        rows,
-        bytes_on_disk,
-        data_compressed_bytes,
-        data_uncompressed_bytes,
-        marks,
-        modification_time,
-        parent_part_name,
-        is_broken
-      FROM ${getSystemTable('projection_parts')}
-      WHERE database = {database:String} AND table = {table:String} AND name = {projection:String} AND active = 1
-      ORDER BY part_name
-    `;
-    const result = await client.query({
-      query,
-      query_params: { database, table, projection },
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching projection parts:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/browser/projection-parts/:database/:table/:projection', asyncHandler(async (req, res) => {
+  const { database, table, projection } = req.params;
+  const query = `
+    SELECT
+      name,
+      part_name,
+      partition_id,
+      rows,
+      bytes_on_disk,
+      data_compressed_bytes,
+      data_uncompressed_bytes,
+      marks,
+      modification_time,
+      parent_part_name,
+      is_broken
+    FROM ${getSystemTable('projection_parts')}
+    WHERE database = {database:String} AND table = {table:String} AND name = {projection:String} AND active = 1
+    ORDER BY part_name
+  `;
+  const result = await client.query({
+    query,
+    query_params: { database, table, projection },
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // ==================== VIEWS ENDPOINTS ====================
 
 // Get all views (View and MaterializedView)
-app.get('/api/views', async (req, res) => {
-  try {
-    const { filters, search } = req.query;
+app.get('/api/views', asyncHandler(async (req, res) => {
+  const { filters, search } = req.query;
 
-    let whereConditions = ["engine IN ('View', 'MaterializedView')"];
-    const params = {};
+  let whereConditions = ["engine IN ('View', 'MaterializedView')"];
+  const params = {};
 
-    if (filters) {
-      const parsed = JSON.parse(filters);
-      Object.entries(parsed).forEach(([field, values], idx) => {
-        if (!values || !Array.isArray(values) || values.length === 0) return;
-        const condition = buildFilterCondition(field, values, params, idx);
-        whereConditions.push(condition);
-      });
-    }
-
-    if (search) {
-      params.search = `%${search}%`;
-      whereConditions.push(`(database ILIKE {search:String} OR name ILIKE {search:String})`);
-    }
-
-    const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
-
-    const query = `
-      SELECT
-        database,
-        name,
-        engine,
-        as_select,
-        metadata_modification_time,
-        create_table_query
-      FROM system.tables
-      ${whereClause}
-      ORDER BY database, name
-    `;
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow'
+  if (filters) {
+    const parsed = JSON.parse(filters);
+    Object.entries(parsed).forEach(([field, values], idx) => {
+      if (!values || !Array.isArray(values) || values.length === 0) return;
+      const condition = buildFilterCondition(field, values, params, idx);
+      whereConditions.push(condition);
     });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching views:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  if (search) {
+    params.search = `%${search}%`;
+    whereConditions.push(`(database ILIKE {search:String} OR name ILIKE {search:String})`);
+  }
+
+  const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+
+  const query = `
+    SELECT
+      database,
+      name,
+      engine,
+      as_select,
+      metadata_modification_time,
+      create_table_query
+    FROM system.tables
+    ${whereClause}
+    ORDER BY database, name
+  `;
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get view definition (CREATE statement)
-app.get('/api/view-definition/:database/:view', async (req, res) => {
-  try {
-    const { database, view } = req.params;
-    const query = `SHOW CREATE TABLE ${database}.${view}`;
-    const result = await client.query({
-      query,
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    const definition = data[0]?.statement || '';
-    res.json({ definition });
-  } catch (error) {
-    console.error('Error fetching view definition:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/view-definition/:database/:view', asyncHandler(async (req, res) => {
+  const { database, view } = req.params;
+  const query = `SHOW CREATE TABLE ${database}.${view}`;
+  const result = await client.query({
+    query,
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  const definition = data[0]?.statement || '';
+  res.json({ definition });
+}));
 
 // ==================== DICTIONARIES ENDPOINTS ====================
 
 // Get all dictionaries (system-wide)
-app.get('/api/dictionaries', async (req, res) => {
-  try {
-    const { filters, search } = req.query;
+app.get('/api/dictionaries', asyncHandler(async (req, res) => {
+  const { filters, search } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (filters) {
-      const parsed = JSON.parse(filters);
-      Object.entries(parsed).forEach(([field, values], idx) => {
-        if (!values || !Array.isArray(values) || values.length === 0) return;
-        const condition = buildFilterCondition(field, values, params, idx);
-        whereConditions.push(condition);
-      });
-    }
-
-    if (search) {
-      params.search = `%${search}%`;
-      whereConditions.push(`(database ILIKE {search:String} OR name ILIKE {search:String})`);
-    }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const query = `
-      SELECT
-        database,
-        name,
-        uuid,
-        status,
-        origin,
-        type,
-        key,
-        attribute.names as attribute_names,
-        attribute.types as attribute_types,
-        bytes_allocated,
-        hierarchical_index_bytes_allocated,
-        query_count,
-        hit_rate,
-        found_rate,
-        element_count,
-        load_factor,
-        source,
-        lifetime_min,
-        lifetime_max,
-        loading_start_time,
-        last_successful_update_time,
-        loading_duration,
-        last_exception
-      FROM system.dictionaries
-      ${whereClause}
-      ORDER BY database, name
-    `;
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow'
+  if (filters) {
+    const parsed = JSON.parse(filters);
+    Object.entries(parsed).forEach(([field, values], idx) => {
+      if (!values || !Array.isArray(values) || values.length === 0) return;
+      const condition = buildFilterCondition(field, values, params, idx);
+      whereConditions.push(condition);
     });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching dictionaries:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  if (search) {
+    params.search = `%${search}%`;
+    whereConditions.push(`(database ILIKE {search:String} OR name ILIKE {search:String})`);
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const query = `
+    SELECT
+      database,
+      name,
+      uuid,
+      status,
+      origin,
+      type,
+      key,
+      attribute.names as attribute_names,
+      attribute.types as attribute_types,
+      bytes_allocated,
+      hierarchical_index_bytes_allocated,
+      query_count,
+      hit_rate,
+      found_rate,
+      element_count,
+      load_factor,
+      source,
+      lifetime_min,
+      lifetime_max,
+      loading_start_time,
+      last_successful_update_time,
+      loading_duration,
+      last_exception
+    FROM system.dictionaries
+    ${whereClause}
+    ORDER BY database, name
+  `;
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get dictionaries columns metadata
-app.get('/api/dictionaries/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'dictionaries'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching dictionaries columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/dictionaries/columns', columnsHandler('dictionaries'));
 
 // ==================== DATA SKIPPING INDEXES ENDPOINTS ====================
 
 const DATA_SKIPPING_ALLOWED_FIELDS = ['database', 'table', 'name', 'type', 'type_full', 'expr', 'granularity'];
 
 // Get all data skipping indexes (system-wide)
-app.get('/api/indexes', async (req, res) => {
-  try {
-    const { filters, search } = req.query;
+app.get('/api/indexes', asyncHandler(async (req, res) => {
+  const { filters, search } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    // Parse and apply filters (skip fields not available in all ClickHouse versions)
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0 && DATA_SKIPPING_ALLOWED_FIELDS.includes(field)) {
-          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
-        }
+  // Parse and apply filters (skip fields not available in all ClickHouse versions)
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0 && DATA_SKIPPING_ALLOWED_FIELDS.includes(field)) {
+        whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
       }
     }
-
-    // Apply search
-    if (search) {
-      whereConditions.push('(database ILIKE {search:String} OR table ILIKE {search:String} OR name ILIKE {search:String})');
-      params.search = `%${search}%`;
-    }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const query = `
-      SELECT
-        database,
-        table,
-        name,
-        type,
-        type_full,
-        expr,
-        granularity,
-        data_compressed_bytes,
-        data_uncompressed_bytes,
-        marks
-      FROM ${getSystemTable('data_skipping_indices')}
-      ${whereClause}
-      ORDER BY database, table, name
-    `;
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching data skipping indexes:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  // Apply search
+  if (search) {
+    whereConditions.push('(database ILIKE {search:String} OR table ILIKE {search:String} OR name ILIKE {search:String})');
+    params.search = `%${search}%`;
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const query = `
+    SELECT
+      database,
+      table,
+      name,
+      type,
+      type_full,
+      expr,
+      granularity,
+      data_compressed_bytes,
+      data_uncompressed_bytes,
+      marks
+    FROM ${getSystemTable('data_skipping_indices')}
+    ${whereClause}
+    ORDER BY database, table, name
+  `;
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get data skipping indexes for a table (browser endpoint)
-app.get('/api/browser/indexes/:database/:table', async (req, res) => {
-  try {
-    const { database, table } = req.params;
-    const query = `
-      SELECT
-        name,
-        type,
-        type_full,
-        expr,
-        granularity,
-        data_compressed_bytes,
-        data_uncompressed_bytes,
-        marks
-      FROM ${getSystemTable('data_skipping_indices')}
-      WHERE database = {database:String} AND table = {table:String}
-      ORDER BY name
-    `;
-    const result = await client.query({
-      query,
-      query_params: { database, table },
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching data skipping indexes:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/browser/indexes/:database/:table', asyncHandler(async (req, res) => {
+  const { database, table } = req.params;
+  const query = `
+    SELECT
+      name,
+      type,
+      type_full,
+      expr,
+      granularity,
+      data_compressed_bytes,
+      data_uncompressed_bytes,
+      marks
+    FROM ${getSystemTable('data_skipping_indices')}
+    WHERE database = {database:String} AND table = {table:String}
+    ORDER BY name
+  `;
+  const result = await client.query({
+    query,
+    query_params: { database, table },
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get data skipping indexes with formatted size (for Data Skipping tab)
-app.get('/api/data-skipping-indexes', async (req, res) => {
-  try {
-    const { filters, search } = req.query;
+app.get('/api/data-skipping-indexes', asyncHandler(async (req, res) => {
+  const { filters, search } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    // Parse and apply filters (skip fields not available in all ClickHouse versions)
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0 && DATA_SKIPPING_ALLOWED_FIELDS.includes(field)) {
-          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
-        }
+  // Parse and apply filters (skip fields not available in all ClickHouse versions)
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0 && DATA_SKIPPING_ALLOWED_FIELDS.includes(field)) {
+        whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
       }
     }
-
-    // Apply search
-    if (search) {
-      whereConditions.push('(database ILIKE {search:String} OR table ILIKE {search:String} OR name ILIKE {search:String})');
-      params.search = `%${search}%`;
-    }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const query = `
-      SELECT
-        database,
-        table,
-        name,
-        type_full,
-        formatReadableSize(data_uncompressed_bytes) AS size
-      FROM ${getSystemTable('data_skipping_indices')}
-      ${whereClause}
-      ORDER BY database, table, name
-    `;
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow'
-    });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching data skipping indexes:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  // Apply search
+  if (search) {
+    whereConditions.push('(database ILIKE {search:String} OR table ILIKE {search:String} OR name ILIKE {search:String})');
+    params.search = `%${search}%`;
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const query = `
+    SELECT
+      database,
+      table,
+      name,
+      type_full,
+      formatReadableSize(data_uncompressed_bytes) AS size
+    FROM ${getSystemTable('data_skipping_indices')}
+    ${whereClause}
+    ORDER BY database, table, name
+  `;
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow'
+  });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // ==================== METRICS ENDPOINTS ====================
 
 // Get system.metrics
-app.get('/api/metrics', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.metrics ORDER BY metric`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching metrics:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/metrics', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.metrics ORDER BY metric`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.asynchronous_metrics
-app.get('/api/async-metrics', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.asynchronous_metrics ORDER BY metric`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching async metrics:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/async-metrics', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.asynchronous_metrics ORDER BY metric`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.events
-app.get('/api/events', async (req, res) => {
-  try {
-    const query = `SELECT event, value, description FROM system.events ORDER BY event`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching events:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/events', asyncHandler(async (req, res) => {
+  const query = `SELECT event, value, description FROM system.events ORDER BY event`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.errors
-app.get('/api/errors', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.errors ORDER BY last_error_time DESC`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching errors:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/errors', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.errors ORDER BY last_error_time DESC`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.errors columns
-app.get('/api/errors/columns', async (req, res) => {
-  try {
-    const query = `SELECT name, type FROM system.columns WHERE database = 'system' AND table = 'errors' ORDER BY position`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching errors columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/errors/columns', columnsHandler('errors'));
 
 // Get system.warnings
-app.get('/api/warnings', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.warnings ORDER BY message`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching warnings:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/warnings', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.warnings ORDER BY message`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.warnings columns
-app.get('/api/warnings/columns', async (req, res) => {
-  try {
-    const query = `SELECT name, type FROM system.columns WHERE database = 'system' AND table = 'warnings' ORDER BY position`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching warnings columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/warnings/columns', columnsHandler('warnings'));
 
 // ==================== INSTANCE ENDPOINTS ====================
 
 // Get system.users
-app.get('/api/users', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.users ORDER BY name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/users', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.users ORDER BY name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.users columns
-app.get('/api/users/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'users'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching users columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/users/columns', columnsHandler('users'));
 
 // Get system.settings
-app.get('/api/settings', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.settings ORDER BY name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching settings:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/settings', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.settings ORDER BY name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.settings columns
-app.get('/api/settings/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'settings'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching settings columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/settings/columns', columnsHandler('settings'));
 
 // ==================== USERS & SECURITY ENDPOINTS ====================
 
 // Get system.grants
-app.get('/api/grants', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.grants ORDER BY user_name, role_name, access_type`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching grants:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/grants', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.grants ORDER BY user_name, role_name, access_type`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.grants columns
-app.get('/api/grants/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'grants'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching grants columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/grants/columns', columnsHandler('grants'));
 
 // Get system.roles
-app.get('/api/roles', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.roles ORDER BY name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching roles:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/roles', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.roles ORDER BY name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.roles columns
-app.get('/api/roles/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'roles'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching roles columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/roles/columns', columnsHandler('roles'));
 
 // Get system.role_grants (role hierarchy)
-app.get('/api/role-grants', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.role_grants ORDER BY user_name, role_name, granted_role_name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching role grants:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/role-grants', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.role_grants ORDER BY user_name, role_name, granted_role_name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.role_grants columns
-app.get('/api/role-grants/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'role_grants'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching role grants columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/role-grants/columns', columnsHandler('role_grants'));
 
 // Get system.current_roles
-app.get('/api/current-roles', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.current_roles`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching current roles:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/current-roles', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.current_roles`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.enabled_roles
-app.get('/api/enabled-roles', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.enabled_roles`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching enabled roles:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/enabled-roles', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.enabled_roles`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.quotas
-app.get('/api/quotas', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.quotas ORDER BY name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching quotas:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/quotas', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.quotas ORDER BY name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.quotas columns
-app.get('/api/quotas/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'quotas'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching quotas columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/quotas/columns', columnsHandler('quotas'));
 
 // Get system.quota_usage
-app.get('/api/quota-usage', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.quota_usage ORDER BY quota_name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching quota usage:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/quota-usage', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.quota_usage ORDER BY quota_name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.quota_usage columns
-app.get('/api/quota-usage/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'quota_usage'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching quota usage columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/quota-usage/columns', columnsHandler('quota_usage'));
 
 // Get system.quota_limits
-app.get('/api/quota-limits', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.quota_limits ORDER BY quota_name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching quota limits:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/quota-limits', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.quota_limits ORDER BY quota_name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.quota_limits columns
-app.get('/api/quota-limits/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'quota_limits'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching quota limits columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/quota-limits/columns', columnsHandler('quota_limits'));
 
 // Get system.row_policies
-app.get('/api/row-policies', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.row_policies ORDER BY short_name, database, table_name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching row policies:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/row-policies', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.row_policies ORDER BY short_name, database, table_name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.row_policies columns
-app.get('/api/row-policies/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'row_policies'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching row policies columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/row-policies/columns', columnsHandler('row_policies'));
 
 // Get system.session_log
-app.get('/api/session-log', async (req, res) => {
-  try {
-    const query = `
-      SELECT *
-      FROM system.session_log
-      ORDER BY event_time DESC
-      LIMIT 1000
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching session log:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/session-log', asyncHandler(async (req, res) => {
+  const query = `
+    SELECT *
+    FROM system.session_log
+    ORDER BY event_time DESC
+    LIMIT 1000
+  `;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.session_log columns
-app.get('/api/session-log/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'session_log'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching session log columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/session-log/columns', columnsHandler('session_log'));
 
 // ==================== EXPLAIN PLAN ENDPOINT ====================
 
 // Run EXPLAIN on a query
-app.post('/api/explain', async (req, res) => {
-  try {
-    const { query: userQuery } = req.body;
+app.post('/api/explain', asyncHandler(async (req, res) => {
+  const { query: userQuery } = req.body;
 
-    if (!userQuery) {
-      return res.status(400).json({ error: 'Query is required' });
-    }
+  if (!userQuery) {
+    return res.status(400).json({ error: 'Query is required' });
+  }
 
-    // Run EXPLAIN on the query
-    const explainQuery = `EXPLAIN ${userQuery}`;
+  // Run EXPLAIN on the query
+  const explainQuery = `EXPLAIN ${userQuery}`;
 
+  const result = await client.query({
+    query: explainQuery,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
+
+// Run different EXPLAIN types
+app.post('/api/explain/:type', asyncHandler(async (req, res) => {
+  const { type } = req.params;
+  const { query: userQuery } = req.body;
+
+  if (!userQuery) {
+    return res.status(400).json({ error: 'Query is required' });
+  }
+
+  // Supported explain types
+  const explainTypes = {
+    'plan': 'EXPLAIN',
+    'indexes': 'EXPLAIN indexes = 1',
+    'actions': 'EXPLAIN actions = 1',
+    'pipeline': 'EXPLAIN PIPELINE',
+    'ast': 'EXPLAIN AST',
+    'syntax': 'EXPLAIN SYNTAX',
+    'estimate': 'EXPLAIN ESTIMATE',
+    'json': 'EXPLAIN json = 1, indexes = 1',
+    'json-plan': 'EXPLAIN json = 1',
+  };
+
+  const explainPrefix = explainTypes[type];
+  if (!explainPrefix) {
+    return res.status(400).json({ error: `Invalid explain type: ${type}` });
+  }
+
+  const explainQuery = `${explainPrefix} ${userQuery}`;
+
+  // AST and SYNTAX return plain text, not structured data
+  // Use TabSeparated format and return as array of lines
+  if (type === 'ast' || type === 'syntax') {
+    const result = await client.query({
+      query: explainQuery,
+      format: 'TabSeparatedRaw',
+    });
+    const text = await result.text();
+    // Return as array of objects with 'explain' key for consistency
+    const lines = text.split('\n').filter(line => line.trim());
+    res.json(lines.map(line => ({ explain: line })));
+  } else {
     const result = await client.query({
       query: explainQuery,
       format: 'JSONEachRow',
     });
-
     const data = await result.json();
     res.json(data);
-  } catch (error) {
-    console.error('Error running explain:', error);
-    res.status(500).json({ error: error.message });
   }
-});
-
-// Run different EXPLAIN types
-app.post('/api/explain/:type', async (req, res) => {
-  try {
-    const { type } = req.params;
-    const { query: userQuery } = req.body;
-
-    if (!userQuery) {
-      return res.status(400).json({ error: 'Query is required' });
-    }
-
-    // Supported explain types
-    const explainTypes = {
-      'plan': 'EXPLAIN',
-      'indexes': 'EXPLAIN indexes = 1',
-      'actions': 'EXPLAIN actions = 1',
-      'pipeline': 'EXPLAIN PIPELINE',
-      'ast': 'EXPLAIN AST',
-      'syntax': 'EXPLAIN SYNTAX',
-      'estimate': 'EXPLAIN ESTIMATE',
-      'json': 'EXPLAIN json = 1, indexes = 1',
-      'json-plan': 'EXPLAIN json = 1',
-    };
-
-    const explainPrefix = explainTypes[type];
-    if (!explainPrefix) {
-      return res.status(400).json({ error: `Invalid explain type: ${type}` });
-    }
-
-    const explainQuery = `${explainPrefix} ${userQuery}`;
-
-    // AST and SYNTAX return plain text, not structured data
-    // Use TabSeparated format and return as array of lines
-    if (type === 'ast' || type === 'syntax') {
-      const result = await client.query({
-        query: explainQuery,
-        format: 'TabSeparatedRaw',
-      });
-      const text = await result.text();
-      // Return as array of objects with 'explain' key for consistency
-      const lines = text.split('\n').filter(line => line.trim());
-      res.json(lines.map(line => ({ explain: line })));
-    } else {
-      const result = await client.query({
-        query: explainQuery,
-        format: 'JSONEachRow',
-      });
-      const data = await result.json();
-      res.json(data);
-    }
-  } catch (error) {
-    console.error(`Error running explain ${req.params.type}:`, error);
-    res.status(500).json({ error: error.message });
-  }
-});
+}));
 
 // Execute a query and return results
-app.post('/api/query', async (req, res) => {
-  try {
-    let { query: userQuery, limit = 1000 } = req.body;
+app.post('/api/query', asyncHandler(async (req, res) => {
+  let { query: userQuery, limit = 1000 } = req.body;
 
-    if (!userQuery) {
-      return res.status(400).json({ error: 'Query is required' });
-    }
-
-    // Strip trailing semicolons (ClickHouse doesn't need them and they can cause issues)
-    userQuery = userQuery.trim().replace(/;+$/, '').trim();
-
-    // Safety: don't allow dangerous operations
-    const upperQuery = userQuery.toUpperCase();
-    const dangerousKeywords = ['DROP', 'TRUNCATE', 'DELETE', 'ALTER', 'DETACH', 'ATTACH', 'RENAME', 'KILL'];
-    const isDangerous = dangerousKeywords.some(kw => upperQuery.startsWith(kw));
-
-    if (isDangerous) {
-      return res.status(403).json({ error: 'Dangerous operations are not allowed through this interface' });
-    }
-
-    // Check if query already has a FORMAT clause
-    const hasFormat = upperQuery.includes('FORMAT');
-
-    // Add LIMIT only for SELECT queries that don't already have one
-    // Don't add LIMIT to EXPLAIN, SHOW, DESCRIBE, or queries with FORMAT or subqueries at the end
-    let finalQuery = userQuery;
-    const shouldAddLimit = upperQuery.startsWith('SELECT')
-      && !upperQuery.includes('LIMIT')
-      && !hasFormat
-      && !upperQuery.endsWith(')'); // Avoid adding LIMIT after closing parenthesis (subqueries)
-
-    if (shouldAddLimit) {
-      finalQuery = `${userQuery} LIMIT ${limit}`;
-    }
-
-    const startTime = Date.now();
-
-    // If query already has FORMAT, don't specify format in client options
-    // Strip the FORMAT clause and let the query handle it, or use text mode
-    let data;
-    if (hasFormat) {
-      // Query has its own FORMAT - execute as-is and parse the result
-      // Remove the FORMAT clause to let us control the output
-      const formatMatch = userQuery.match(/\s+FORMAT\s+\w+\s*$/i);
-      if (formatMatch) {
-        // Remove FORMAT clause and add our own
-        finalQuery = userQuery.replace(/\s+FORMAT\s+\w+\s*$/i, '');
-        if (shouldAddLimit) {
-          finalQuery = `${finalQuery} LIMIT ${limit}`;
-        }
-      }
-      const result = await client.query({
-        query: finalQuery,
-        format: 'JSONEachRow',
-      });
-      data = await result.json();
-    } else {
-      const result = await client.query({
-        query: finalQuery,
-        format: 'JSONEachRow',
-      });
-      data = await result.json();
-    }
-
-    const duration = Date.now() - startTime;
-
-    res.json({
-      data,
-      rowCount: data.length,
-      duration,
-    });
-  } catch (error) {
-    console.error('Error executing query:', error);
-    res.status(500).json({ error: error.message });
+  if (!userQuery) {
+    return res.status(400).json({ error: 'Query is required' });
   }
-});
 
-// Data Explorer endpoint
-app.post('/api/explore', async (req, res) => {
-  try {
-    const { database, table, selectedColumns = [], groupByColumns = [], limit = 1000 } = req.body;
+  // Strip trailing semicolons (ClickHouse doesn't need them and they can cause issues)
+  userQuery = userQuery.trim().replace(/;+$/, '').trim();
 
-    if (!database || !table) {
-      return res.status(400).json({ error: 'Database and table are required' });
-    }
+  // Safety: don't allow dangerous operations
+  const upperQuery = userQuery.toUpperCase();
+  const dangerousKeywords = ['DROP', 'TRUNCATE', 'DELETE', 'ALTER', 'DETACH', 'ATTACH', 'RENAME', 'KILL'];
+  const isDangerous = dangerousKeywords.some(kw => upperQuery.startsWith(kw));
 
-    // Validate limit
-    const safeLimit = Math.min(10000, Math.max(1, parseInt(limit) || 1000));
+  if (isDangerous) {
+    return res.status(403).json({ error: 'Dangerous operations are not allowed through this interface' });
+  }
 
-    // Build SELECT clause
-    let selectClause;
-    if (groupByColumns.length > 0) {
-      // When using GROUP BY, we need aggregations
-      const groupCols = groupByColumns.map(col => `\`${col}\``).join(', ');
+  // Check if query already has a FORMAT clause
+  const hasFormat = upperQuery.includes('FORMAT');
 
-      // For non-grouped columns, use any() aggregation
-      const otherCols = selectedColumns
-        .filter(col => !groupByColumns.includes(col))
-        .map(col => `any(\`${col}\`) AS \`${col}\``)
-        .join(', ');
+  // Add LIMIT only for SELECT queries that don't already have one
+  // Don't add LIMIT to EXPLAIN, SHOW, DESCRIBE, or queries with FORMAT or subqueries at the end
+  let finalQuery = userQuery;
+  const shouldAddLimit = upperQuery.startsWith('SELECT')
+    && !upperQuery.includes('LIMIT')
+    && !hasFormat
+    && !upperQuery.endsWith(')'); // Avoid adding LIMIT after closing parenthesis (subqueries)
 
-      if (otherCols) {
-        selectClause = `${groupCols}, ${otherCols}`;
-      } else {
-        selectClause = groupCols;
+  if (shouldAddLimit) {
+    finalQuery = `${userQuery} LIMIT ${limit}`;
+  }
+
+  const startTime = Date.now();
+
+  // If query already has FORMAT, don't specify format in client options
+  // Strip the FORMAT clause and let the query handle it, or use text mode
+  let data;
+  if (hasFormat) {
+    // Query has its own FORMAT - execute as-is and parse the result
+    // Remove the FORMAT clause to let us control the output
+    const formatMatch = userQuery.match(/\s+FORMAT\s+\w+\s*$/i);
+    if (formatMatch) {
+      // Remove FORMAT clause and add our own
+      finalQuery = userQuery.replace(/\s+FORMAT\s+\w+\s*$/i, '');
+      if (shouldAddLimit) {
+        finalQuery = `${finalQuery} LIMIT ${limit}`;
       }
-    } else {
-      // No GROUP BY - just select the columns
-      if (selectedColumns.length > 0) {
-        selectClause = selectedColumns.map(col => `\`${col}\``).join(', ');
-      } else {
-        selectClause = '*';
-      }
     }
-
-    // Build the query
-    let query = `SELECT ${selectClause} FROM \`${database}\`.\`${table}\``;
-
-    if (groupByColumns.length > 0) {
-      const groupByClause = groupByColumns.map(col => `\`${col}\``).join(', ');
-      query += ` GROUP BY ${groupByClause}`;
-    }
-
-    query += ` LIMIT ${safeLimit}`;
-
-    const startTime = Date.now();
     const result = await client.query({
-      query,
+      query: finalQuery,
       format: 'JSONEachRow',
     });
-    const data = await result.json();
-    const duration = Date.now() - startTime;
-
-    // Get column names from first row or from selectedColumns
-    const columns = data.length > 0 ? Object.keys(data[0]) : selectedColumns;
-
-    res.json({
-      columns,
-      data,
-      rowCount: data.length,
-      duration,
-      query,
+    data = await result.json();
+  } else {
+    const result = await client.query({
+      query: finalQuery,
+      format: 'JSONEachRow',
     });
-  } catch (error) {
-    console.error('Error exploring table data:', error);
-    res.status(500).json({ error: error.message });
+    data = await result.json();
   }
-});
+
+  const duration = Date.now() - startTime;
+
+  res.json({
+    data,
+    rowCount: data.length,
+    duration,
+  });
+}));
+
+// Data Explorer endpoint
+app.post('/api/explore', asyncHandler(async (req, res) => {
+  const { database, table, selectedColumns = [], groupByColumns = [], limit = 1000 } = req.body;
+
+  if (!database || !table) {
+    return res.status(400).json({ error: 'Database and table are required' });
+  }
+
+  // Validate limit
+  const safeLimit = Math.min(10000, Math.max(1, parseInt(limit) || 1000));
+
+  // Build SELECT clause
+  let selectClause;
+  if (groupByColumns.length > 0) {
+    // When using GROUP BY, we need aggregations
+    const groupCols = groupByColumns.map(col => `\`${col}\``).join(', ');
+
+    // For non-grouped columns, use any() aggregation
+    const otherCols = selectedColumns
+      .filter(col => !groupByColumns.includes(col))
+      .map(col => `any(\`${col}\`) AS \`${col}\``)
+      .join(', ');
+
+    if (otherCols) {
+      selectClause = `${groupCols}, ${otherCols}`;
+    } else {
+      selectClause = groupCols;
+    }
+  } else {
+    // No GROUP BY - just select the columns
+    if (selectedColumns.length > 0) {
+      selectClause = selectedColumns.map(col => `\`${col}\``).join(', ');
+    } else {
+      selectClause = '*';
+    }
+  }
+
+  // Build the query
+  let query = `SELECT ${selectClause} FROM \`${database}\`.\`${table}\``;
+
+  if (groupByColumns.length > 0) {
+    const groupByClause = groupByColumns.map(col => `\`${col}\``).join(', ');
+    query += ` GROUP BY ${groupByClause}`;
+  }
+
+  query += ` LIMIT ${safeLimit}`;
+
+  const startTime = Date.now();
+  const result = await client.query({
+    query,
+    format: 'JSONEachRow',
+  });
+  const data = await result.json();
+  const duration = Date.now() - startTime;
+
+  // Get column names from first row or from selectedColumns
+  const columns = data.length > 0 ? Object.keys(data[0]) : selectedColumns;
+
+  res.json({
+    columns,
+    data,
+    rowCount: data.length,
+    duration,
+    query,
+  });
+}));
 
 // Column profiling endpoint - returns stats for each column
-app.post('/api/profile', async (req, res) => {
-  try {
-    const { database, table, columns = [], sampleSize = 10000 } = req.body;
+app.post('/api/profile', asyncHandler(async (req, res) => {
+  const { database, table, columns = [], sampleSize = 10000 } = req.body;
 
-    if (!database || !table) {
-      return res.status(400).json({ error: 'Database and table are required' });
-    }
-
-    const safeSampleSize = Math.min(100000, Math.max(1000, parseInt(sampleSize) || 10000));
-    const fullTableName = `\`${database}\`.\`${table}\``;
-
-    // Get column info if not provided
-    let targetColumns = columns;
-    if (targetColumns.length === 0) {
-      const colQuery = `SELECT name, type FROM system.columns WHERE database = '${database}' AND table = '${table}'`;
-      const colResult = await client.query({ query: colQuery, format: 'JSONEachRow' });
-      const colData = await colResult.json();
-      targetColumns = colData.map(c => ({ name: c.name, type: c.type }));
-    }
-
-    // Get total row count
-    const countQuery = `SELECT count() as total FROM ${fullTableName}`;
-    const countResult = await client.query({ query: countQuery, format: 'JSONEachRow' });
-    const [{ total: totalRows }] = await countResult.json();
-
-    const profiles = [];
-
-    for (const col of targetColumns) {
-      const colName = typeof col === 'string' ? col : col.name;
-      const colType = typeof col === 'string' ? null : col.type;
-      const escapedCol = `\`${colName}\``;
-
-      try {
-        // Build profile query for this column
-        // Get: count, null count, distinct count, min, max, and top values
-        const isNumeric = colType && /^(Int|UInt|Float|Decimal|Date|DateTime)/.test(colType);
-
-        let statsQuery;
-        if (isNumeric) {
-          statsQuery = `
-            SELECT
-              count() as total,
-              countIf(isNull(${escapedCol}) OR toString(${escapedCol}) = '') as null_count,
-              uniqExact(${escapedCol}) as cardinality,
-              min(${escapedCol}) as min_val,
-              max(${escapedCol}) as max_val,
-              avg(toFloat64OrNull(toString(${escapedCol}))) as avg_val
-            FROM (SELECT ${escapedCol} FROM ${fullTableName} LIMIT ${safeSampleSize})
-          `;
-        } else {
-          statsQuery = `
-            SELECT
-              count() as total,
-              countIf(isNull(${escapedCol}) OR toString(${escapedCol}) = '') as null_count,
-              uniqExact(${escapedCol}) as cardinality,
-              min(length(toString(${escapedCol}))) as min_len,
-              max(length(toString(${escapedCol}))) as max_len,
-              avg(length(toString(${escapedCol}))) as avg_len
-            FROM (SELECT ${escapedCol} FROM ${fullTableName} LIMIT ${safeSampleSize})
-          `;
-        }
-
-        const statsResult = await client.query({ query: statsQuery, format: 'JSONEachRow' });
-        const [stats] = await statsResult.json();
-
-        // Get top values histogram
-        const topValuesQuery = `
-          SELECT
-            toString(${escapedCol}) as value,
-            count() as count
-          FROM (SELECT ${escapedCol} FROM ${fullTableName} LIMIT ${safeSampleSize})
-          WHERE ${escapedCol} IS NOT NULL AND toString(${escapedCol}) != ''
-          GROUP BY ${escapedCol}
-          ORDER BY count DESC
-          LIMIT 10
-        `;
-        const topResult = await client.query({ query: topValuesQuery, format: 'JSONEachRow' });
-        const topValues = await topResult.json();
-
-        profiles.push({
-          column: colName,
-          type: colType,
-          total: parseInt(stats.total) || 0,
-          nullCount: parseInt(stats.null_count) || 0,
-          nullPercent: stats.total > 0 ? ((parseInt(stats.null_count) || 0) / parseInt(stats.total) * 100).toFixed(1) : '0.0',
-          cardinality: parseInt(stats.cardinality) || 0,
-          cardinalityPercent: stats.total > 0 ? ((parseInt(stats.cardinality) || 0) / parseInt(stats.total) * 100).toFixed(1) : '0.0',
-          min: stats.min_val !== undefined ? stats.min_val : stats.min_len,
-          max: stats.max_val !== undefined ? stats.max_val : stats.max_len,
-          avg: stats.avg_val !== undefined ? stats.avg_val : stats.avg_len,
-          topValues: topValues.map(v => ({ value: v.value, count: parseInt(v.count) })),
-        });
-      } catch (colError) {
-        // If a column fails, add it with error info
-        profiles.push({
-          column: colName,
-          type: colType,
-          error: colError.message,
-        });
-      }
-    }
-
-    res.json({
-      database,
-      table,
-      totalRows: parseInt(totalRows),
-      sampleSize: safeSampleSize,
-      profiles,
-    });
-  } catch (error) {
-    console.error('Error profiling table:', error);
-    res.status(500).json({ error: error.message });
+  if (!database || !table) {
+    return res.status(400).json({ error: 'Database and table are required' });
   }
-});
+
+  const safeSampleSize = Math.min(100000, Math.max(1000, parseInt(sampleSize) || 10000));
+  const fullTableName = `\`${database}\`.\`${table}\``;
+
+  // Get column info if not provided
+  let targetColumns = columns;
+  if (targetColumns.length === 0) {
+    const colQuery = `SELECT name, type FROM system.columns WHERE database = '${database}' AND table = '${table}'`;
+    const colResult = await client.query({ query: colQuery, format: 'JSONEachRow' });
+    const colData = await colResult.json();
+    targetColumns = colData.map(c => ({ name: c.name, type: c.type }));
+  }
+
+  // Get total row count
+  const countQuery = `SELECT count() as total FROM ${fullTableName}`;
+  const countResult = await client.query({ query: countQuery, format: 'JSONEachRow' });
+  const [{ total: totalRows }] = await countResult.json();
+
+  const profiles = [];
+
+  for (const col of targetColumns) {
+    const colName = typeof col === 'string' ? col : col.name;
+    const colType = typeof col === 'string' ? null : col.type;
+    const escapedCol = `\`${colName}\``;
+
+    try {
+      // Build profile query for this column
+      // Get: count, null count, distinct count, min, max, and top values
+      const isNumeric = colType && /^(Int|UInt|Float|Decimal|Date|DateTime)/.test(colType);
+
+      let statsQuery;
+      if (isNumeric) {
+        statsQuery = `
+          SELECT
+            count() as total,
+            countIf(isNull(${escapedCol}) OR toString(${escapedCol}) = '') as null_count,
+            uniqExact(${escapedCol}) as cardinality,
+            min(${escapedCol}) as min_val,
+            max(${escapedCol}) as max_val,
+            avg(toFloat64OrNull(toString(${escapedCol}))) as avg_val
+          FROM (SELECT ${escapedCol} FROM ${fullTableName} LIMIT ${safeSampleSize})
+        `;
+      } else {
+        statsQuery = `
+          SELECT
+            count() as total,
+            countIf(isNull(${escapedCol}) OR toString(${escapedCol}) = '') as null_count,
+            uniqExact(${escapedCol}) as cardinality,
+            min(length(toString(${escapedCol}))) as min_len,
+            max(length(toString(${escapedCol}))) as max_len,
+            avg(length(toString(${escapedCol}))) as avg_len
+          FROM (SELECT ${escapedCol} FROM ${fullTableName} LIMIT ${safeSampleSize})
+        `;
+      }
+
+      const statsResult = await client.query({ query: statsQuery, format: 'JSONEachRow' });
+      const [stats] = await statsResult.json();
+
+      // Get top values histogram
+      const topValuesQuery = `
+        SELECT
+          toString(${escapedCol}) as value,
+          count() as count
+        FROM (SELECT ${escapedCol} FROM ${fullTableName} LIMIT ${safeSampleSize})
+        WHERE ${escapedCol} IS NOT NULL AND toString(${escapedCol}) != ''
+        GROUP BY ${escapedCol}
+        ORDER BY count DESC
+        LIMIT 10
+      `;
+      const topResult = await client.query({ query: topValuesQuery, format: 'JSONEachRow' });
+      const topValues = await topResult.json();
+
+      profiles.push({
+        column: colName,
+        type: colType,
+        total: parseInt(stats.total) || 0,
+        nullCount: parseInt(stats.null_count) || 0,
+        nullPercent: stats.total > 0 ? ((parseInt(stats.null_count) || 0) / parseInt(stats.total) * 100).toFixed(1) : '0.0',
+        cardinality: parseInt(stats.cardinality) || 0,
+        cardinalityPercent: stats.total > 0 ? ((parseInt(stats.cardinality) || 0) / parseInt(stats.total) * 100).toFixed(1) : '0.0',
+        min: stats.min_val !== undefined ? stats.min_val : stats.min_len,
+        max: stats.max_val !== undefined ? stats.max_val : stats.max_len,
+        avg: stats.avg_val !== undefined ? stats.avg_val : stats.avg_len,
+        topValues: topValues.map(v => ({ value: v.value, count: parseInt(v.count) })),
+      });
+    } catch (colError) {
+      // If a column fails, add it with error info
+      profiles.push({
+        column: colName,
+        type: colType,
+        error: colError.message,
+      });
+    }
+  }
+
+  res.json({
+    database,
+    table,
+    totalRows: parseInt(totalRows),
+    sampleSize: safeSampleSize,
+    profiles,
+  });
+}));
 
 // ==================== QUERY VIEWS LOG ENDPOINTS ====================
 
@@ -4335,63 +3585,7 @@ app.get('/api/query-views-log/distinct/:field', async (req, res) => {
 // ==================== PART LOG ENDPOINTS ====================
 
 // Get part_log column metadata (must be before parameterized routes)
-app.get('/api/part-log/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT
-        name,
-        type,
-        comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'part_log'
-      ORDER BY position
-    `;
-
-    const result = await client.query({
-      query,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching part_log column metadata:', error);
-    const errorMessage = error.message || String(error);
-    if (errorMessage.includes('Authentication failed') ||
-        errorMessage.includes('password is incorrect') ||
-        errorMessage.includes('no user with such name') ||
-        error.code === 'AUTHENTICATION_ERROR' ||
-        error.code === 516 || error.code === '516') {
-      return res.status(401).json({
-        error: 'Authentication failed: Invalid username or password',
-        details: errorMessage,
-        type: 'authentication'
-      });
-    }
-    if (errorMessage.includes('Not enough privileges') ||
-        errorMessage.includes('ACCESS_DENIED') ||
-        error.code === 497 || error.code === '497') {
-      return res.status(403).json({
-        error: 'Access denied: You do not have permission to access system.part_log',
-        details: errorMessage,
-        type: 'permission'
-      });
-    }
-    if (errorMessage.includes('Unknown table') ||
-        errorMessage.includes('doesn\'t exist') ||
-        errorMessage.includes('UNKNOWN_TABLE')) {
-      return res.status(404).json({
-        error: 'Table system.part_log does not exist or is not accessible',
-        details: errorMessage,
-        type: 'not_found'
-      });
-    }
-    res.status(500).json({
-      error: errorMessage,
-      type: 'server_error'
-    });
-  }
-});
+app.get('/api/part-log/columns', columnsHandler('part_log'));
 
 // Get part_log entries
 app.get('/api/part-log', async (req, res) => {
@@ -4970,488 +4164,438 @@ app.get('/api/part-log/distinct/:field', async (req, res) => {
 // ==================== TEXT LOG ENDPOINTS ====================
 
 // Get text_log column metadata
-app.get('/api/text-log/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type
-      FROM system.columns
-      WHERE database = 'system' AND table = 'text_log'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching text_log columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/text-log/columns', columnsHandler('text_log'));
 
 // Get text_log entries
-app.get('/api/text-log', async (req, res) => {
-  try {
-    const { start, end, search, limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters } = req.query;
+app.get('/api/text-log', asyncHandler(async (req, res) => {
+  const { start, end, search, limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
-    }
-    if (search) {
-      whereConditions.push('(message ILIKE {search:String} OR logger_name ILIKE {search:String})');
-      params.search = `%${search}%`;
-    }
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end);
+  }
+  if (search) {
+    whereConditions.push('(message ILIKE {search:String} OR logger_name ILIKE {search:String})');
+    params.search = `%${search}%`;
+  }
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    // Validate sort field
-    const allowedSortFields = ['event_time', 'level', 'logger_name', 'message', 'thread_name', 'thread_id', 'query_id'];
-    const safeSortField = allowedSortFields.includes(sortField) ? sortField : 'event_time';
-    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-
-    params.limit = parseInt(limit);
-    params.offset = parseInt(offset);
-
-    const query = `
-      SELECT *
-      FROM ${getSystemTable('text_log')}
-      ${whereClause}
-      ORDER BY ${safeSortField} ${safeSortOrder}
-      LIMIT {limit:UInt32} OFFSET {offset:UInt32}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching text_log:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  // Validate sort field
+  const allowedSortFields = ['event_time', 'level', 'logger_name', 'message', 'thread_name', 'thread_id', 'query_id'];
+  const safeSortField = allowedSortFields.includes(sortField) ? sortField : 'event_time';
+  const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+  params.limit = parseInt(limit);
+  params.offset = parseInt(offset);
+
+  const query = `
+    SELECT *
+    FROM ${getSystemTable('text_log')}
+    ${whereClause}
+    ORDER BY ${safeSortField} ${safeSortOrder}
+    LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get text_log count
-app.get('/api/text-log/count', async (req, res) => {
-  try {
-    const { start, end, search, filters } = req.query;
+app.get('/api/text-log/count', asyncHandler(async (req, res) => {
+  const { start, end, search, filters } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
-    }
-    if (search) {
-      whereConditions.push('(message ILIKE {search:String} OR logger_name ILIKE {search:String})');
-      params.search = `%${search}%`;
-    }
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end);
+  }
+  if (search) {
+    whereConditions.push('(message ILIKE {search:String} OR logger_name ILIKE {search:String})');
+    params.search = `%${search}%`;
+  }
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const query = `
-      SELECT count() as total
-      FROM ${getSystemTable('text_log')}
-      ${whereClause}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json({ total: data[0]?.total || 0 });
-  } catch (error) {
-    console.error('Error fetching text_log count:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const query = `
+    SELECT count() as total
+    FROM ${getSystemTable('text_log')}
+    ${whereClause}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json({ total: data[0]?.total || 0 });
+}));
 
 // Get text_log time series for chart
-app.get('/api/text-log/timeseries', async (req, res) => {
-  try {
-    const { start, end, bucket = 'minute', filters } = req.query;
+app.get('/api/text-log/timeseries', asyncHandler(async (req, res) => {
+  const { start, end, bucket = 'minute', filters } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
-    }
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end);
+  }
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          const paramName = `filter_${paramIndex++}`;
-          params[paramName] = values;
-          whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
-        }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        const paramName = `filter_${paramIndex++}`;
+        params[paramName] = values;
+        whereConditions.push(`toString(${field}) IN {${paramName}:Array(String)}`);
       }
     }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    let truncFunc;
-    switch (bucket) {
-      case 'second':
-        truncFunc = 'toDateTime(event_time)';
-        break;
-      case 'hour':
-        truncFunc = 'toStartOfHour(event_time)';
-        break;
-      default:
-        truncFunc = 'toStartOfMinute(event_time)';
-    }
-
-    const query = `
-      SELECT
-        ${truncFunc} as time,
-        count() as count,
-        countIf(level = 'Error' OR level = 'Fatal') as errors,
-        countIf(level = 'Warning') as warnings
-      FROM ${getSystemTable('text_log')}
-      ${whereClause}
-      GROUP BY time
-      ORDER BY time ASC
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching text_log time series:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  let truncFunc;
+  switch (bucket) {
+    case 'second':
+      truncFunc = 'toDateTime(event_time)';
+      break;
+    case 'hour':
+      truncFunc = 'toStartOfHour(event_time)';
+      break;
+    default:
+      truncFunc = 'toStartOfMinute(event_time)';
+  }
+
+  const query = `
+    SELECT
+      ${truncFunc} as time,
+      count() as count,
+      countIf(level = 'Error' OR level = 'Fatal') as errors,
+      countIf(level = 'Warning') as warnings
+    FROM ${getSystemTable('text_log')}
+    ${whereClause}
+    GROUP BY time
+    ORDER BY time ASC
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get distinct values for text_log field (for filters)
-app.get('/api/text-log/distinct/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const { start, end, limit = 100 } = req.query;
+app.get('/api/text-log/distinct/:field', asyncHandler(async (req, res) => {
+  const { field } = req.params;
+  const { start, end, limit = 100 } = req.query;
 
-    const allowedFields = ['level', 'logger_name', 'thread_name', 'query_id'];
+  const allowedFields = ['level', 'logger_name', 'thread_name', 'query_id'];
 
-    if (!allowedFields.includes(field)) {
-      return res.status(400).json({ error: 'Invalid field' });
-    }
-
-    let whereConditions = [];
-    const params = {};
-
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end);
-    }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    params.limit = parseInt(limit);
-
-    const query = `
-      SELECT DISTINCT toString(${field}) as value
-      FROM ${getSystemTable('text_log')}
-      ${whereClause}
-      ORDER BY value
-      LIMIT {limit:UInt32}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data.map(row => row.value).filter(v => v !== ''));
-  } catch (error) {
-    console.error('Error fetching text_log distinct values:', error);
-    res.status(500).json({ error: error.message });
+  if (!allowedFields.includes(field)) {
+    return res.status(400).json({ error: 'Invalid field' });
   }
-});
+
+  let whereConditions = [];
+  const params = {};
+
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end);
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+  params.limit = parseInt(limit);
+
+  const query = `
+    SELECT DISTINCT toString(${field}) as value
+    FROM ${getSystemTable('text_log')}
+    ${whereClause}
+    ORDER BY value
+    LIMIT {limit:UInt32}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data.map(row => row.value).filter(v => v !== ''));
+}));
 
 // ==================== QUERY LOG ENDPOINTS ====================
 
 // Get grouped query log (aggregated by query or normalized_query_hash)
-app.get('/api/query-log/grouped', async (req, res) => {
-  try {
-    const { start, end, bucket = 'minute', search, limit = 1000, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters, normalize } = req.query;
-    const useNormalized = normalize === 'true';
+app.get('/api/query-log/grouped', asyncHandler(async (req, res) => {
+  const { start, end, bucket = 'minute', search, limit = 1000, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters, normalize } = req.query;
+  const useNormalized = normalize === 'true';
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end, bucket);
-    }
-    applyQueryLogSearch(search, whereConditions, params);
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end, bucket);
+  }
+  applyQueryLogSearch(search, whereConditions, params);
 
-    // Parse and apply field filters
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
-        }
+  // Parse and apply field filters
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
       }
     }
-
-    // Apply range filters
-    buildRangeFilterConditions(rangeFilters, whereConditions, params);
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    // Define valid sort fields for grouped view
-    const validSortFields = ['count', 'total_duration', 'avg_duration', 'max_duration', 'min_duration',
-      'total_memory', 'avg_memory', 'max_memory', 'total_read_rows', 'avg_read_rows',
-      'total_read_bytes', 'total_result_rows', 'avg_result_rows', 'first_seen', 'last_seen'];
-    const safeSortField = validSortFields.includes(sortField) ? sortField : 'count';
-    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-
-    const groupByField = useNormalized ? 'normalized_query_hash' : 'query';
-    const query = `
-      SELECT
-        any(query) as example_query,
-        ${useNormalized ? 'normalized_query_hash,' : ''}
-        any(user) as user,
-        any(current_database) as current_database,
-        count() as count,
-        sum(query_duration_ms) as total_duration,
-        avg(query_duration_ms) as avg_duration,
-        max(query_duration_ms) as max_duration,
-        min(query_duration_ms) as min_duration,
-        sum(memory_usage) as total_memory,
-        avg(memory_usage) as avg_memory,
-        max(memory_usage) as max_memory,
-        sum(read_rows) as total_read_rows,
-        avg(read_rows) as avg_read_rows,
-        sum(read_bytes) as total_read_bytes,
-        sum(written_rows) as total_written_rows,
-        avg(written_rows) as avg_written_rows,
-        sum(result_rows) as total_result_rows,
-        avg(result_rows) as avg_result_rows,
-        min(event_time) as first_seen,
-        max(event_time) as last_seen
-      FROM ${getSystemTable('query_log')}
-      ${whereClause}
-      GROUP BY ${groupByField}
-      ORDER BY ${safeSortField} ${safeSortOrder}
-      LIMIT {limit:UInt32}
-    `;
-
-    params.limit = parseInt(limit);
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching grouped query log:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  // Apply range filters
+  buildRangeFilterConditions(rangeFilters, whereConditions, params);
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  // Define valid sort fields for grouped view
+  const validSortFields = ['count', 'total_duration', 'avg_duration', 'max_duration', 'min_duration',
+    'total_memory', 'avg_memory', 'max_memory', 'total_read_rows', 'avg_read_rows',
+    'total_read_bytes', 'total_result_rows', 'avg_result_rows', 'first_seen', 'last_seen'];
+  const safeSortField = validSortFields.includes(sortField) ? sortField : 'count';
+  const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+  const groupByField = useNormalized ? 'normalized_query_hash' : 'query';
+  const query = `
+    SELECT
+      any(query) as example_query,
+      ${useNormalized ? 'normalized_query_hash,' : ''}
+      any(user) as user,
+      any(current_database) as current_database,
+      count() as count,
+      sum(query_duration_ms) as total_duration,
+      avg(query_duration_ms) as avg_duration,
+      max(query_duration_ms) as max_duration,
+      min(query_duration_ms) as min_duration,
+      sum(memory_usage) as total_memory,
+      avg(memory_usage) as avg_memory,
+      max(memory_usage) as max_memory,
+      sum(read_rows) as total_read_rows,
+      avg(read_rows) as avg_read_rows,
+      sum(read_bytes) as total_read_bytes,
+      sum(written_rows) as total_written_rows,
+      avg(written_rows) as avg_written_rows,
+      sum(result_rows) as total_result_rows,
+      avg(result_rows) as avg_result_rows,
+      min(event_time) as first_seen,
+      max(event_time) as last_seen
+    FROM ${getSystemTable('query_log')}
+    ${whereClause}
+    GROUP BY ${groupByField}
+    ORDER BY ${safeSortField} ${safeSortOrder}
+    LIMIT {limit:UInt32}
+  `;
+
+  params.limit = parseInt(limit);
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get query statistics grouped by table
-app.get('/api/query-log/by-table', async (req, res) => {
-  try {
-    const { start, end, bucket = 'minute', search, limit = 500, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters } = req.query;
+app.get('/api/query-log/by-table', asyncHandler(async (req, res) => {
+  const { start, end, bucket = 'minute', search, limit = 500, sortField = 'count', sortOrder = 'DESC', filters, rangeFilters } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end, bucket);
-    }
-    applyQueryLogSearch(search, whereConditions, params);
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end, bucket);
+  }
+  applyQueryLogSearch(search, whereConditions, params);
 
-    // Parse and apply field filters
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
-        }
+  // Parse and apply field filters
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
       }
     }
-
-    // Apply range filters
-    buildRangeFilterConditions(rangeFilters, whereConditions, params);
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    // Define valid sort fields for by-table view
-    const validSortFields = ['count', 'total_duration', 'avg_duration', 'max_duration', 'min_duration',
-      'total_memory', 'avg_memory', 'max_memory', 'total_read_rows', 'avg_read_rows',
-      'total_read_bytes', 'first_seen', 'last_seen', 'error_count', 'error_rate'];
-    const safeSortField = validSortFields.includes(sortField) ? sortField : 'count';
-    const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-
-    // Use arrayJoin to expand the tables array and group by each table
-    const query = `
-      SELECT
-        arrayJoin(tables) as table_name,
-        count() as count,
-        sum(query_duration_ms) as total_duration,
-        avg(query_duration_ms) as avg_duration,
-        max(query_duration_ms) as max_duration,
-        min(query_duration_ms) as min_duration,
-        sum(memory_usage) as total_memory,
-        avg(memory_usage) as avg_memory,
-        max(memory_usage) as max_memory,
-        sum(read_rows) as total_read_rows,
-        avg(read_rows) as avg_read_rows,
-        sum(read_bytes) as total_read_bytes,
-        countIf(exception_code != 0) as error_count,
-        round(countIf(exception_code != 0) * 100.0 / count(), 2) as error_rate,
-        min(event_time) as first_seen,
-        max(event_time) as last_seen
-      FROM ${getSystemTable('query_log')}
-      ${whereClause}
-      GROUP BY table_name
-      HAVING table_name != ''
-      ORDER BY ${safeSortField} ${safeSortOrder}
-      LIMIT {limit:UInt32}
-    `;
-
-    params.limit = parseInt(limit);
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching by-table query stats:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  // Apply range filters
+  buildRangeFilterConditions(rangeFilters, whereConditions, params);
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  // Define valid sort fields for by-table view
+  const validSortFields = ['count', 'total_duration', 'avg_duration', 'max_duration', 'min_duration',
+    'total_memory', 'avg_memory', 'max_memory', 'total_read_rows', 'avg_read_rows',
+    'total_read_bytes', 'first_seen', 'last_seen', 'error_count', 'error_rate'];
+  const safeSortField = validSortFields.includes(sortField) ? sortField : 'count';
+  const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+  // Use arrayJoin to expand the tables array and group by each table
+  const query = `
+    SELECT
+      arrayJoin(tables) as table_name,
+      count() as count,
+      sum(query_duration_ms) as total_duration,
+      avg(query_duration_ms) as avg_duration,
+      max(query_duration_ms) as max_duration,
+      min(query_duration_ms) as min_duration,
+      sum(memory_usage) as total_memory,
+      avg(memory_usage) as avg_memory,
+      max(memory_usage) as max_memory,
+      sum(read_rows) as total_read_rows,
+      avg(read_rows) as avg_read_rows,
+      sum(read_bytes) as total_read_bytes,
+      countIf(exception_code != 0) as error_count,
+      round(countIf(exception_code != 0) * 100.0 / count(), 2) as error_rate,
+      min(event_time) as first_seen,
+      max(event_time) as last_seen
+    FROM ${getSystemTable('query_log')}
+    ${whereClause}
+    GROUP BY table_name
+    HAVING table_name != ''
+    ORDER BY ${safeSortField} ${safeSortOrder}
+    LIMIT {limit:UInt32}
+  `;
+
+  params.limit = parseInt(limit);
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get total count
-app.get('/api/query-log/count', async (req, res) => {
-  try {
-    const { start, end, bucket = 'minute', search, filters, rangeFilters } = req.query;
+app.get('/api/query-log/count', asyncHandler(async (req, res) => {
+  const { start, end, bucket = 'minute', search, filters, rangeFilters } = req.query;
 
-    let whereConditions = [];
-    const params = {};
+  let whereConditions = [];
+  const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end, bucket);
-    }
-    applyQueryLogSearch(search, whereConditions, params);
+  if (start) {
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = getEffectiveEndTime(start, end, bucket);
+  }
+  applyQueryLogSearch(search, whereConditions, params);
 
-    if (filters) {
-      const parsedFilters = JSON.parse(filters);
-      let paramIndex = 0;
-      for (const [field, values] of Object.entries(parsedFilters)) {
-        if (values && values.length > 0) {
-          whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
-        }
+  if (filters) {
+    const parsedFilters = JSON.parse(filters);
+    let paramIndex = 0;
+    for (const [field, values] of Object.entries(parsedFilters)) {
+      if (values && values.length > 0) {
+        whereConditions.push(buildFilterCondition(field, values, params, paramIndex++));
       }
     }
-
-    // Apply range filters
-    buildRangeFilterConditions(rangeFilters, whereConditions, params);
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const query = `
-      SELECT count() as total
-      FROM ${getSystemTable('query_log')}
-      ${whereClause}
-    `;
-
-    const result = await client.query({
-      query,
-      query_params: params,
-      format: 'JSONEachRow',
-    });
-
-    const data = await result.json();
-    res.json({ total: data[0]?.total || 0 });
-  } catch (error) {
-    console.error('Error fetching count:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  // Apply range filters
+  buildRangeFilterConditions(rangeFilters, whereConditions, params);
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const query = `
+    SELECT count() as total
+    FROM ${getSystemTable('query_log')}
+    ${whereClause}
+  `;
+
+  const result = await client.query({
+    query,
+    query_params: params,
+    format: 'JSONEachRow',
+  });
+
+  const data = await result.json();
+  res.json({ total: data[0]?.total || 0 });
+}));
 
 // ==================== MY QUERIES ENDPOINTS ====================
 
@@ -5514,116 +4658,111 @@ app.get('/api/my-queries', (req, res) => {
 });
 
 // Run a query from my-queries and track timing
-app.post('/api/my-queries/run', async (req, res) => {
-  try {
-    const { filename, query } = req.body;
+app.post('/api/my-queries/run', asyncHandler(async (req, res) => {
+  const { filename, query } = req.body;
 
-    if (!query) {
-      return res.status(400).json({ error: 'Query is required' });
-    }
-
-    // Safety check - only allow SELECT, INSERT, and WITH (CTE) queries
-    const upperQuery = query.trim().toUpperCase();
-    if (!upperQuery.startsWith('SELECT') && !upperQuery.startsWith('INSERT') && !upperQuery.startsWith('WITH')) {
-      return res.status(403).json({ error: 'Only SELECT, INSERT, and WITH (CTE) queries are allowed' });
-    }
-
-    const startTime = Date.now();
-    const isSelect = upperQuery.startsWith('SELECT') || upperQuery.startsWith('WITH');
-
-    const result = await client.query({
-      query,
-      format: isSelect ? 'JSON' : undefined,
-      clickhouse_settings: {
-        max_execution_time: 0, // No timeout limit for user queries
-      },
-      request_timeout: 3600000, // 1 hour HTTP timeout
-    });
-
-    // For SELECT queries, JSON format returns { meta, data, rows, statistics }
-    // statistics contains elapsed, rows_read, bytes_read
-    let data = [];
-    let rowCount = 0;
-    let duration = 0;
-    let readRows = null;
-    let readBytes = null;
-
-    if (isSelect) {
-      const jsonResponse = await result.json();
-      data = jsonResponse.data || [];
-      rowCount = jsonResponse.rows || data.length;
-      const stats = jsonResponse.statistics || {};
-      // Use ClickHouse's elapsed time (in seconds), convert to ms
-      duration = stats.elapsed
-        ? Math.round(stats.elapsed * 1000)
-        : Date.now() - startTime;
-      readRows = stats.rows_read || null;
-      readBytes = stats.bytes_read || null;
-    } else {
-      duration = Date.now() - startTime;
-    }
-
-    const queryId = result.query_id;
-
-    // Update run statistics
-    let updatedStats = null;
-    if (filename) {
-      const stats = queryRunStats.get(filename) || { runs: [], runLog: [], lastRun: null, lastDuration: null, lastRowCount: null };
-      stats.runs.push(duration);
-      // Keep only last 100 runs
-      if (stats.runs.length > 100) {
-        stats.runs = stats.runs.slice(-100);
-      }
-      // Store run log entry with query_id and stats
-      stats.runLog = stats.runLog || [];
-      stats.runLog.push({
-        queryId,
-        runTime: new Date().toISOString(),
-        duration,
-        rowCount,
-        readRows,
-        readBytes,
-      });
-      // Keep only last 50 run log entries
-      if (stats.runLog.length > 50) {
-        stats.runLog = stats.runLog.slice(-50);
-      }
-      stats.lastRun = new Date().toISOString();
-      stats.lastDuration = duration;
-      stats.lastRowCount = rowCount;
-      queryRunStats.set(filename, stats);
-
-      // Calculate statistics for response
-      const runTimes = stats.runs || [];
-      updatedStats = {
-        lastRunTime: stats.lastRun,
-        lastDuration: stats.lastDuration,
-        lastRowCount: stats.lastRowCount,
-        avgRunTime: runTimes.length > 0
-          ? runTimes.reduce((a, b) => a + b, 0) / runTimes.length
-          : null,
-        slowestRunTime: runTimes.length > 0
-          ? Math.max(...runTimes)
-          : null,
-        fastestRunTime: runTimes.length > 0
-          ? Math.min(...runTimes)
-          : null,
-        runCount: runTimes.length,
-      };
-    }
-
-    res.json({
-      data,
-      rowCount,
-      duration,
-      queryId,
-      stats: updatedStats,
-    });
-  } catch (error) {
-    console.error('Error running my-query:', error);
-    res.status(500).json({ error: error.message });
+  if (!query) {
+    return res.status(400).json({ error: 'Query is required' });
   }
-});
+
+  // Safety check - only allow SELECT, INSERT, and WITH (CTE) queries
+  const upperQuery = query.trim().toUpperCase();
+  if (!upperQuery.startsWith('SELECT') && !upperQuery.startsWith('INSERT') && !upperQuery.startsWith('WITH')) {
+    return res.status(403).json({ error: 'Only SELECT, INSERT, and WITH (CTE) queries are allowed' });
+  }
+
+  const startTime = Date.now();
+  const isSelect = upperQuery.startsWith('SELECT') || upperQuery.startsWith('WITH');
+
+  const result = await client.query({
+    query,
+    format: isSelect ? 'JSON' : undefined,
+    clickhouse_settings: {
+      max_execution_time: 0, // No timeout limit for user queries
+    },
+    request_timeout: 3600000, // 1 hour HTTP timeout
+  });
+
+  // For SELECT queries, JSON format returns { meta, data, rows, statistics }
+  // statistics contains elapsed, rows_read, bytes_read
+  let data = [];
+  let rowCount = 0;
+  let duration = 0;
+  let readRows = null;
+  let readBytes = null;
+
+  if (isSelect) {
+    const jsonResponse = await result.json();
+    data = jsonResponse.data || [];
+    rowCount = jsonResponse.rows || data.length;
+    const stats = jsonResponse.statistics || {};
+    // Use ClickHouse's elapsed time (in seconds), convert to ms
+    duration = stats.elapsed
+      ? Math.round(stats.elapsed * 1000)
+      : Date.now() - startTime;
+    readRows = stats.rows_read || null;
+    readBytes = stats.bytes_read || null;
+  } else {
+    duration = Date.now() - startTime;
+  }
+
+  const queryId = result.query_id;
+
+  // Update run statistics
+  let updatedStats = null;
+  if (filename) {
+    const stats = queryRunStats.get(filename) || { runs: [], runLog: [], lastRun: null, lastDuration: null, lastRowCount: null };
+    stats.runs.push(duration);
+    // Keep only last 100 runs
+    if (stats.runs.length > 100) {
+      stats.runs = stats.runs.slice(-100);
+    }
+    // Store run log entry with query_id and stats
+    stats.runLog = stats.runLog || [];
+    stats.runLog.push({
+      queryId,
+      runTime: new Date().toISOString(),
+      duration,
+      rowCount,
+      readRows,
+      readBytes,
+    });
+    // Keep only last 50 run log entries
+    if (stats.runLog.length > 50) {
+      stats.runLog = stats.runLog.slice(-50);
+    }
+    stats.lastRun = new Date().toISOString();
+    stats.lastDuration = duration;
+    stats.lastRowCount = rowCount;
+    queryRunStats.set(filename, stats);
+
+    // Calculate statistics for response
+    const runTimes = stats.runs || [];
+    updatedStats = {
+      lastRunTime: stats.lastRun,
+      lastDuration: stats.lastDuration,
+      lastRowCount: stats.lastRowCount,
+      avgRunTime: runTimes.length > 0
+        ? runTimes.reduce((a, b) => a + b, 0) / runTimes.length
+        : null,
+      slowestRunTime: runTimes.length > 0
+        ? Math.max(...runTimes)
+        : null,
+      fastestRunTime: runTimes.length > 0
+        ? Math.min(...runTimes)
+        : null,
+      runCount: runTimes.length,
+    };
+  }
+
+  res.json({
+    data,
+    rowCount,
+    duration,
+    queryId,
+    stats: updatedStats,
+  });
+}));
 
 // Reset all run statistics (must be before parameterized route)
 app.delete('/api/my-queries/stats', (req, res) => {
@@ -5639,67 +4778,62 @@ app.delete('/api/my-queries/stats/:filename', (req, res) => {
 });
 
 // Get run log for a specific query with query_log info
-app.get('/api/my-queries/run-log/:filename', async (req, res) => {
-  try {
-    const { filename } = req.params;
-    const stats = queryRunStats.get(filename);
+app.get('/api/my-queries/run-log/:filename', asyncHandler(async (req, res) => {
+  const { filename } = req.params;
+  const stats = queryRunStats.get(filename);
 
-    if (!stats || !stats.runLog || stats.runLog.length === 0) {
-      return res.json({ runLog: [] });
-    }
-
-    // Get the query_ids from the run log
-    const queryIds = stats.runLog.map(r => r.queryId).filter(Boolean);
-
-    // Fetch query_log info for these query_ids (left join simulated)
-    let queryLogData = {};
-    if (queryIds.length > 0) {
-      try {
-        const queryLogTable = getSystemTable('query_log');
-        const queryLogQuery = `
-          SELECT
-            query_id,
-            type,
-            query_duration_ms,
-            read_rows,
-            read_bytes,
-            result_rows,
-            result_bytes,
-            memory_usage,
-            ProfileEvents
-          FROM ${queryLogTable}
-          WHERE query_id IN (${queryIds.map(id => `'${id}'`).join(', ')})
-            AND type = 'QueryFinish'
-        `;
-        const result = await client.query({ query: queryLogQuery, format: 'JSONEachRow' });
-        const data = await result.json();
-        // Index by query_id for easy lookup
-        data.forEach(row => {
-          queryLogData[row.query_id] = row;
-        });
-      } catch (err) {
-        console.error('Error fetching query_log data:', err);
-        // Continue without query_log data
-      }
-    }
-
-    // Build the response with left join
-    const runLog = stats.runLog.map(entry => ({
-      queryId: entry.queryId,
-      runTime: entry.runTime,
-      duration: entry.duration,
-      rowCount: entry.rowCount,
-      readRows: entry.readRows,
-      readBytes: entry.readBytes,
-      queryLog: queryLogData[entry.queryId] || null,
-    })).reverse(); // Most recent first
-
-    res.json({ runLog });
-  } catch (error) {
-    console.error('Error fetching run log:', error);
-    res.status(500).json({ error: error.message });
+  if (!stats || !stats.runLog || stats.runLog.length === 0) {
+    return res.json({ runLog: [] });
   }
-});
+
+  // Get the query_ids from the run log
+  const queryIds = stats.runLog.map(r => r.queryId).filter(Boolean);
+
+  // Fetch query_log info for these query_ids (left join simulated)
+  let queryLogData = {};
+  if (queryIds.length > 0) {
+    try {
+      const queryLogTable = getSystemTable('query_log');
+      const queryLogQuery = `
+        SELECT
+          query_id,
+          type,
+          query_duration_ms,
+          read_rows,
+          read_bytes,
+          result_rows,
+          result_bytes,
+          memory_usage,
+          ProfileEvents
+        FROM ${queryLogTable}
+        WHERE query_id IN (${queryIds.map(id => `'${id}'`).join(', ')})
+          AND type = 'QueryFinish'
+      `;
+      const result = await client.query({ query: queryLogQuery, format: 'JSONEachRow' });
+      const data = await result.json();
+      // Index by query_id for easy lookup
+      data.forEach(row => {
+        queryLogData[row.query_id] = row;
+      });
+    } catch (err) {
+      console.error('Error fetching query_log data:', err);
+      // Continue without query_log data
+    }
+  }
+
+  // Build the response with left join
+  const runLog = stats.runLog.map(entry => ({
+    queryId: entry.queryId,
+    runTime: entry.runTime,
+    duration: entry.duration,
+    rowCount: entry.rowCount,
+    readRows: entry.readRows,
+    readBytes: entry.readBytes,
+    queryLog: queryLogData[entry.queryId] || null,
+  })).reverse(); // Most recent first
+
+  res.json({ runLog });
+}));
 
 // Update a query file
 app.put('/api/my-queries/update', (req, res) => {
@@ -5782,341 +4916,146 @@ app.post('/api/my-queries/clone', (req, res) => {
 // ==================== CLUSTER ENDPOINTS ====================
 
 // Get system.replication_queue (detailed view)
-app.get('/api/cluster/replication-queue', async (req, res) => {
-  try {
-    const query = `
-      SELECT
-        database, table, replica_name, is_leader, is_readonly,
-        future_parts, parts_to_check, queue_size, last_queue_update_exception
-      FROM system.replicas
-      ORDER BY database, table, replica_name
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching replication queue:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/replication-queue', asyncHandler(async (req, res) => {
+  const query = `
+    SELECT
+      database, table, replica_name, is_leader, is_readonly,
+      future_parts, parts_to_check, queue_size, last_queue_update_exception
+    FROM system.replicas
+    ORDER BY database, table, replica_name
+  `;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.replication_queue columns (using replicas table for this view)
-app.get('/api/cluster/replication-queue/columns', async (req, res) => {
-  try {
-    const columns = [
-      { name: 'database', type: 'String', comment: 'Database name' },
-      { name: 'table', type: 'String', comment: 'Table name' },
-      { name: 'replica_name', type: 'String', comment: 'Replica name in ZooKeeper' },
-      { name: 'is_leader', type: 'UInt8', comment: 'Whether this replica is the leader' },
-      { name: 'is_readonly', type: 'UInt8', comment: 'Whether this replica is in read-only mode' },
-      { name: 'future_parts', type: 'UInt32', comment: 'Number of data parts that will appear after INSERTs' },
-      { name: 'parts_to_check', type: 'UInt32', comment: 'Number of data parts in the queue for verification' },
-      { name: 'queue_size', type: 'UInt32', comment: 'Size of the queue for operations waiting to be performed' },
-      { name: 'last_queue_update_exception', type: 'String', comment: 'Last exception during queue update' },
-    ];
-    res.json(columns);
-  } catch (error) {
-    console.error('Error fetching replication queue columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/replication-queue/columns', asyncHandler(async (req, res) => {
+  const columns = [
+    { name: 'database', type: 'String', comment: 'Database name' },
+    { name: 'table', type: 'String', comment: 'Table name' },
+    { name: 'replica_name', type: 'String', comment: 'Replica name in ZooKeeper' },
+    { name: 'is_leader', type: 'UInt8', comment: 'Whether this replica is the leader' },
+    { name: 'is_readonly', type: 'UInt8', comment: 'Whether this replica is in read-only mode' },
+    { name: 'future_parts', type: 'UInt32', comment: 'Number of data parts that will appear after INSERTs' },
+    { name: 'parts_to_check', type: 'UInt32', comment: 'Number of data parts in the queue for verification' },
+    { name: 'queue_size', type: 'UInt32', comment: 'Size of the queue for operations waiting to be performed' },
+    { name: 'last_queue_update_exception', type: 'String', comment: 'Last exception during queue update' },
+  ];
+  res.json(columns);
+}));
 
 // Get grouped replication queue errors
-app.get('/api/cluster/replication-queue/grouped', async (req, res) => {
-  try {
-    const query = `
-      SELECT table, last_exception, postpone_reason, count() as count
-      FROM system.replication_queue
-      GROUP BY table, last_exception, postpone_reason
-      ORDER BY count DESC
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching grouped replication queue:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/replication-queue/grouped', asyncHandler(async (req, res) => {
+  const query = `
+    SELECT table, last_exception, postpone_reason, count() as count
+    FROM system.replication_queue
+    GROUP BY table, last_exception, postpone_reason
+    ORDER BY count DESC
+  `;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.replicas
-app.get('/api/cluster/replicas', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.replicas ORDER BY database, table, replica_name`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching replicas:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/replicas', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.replicas ORDER BY database, table, replica_name`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.replicas columns
-app.get('/api/cluster/replicas/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'replicas'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching replicas columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/replicas/columns', columnsHandler('replicas'));
 
 // Get system.clusters
-app.get('/api/cluster/clusters', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.clusters ORDER BY cluster, shard_num, replica_num`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching clusters:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/clusters', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.clusters ORDER BY cluster, shard_num, replica_num`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.clusters columns
-app.get('/api/cluster/clusters/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'clusters'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching clusters columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/clusters/columns', columnsHandler('clusters'));
 
 // Get system.replicated_fetches
-app.get('/api/cluster/fetches', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.replicated_fetches ORDER BY database, table`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching replicated fetches:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/fetches', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.replicated_fetches ORDER BY database, table`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.replicated_fetches columns
-app.get('/api/cluster/fetches/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'replicated_fetches'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching replicated fetches columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/fetches/columns', columnsHandler('replicated_fetches'));
 
 // Get system.distributed_ddl_queue
-app.get('/api/cluster/distributed-ddl', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.distributed_ddl_queue ORDER BY entry_version DESC LIMIT 1000`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching distributed DDL queue:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/distributed-ddl', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.distributed_ddl_queue ORDER BY entry_version DESC LIMIT 1000`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.distributed_ddl_queue columns
-app.get('/api/cluster/distributed-ddl/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'distributed_ddl_queue'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching distributed DDL queue columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/distributed-ddl/columns', columnsHandler('distributed_ddl_queue'));
 
 // Get system.zookeeper (root path)
-app.get('/api/cluster/zookeeper', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.zookeeper WHERE path = '/' LIMIT 100`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching zookeeper:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/zookeeper', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.zookeeper WHERE path = '/' LIMIT 100`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.zookeeper columns
-app.get('/api/cluster/zookeeper/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'zookeeper'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching zookeeper columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/zookeeper/columns', columnsHandler('zookeeper'));
 
 // Get system.zookeeper_connection
-app.get('/api/cluster/zookeeper-connection', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.zookeeper_connection LIMIT 1000`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching zookeeper_connection:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/zookeeper-connection', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.zookeeper_connection LIMIT 1000`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.zookeeper_connection columns
-app.get('/api/cluster/zookeeper-connection/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'zookeeper_connection'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching zookeeper_connection columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/zookeeper-connection/columns', columnsHandler('zookeeper_connection'));
 
 // Get system.zookeeper_connection_log
-app.get('/api/cluster/zookeeper-connection-log', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.zookeeper_connection_log ORDER BY event_time DESC LIMIT 1000`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching zookeeper_connection_log:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/zookeeper-connection-log', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.zookeeper_connection_log ORDER BY event_time DESC LIMIT 1000`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.zookeeper_connection_log columns
-app.get('/api/cluster/zookeeper-connection-log/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'zookeeper_connection_log'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching zookeeper_connection_log columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/zookeeper-connection-log/columns', columnsHandler('zookeeper_connection_log'));
 
 // Get system.zookeeper_log
-app.get('/api/cluster/zookeeper-log', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.zookeeper_log ORDER BY event_time DESC LIMIT 1000`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching zookeeper_log:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/zookeeper-log', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.zookeeper_log ORDER BY event_time DESC LIMIT 1000`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.zookeeper_log columns
-app.get('/api/cluster/zookeeper-log/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'zookeeper_log'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching zookeeper_log columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/zookeeper-log/columns', columnsHandler('zookeeper_log'));
 
 // Get system.distribution_queue
-app.get('/api/cluster/distribution-queue', async (req, res) => {
-  try {
-    const query = `SELECT * FROM system.distribution_queue ORDER BY data_path LIMIT 1000`;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching distribution_queue:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/distribution-queue', asyncHandler(async (req, res) => {
+  const query = `SELECT * FROM system.distribution_queue ORDER BY data_path LIMIT 1000`;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get system.distribution_queue columns
-app.get('/api/cluster/distribution-queue/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type, comment
-      FROM system.columns
-      WHERE database = 'system' AND table = 'distribution_queue'
-      ORDER BY position
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching distribution_queue columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/cluster/distribution-queue/columns', columnsHandler('distribution_queue'));
 
 // ==================== METRIC LOG API (Dashboard) ====================
 
@@ -6145,101 +5084,91 @@ const DEFAULT_DASHBOARD_METRICS = [
 ];
 
 // Get available metric columns from metric_log
-app.get('/api/metric-log/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT name, type
-      FROM system.columns
-      WHERE database = 'system'
-        AND table = 'metric_log'
-        AND (name LIKE 'CurrentMetric_%' OR name LIKE 'ProfileEvent_%')
-      ORDER BY name
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching metric_log columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/metric-log/columns', asyncHandler(async (req, res) => {
+  const query = `
+    SELECT name, type
+    FROM system.columns
+    WHERE database = 'system'
+      AND table = 'metric_log'
+      AND (name LIKE 'CurrentMetric_%' OR name LIKE 'ProfileEvent_%')
+    ORDER BY name
+  `;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get time series data for selected metrics
-app.get('/api/metric-log/timeseries', async (req, res) => {
-  try {
-    const { start, end, bucket = 'minute', metrics } = req.query;
+app.get('/api/metric-log/timeseries', asyncHandler(async (req, res) => {
+  const { start, end, bucket = 'minute', metrics } = req.query;
 
-    // Parse metrics or use defaults
-    const metricList = metrics
-      ? (typeof metrics === 'string' ? metrics.split(',') : metrics)
-      : DEFAULT_DASHBOARD_METRICS;
+  // Parse metrics or use defaults
+  const metricList = metrics
+    ? (typeof metrics === 'string' ? metrics.split(',') : metrics)
+    : DEFAULT_DASHBOARD_METRICS;
 
-    // Validate metrics to prevent SQL injection
-    const safeMetrics = metricList.filter(m => /^(CurrentMetric_|ProfileEvent_)[A-Za-z0-9_]+$/.test(m));
+  // Validate metrics to prevent SQL injection
+  const safeMetrics = metricList.filter(m => /^(CurrentMetric_|ProfileEvent_)[A-Za-z0-9_]+$/.test(m));
 
-    if (safeMetrics.length === 0) {
-      return res.json([]);
-    }
-
-    // Filter against actual columns in metric_log to avoid UNKNOWN_IDENTIFIER errors
-    let validMetrics;
-    try {
-      const colResult = await client.query({
-        query: `SELECT name FROM system.columns WHERE database = 'system' AND table = 'metric_log' AND name IN (${safeMetrics.map(m => `'${m}'`).join(',')})`,
-        format: 'JSONEachRow',
-      });
-      const existingCols = new Set((await colResult.json()).map(r => r.name));
-      validMetrics = safeMetrics.filter(m => existingCols.has(m));
-    } catch (colErr) {
-      console.error('Error checking metric_log columns, falling back to all metrics:', colErr.message);
-      validMetrics = safeMetrics;
-    }
-
-    if (validMetrics.length === 0) {
-      return res.json([]);
-    }
-
-    // Determine truncation function based on bucket
-    // Use toDateTime to avoid toStartOfSecond incompatibility with DateTime columns
-    let truncFunc;
-    switch (bucket) {
-      case 'second':
-        truncFunc = 'toDateTime(event_time)';
-        break;
-      case 'hour':
-        truncFunc = 'toStartOfHour(event_time)';
-        break;
-      default:
-        truncFunc = 'toStartOfMinute(event_time)';
-    }
-
-    // Build dynamic SELECT: sum for ProfileEvent, max for CurrentMetric
-    const selectClauses = validMetrics.map(m => {
-      if (m.startsWith('ProfileEvent_')) {
-        return `sum(${m}) as ${m}`;
-      } else {
-        return `max(${m}) as ${m}`;
-      }
-    }).join(',\n        ');
-
-    const query = `
-      SELECT
-        ${truncFunc} as time,
-        ${selectClauses}
-      FROM system.metric_log
-      WHERE event_time >= '${start}' AND event_time <= '${end}'
-      GROUP BY time
-      ORDER BY time
-    `;
-
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching metric_log timeseries:', error);
-    res.status(500).json({ error: error.message });
+  if (safeMetrics.length === 0) {
+    return res.json([]);
   }
-});
+
+  // Filter against actual columns in metric_log to avoid UNKNOWN_IDENTIFIER errors
+  let validMetrics;
+  try {
+    const colResult = await client.query({
+      query: `SELECT name FROM system.columns WHERE database = 'system' AND table = 'metric_log' AND name IN (${safeMetrics.map(m => `'${m}'`).join(',')})`,
+      format: 'JSONEachRow',
+    });
+    const existingCols = new Set((await colResult.json()).map(r => r.name));
+    validMetrics = safeMetrics.filter(m => existingCols.has(m));
+  } catch (colErr) {
+    console.error('Error checking metric_log columns, falling back to all metrics:', colErr.message);
+    validMetrics = safeMetrics;
+  }
+
+  if (validMetrics.length === 0) {
+    return res.json([]);
+  }
+
+  // Determine truncation function based on bucket
+  // Use toDateTime to avoid toStartOfSecond incompatibility with DateTime columns
+  let truncFunc;
+  switch (bucket) {
+    case 'second':
+      truncFunc = 'toDateTime(event_time)';
+      break;
+    case 'hour':
+      truncFunc = 'toStartOfHour(event_time)';
+      break;
+    default:
+      truncFunc = 'toStartOfMinute(event_time)';
+  }
+
+  // Build dynamic SELECT: sum for ProfileEvent, max for CurrentMetric
+  const selectClauses = validMetrics.map(m => {
+    if (m.startsWith('ProfileEvent_')) {
+      return `sum(${m}) as ${m}`;
+    } else {
+      return `max(${m}) as ${m}`;
+    }
+  }).join(',\n        ');
+
+  const query = `
+    SELECT
+      ${truncFunc} as time,
+      ${selectClauses}
+    FROM system.metric_log
+    WHERE event_time >= '${start}' AND event_time <= '${end}'
+    GROUP BY time
+    ORDER BY time
+  `;
+
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get default dashboard metrics list
 app.get('/api/metric-log/defaults', async (req, res) => {
@@ -6263,80 +5192,70 @@ const DEFAULT_ASYNC_METRIC_LOG_METRICS = [
 ];
 
 // Get available async metric names from asynchronous_metric_log
-app.get('/api/async-metric-log/columns', async (req, res) => {
-  try {
-    const query = `
-      SELECT DISTINCT metric as name
-      FROM system.asynchronous_metric_log
-      ORDER BY metric
-      LIMIT 500
-    `;
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching asynchronous_metric_log columns:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+app.get('/api/async-metric-log/columns', asyncHandler(async (req, res) => {
+  const query = `
+    SELECT DISTINCT metric as name
+    FROM system.asynchronous_metric_log
+    ORDER BY metric
+    LIMIT 500
+  `;
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get time series data for selected async metrics
-app.get('/api/async-metric-log/timeseries', async (req, res) => {
-  try {
-    const { start, end, bucket = 'minute', metrics } = req.query;
+app.get('/api/async-metric-log/timeseries', asyncHandler(async (req, res) => {
+  const { start, end, bucket = 'minute', metrics } = req.query;
 
-    // Parse metrics or use defaults
-    const metricList = metrics
-      ? (typeof metrics === 'string' ? metrics.split(',') : metrics)
-      : DEFAULT_ASYNC_METRIC_LOG_METRICS;
+  // Parse metrics or use defaults
+  const metricList = metrics
+    ? (typeof metrics === 'string' ? metrics.split(',') : metrics)
+    : DEFAULT_ASYNC_METRIC_LOG_METRICS;
 
-    // Validate metrics - async metrics can have various characters including dots
-    const validMetrics = metricList.filter(m => /^[A-Za-z0-9_.]+$/.test(m));
+  // Validate metrics - async metrics can have various characters including dots
+  const validMetrics = metricList.filter(m => /^[A-Za-z0-9_.]+$/.test(m));
 
-    if (validMetrics.length === 0) {
-      return res.json([]);
-    }
-
-    // Determine truncation function based on bucket
-    // Use toDateTime to avoid toStartOfSecond incompatibility with DateTime columns
-    let truncFunc;
-    switch (bucket) {
-      case 'second':
-        truncFunc = 'toDateTime(event_time)';
-        break;
-      case 'hour':
-        truncFunc = 'toStartOfHour(event_time)';
-        break;
-      default:
-        truncFunc = 'toStartOfMinute(event_time)';
-    }
-
-    // Build query to pivot async metrics into columns
-    const selectClauses = validMetrics.map(m =>
-      `maxIf(value, metric = '${m}') as \`${m}\``
-    ).join(',\n        ');
-
-    const whereMetrics = validMetrics.map(m => `'${m}'`).join(', ');
-
-    const query = `
-      SELECT
-        ${truncFunc} as time,
-        ${selectClauses}
-      FROM system.asynchronous_metric_log
-      WHERE event_time >= '${start}' AND event_time <= '${end}'
-        AND metric IN (${whereMetrics})
-      GROUP BY time
-      ORDER BY time
-    `;
-
-    const result = await client.query({ query, format: 'JSONEachRow' });
-    const data = await result.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching asynchronous_metric_log timeseries:', error);
-    res.status(500).json({ error: error.message });
+  if (validMetrics.length === 0) {
+    return res.json([]);
   }
-});
+
+  // Determine truncation function based on bucket
+  // Use toDateTime to avoid toStartOfSecond incompatibility with DateTime columns
+  let truncFunc;
+  switch (bucket) {
+    case 'second':
+      truncFunc = 'toDateTime(event_time)';
+      break;
+    case 'hour':
+      truncFunc = 'toStartOfHour(event_time)';
+      break;
+    default:
+      truncFunc = 'toStartOfMinute(event_time)';
+  }
+
+  // Build query to pivot async metrics into columns
+  const selectClauses = validMetrics.map(m =>
+    `maxIf(value, metric = '${m}') as \`${m}\``
+  ).join(',\n        ');
+
+  const whereMetrics = validMetrics.map(m => `'${m}'`).join(', ');
+
+  const query = `
+    SELECT
+      ${truncFunc} as time,
+      ${selectClauses}
+    FROM system.asynchronous_metric_log
+    WHERE event_time >= '${start}' AND event_time <= '${end}'
+      AND metric IN (${whereMetrics})
+    GROUP BY time
+    ORDER BY time
+  `;
+
+  const result = await client.query({ query, format: 'JSONEachRow' });
+  const data = await result.json();
+  res.json(data);
+}));
 
 // Get default async dashboard metrics list
 app.get('/api/async-metric-log/defaults', async (req, res) => {
@@ -6367,6 +5286,15 @@ const PORT = process.env.PORT || DEFAULT_PORT;
 let server;
 
 // Startup function - validates connection before starting server
+
+// Express error middleware — last-resort handler for routes wrapped in
+// asyncHandler that throw. Logs context, returns JSON 500.
+app.use((err, req, res, _next) => {
+  console.error(`Error in ${req.method} ${req.originalUrl}:`, err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: err.message });
+});
+
 async function startup() {
   // Display banner
   console.log('\n' + figlet.textSync('QueryDog', { font: 'Standard' }) + '\n');

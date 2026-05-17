@@ -52,11 +52,6 @@ export async function closeClient(): Promise<void> {
   }
 }
 
-// Helper for time range filtering
-export function getTimeFilter(hours: number = 24): string {
-  return `event_time >= now() - INTERVAL ${hours} HOUR`;
-}
-
 // Query builders for system tables
 export const SystemQueries = {
   // Tables & Schema

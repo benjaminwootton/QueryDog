@@ -15,10 +15,6 @@ export function setFormatOptions(options: FormatOptions): void {
   globalFormatOptions = options;
 }
 
-export function getFormatOptions(): FormatOptions {
-  return globalFormatOptions;
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function formatOutput(
   data: any[],
@@ -217,14 +213,6 @@ export function printHeader(title: string, env?: string): void {
 
 export function printError(message: string): void {
   console.error(chalk.red.bold('Error: ') + chalk.red(message));
-}
-
-export function printSuccess(message: string): void {
-  console.log(chalk.green.bold('✓ ') + chalk.green(message));
-}
-
-export function printInfo(message: string): void {
-  console.log(chalk.blue.bold('ℹ ') + chalk.blue(message));
 }
 
 export function printOutput(output: string): void {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { FileText, ChevronLeft, ChevronRight, Filter, X, Search, AlertTriangle } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, RowClickedEvent, SortChangedEvent, SortDirection } from 'ag-grid-community';
 import { useQueryStore } from '../../stores/queryStore';
 import {
@@ -15,37 +15,11 @@ import {
 import { TimeRangeSelector } from '../TimeRangeSelector';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { addSeconds, addMinutes, addHours } from 'date-fns';
+import { useGridTheme } from '../../hooks/useTheme';
+import { formatDateTime } from '../../utils/formatters';
 
 // Register AG Grid Community modules
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-// Create dark theme with JetBrains Mono for cells, lighter weight
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
-
-function formatDateTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 function getLevelColor(level: string): string {
   switch (level) {
@@ -67,6 +41,7 @@ function getLevelColor(level: string): string {
 }
 
 export function TextLogPage() {
+  const gridTheme = useGridTheme();
   const { timeRange, bucketSize, setTimeRange } = useQueryStore();
 
   const [entries, setEntries] = useState<TextLogEntry[]>([]);
@@ -567,7 +542,7 @@ export function TextLogPage() {
       {/* Log entries table - AG Grid */}
       <div className="flex-1 overflow-hidden px-1.5 pt-3 pb-4">
         <AgGridReact
-          theme={darkTheme}
+          theme={gridTheme}
           rowData={entries}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}

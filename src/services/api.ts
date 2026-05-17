@@ -3,6 +3,16 @@ import type { RangeFilter } from '../stores/queryStore';
 
 const API_BASE = '/api';
 
+// GET <path> and parse JSON, throwing `<errorPrefix>: <statusText>` on
+// non-2xx. The vast majority of endpoints in this file follow this exact
+// shape; callers that need POST, custom error parsing, or non-JSON
+// responses use `fetch` directly.
+async function fetchJson<T>(path: string, errorPrefix: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`);
+  if (!response.ok) throw new Error(`${errorPrefix}: ${response.statusText}`);
+  return response.json() as Promise<T>;
+}
+
 // Common connection error patterns - errors that indicate the server/database is unreachable
 const CONNECTION_ERROR_PATTERNS = [
   'ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET',
@@ -27,7 +37,7 @@ export function isServerError(message: string): boolean {
   return SERVER_ERROR_PATTERNS.some(pattern => message.includes(pattern));
 }
 
-export function extractConnectionError(message: string): string {
+function extractConnectionError(message: string): string {
   // Strip prefixes like "Failed to fetch query log: ", "Entries: " etc.
   const cleaned = message
     .replace(/^Failed to (fetch|load) [^:]+:\s*/i, '')
@@ -95,15 +105,7 @@ export interface EnvironmentInfo {
 }
 
 export async function fetchEnvironments(): Promise<{ active: number; environments: EnvironmentInfo[] }> {
-  const response = await fetch(`${API_BASE}/environments`);
-  if (!response.ok) throw new Error(`Failed to fetch environments: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchConfigEnvironments(): Promise<{ active: number; environments: EnvironmentInfo[] }> {
-  const response = await fetch(`${API_BASE}/config/environments`);
-  if (!response.ok) throw new Error(`Failed to fetch config environments: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/environments`, 'Failed to fetch environments');
 }
 
 export async function switchEnvironment(index: number): Promise<{ name: string; host: string; port: number; connected: boolean; error?: string }> {
@@ -132,9 +134,7 @@ export interface FullEnvironmentInfo {
 }
 
 export async function fetchFullEnvironments(): Promise<{ active: number; environments: FullEnvironmentInfo[] }> {
-  const response = await fetch(`${API_BASE}/config/environments/full`);
-  if (!response.ok) throw new Error(`Failed to fetch environments: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/config/environments/full`, 'Failed to fetch environments');
 }
 
 export async function addEnvironment(env: Omit<FullEnvironmentInfo, 'index'>): Promise<{ success: boolean; index?: number; error?: string }> {
@@ -211,11 +211,7 @@ export async function fetchQueryLog(
     params.set('rangeFilters', JSON.stringify(rangeFilters));
   }
 
-  const response = await fetch(`${API_BASE}/query-log?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch query log: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/query-log?${params}`, 'Failed to fetch query log');
 }
 
 export async function fetchTimeSeries(
@@ -243,11 +239,7 @@ export async function fetchTimeSeries(
     params.set('rangeFilters', JSON.stringify(rangeFilters));
   }
 
-  const response = await fetch(`${API_BASE}/query-log/timeseries?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch time series: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/query-log/timeseries?${params}`, 'Failed to fetch time series');
 }
 
 export interface StackedTimeSeriesPoint {
@@ -283,11 +275,7 @@ export async function fetchStackedTimeSeries(
     params.set('rangeFilters', JSON.stringify(rangeFilters));
   }
 
-  const response = await fetch(`${API_BASE}/query-log/timeseries-stacked?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch stacked time series: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/query-log/timeseries-stacked?${params}`, 'Failed to fetch stacked time series');
 }
 
 export async function fetchHistogram(
@@ -316,11 +304,7 @@ export async function fetchHistogram(
     params.set('filters', JSON.stringify(filters));
   }
 
-  const response = await fetch(`${API_BASE}/query-log/histogram/${field}?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch histogram: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/query-log/histogram/${field}?${params}`, 'Failed to fetch histogram');
 }
 
 export async function fetchDistinctValues(
@@ -334,11 +318,7 @@ export async function fetchDistinctValues(
     limit: limit.toString(),
   });
 
-  const response = await fetch(`${API_BASE}/query-log/distinct/${field}?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch distinct values: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/query-log/distinct/${field}?${params}`, 'Failed to fetch distinct values');
 }
 
 export async function fetchTotalCount(
@@ -378,11 +358,7 @@ export async function fetchTotalCount(
 }
 
 export async function fetchColumnMetadata(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/query-log/columns`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch column metadata: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/query-log/columns`, 'Failed to fetch column metadata');
 }
 
 export interface GroupedQueryEntry {
@@ -448,11 +424,7 @@ export async function fetchGroupedQueryLog(
     params.set('normalize', 'true');
   }
 
-  const response = await fetch(`${API_BASE}/query-log/grouped?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch grouped query log: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/query-log/grouped?${params}`, 'Failed to fetch grouped query log');
 }
 
 // ==================== BY TABLE STATS API ====================
@@ -510,11 +482,7 @@ export async function fetchByTableStats(
     params.set('rangeFilters', JSON.stringify(rangeFilters));
   }
 
-  const response = await fetch(`${API_BASE}/query-log/by-table?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch by-table stats: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/query-log/by-table?${params}`, 'Failed to fetch by-table stats');
 }
 
 // ==================== QUERY VIEWS LOG API ====================
@@ -562,37 +530,7 @@ export async function fetchQueryViewsLog(
     params.set('search', search);
   }
 
-  const response = await fetch(`${API_BASE}/query-views-log?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch query views log: ${response.statusText}`);
-  }
-  return response.json();
-}
-
-export async function fetchQueryViewsLogCount(
-  timeRange: TimeRange,
-  filters: Record<string, string[]> = {},
-  search = ''
-): Promise<number> {
-  const params = new URLSearchParams({
-    start: formatDateTime(timeRange.start),
-    end: formatDateTime(timeRange.end),
-  });
-
-  if (Object.keys(filters).length > 0) {
-    params.set('filters', JSON.stringify(filters));
-  }
-
-  if (search) {
-    params.set('search', search);
-  }
-
-  const response = await fetch(`${API_BASE}/query-views-log/count?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch query views log count: ${response.statusText}`);
-  }
-  const data = await response.json();
-  return data.total;
+  return fetchJson(`/query-views-log?${params}`, 'Failed to fetch query views log');
 }
 
 // ==================== PART LOG API ====================
@@ -683,11 +621,7 @@ export async function fetchPartLogDistinctValues(
     limit: limit.toString(),
   });
 
-  const response = await fetch(`${API_BASE}/part-log/distinct/${field}?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch part_log distinct values: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/part-log/distinct/${field}?${params}`, 'Failed to fetch part_log distinct values');
 }
 
 export interface PartLogTimeSeriesPoint {
@@ -727,11 +661,7 @@ export async function fetchPartLogHistogram(
     params.set('filters', JSON.stringify(filters));
   }
 
-  const response = await fetch(`${API_BASE}/part-log/histogram/${field}?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch part_log histogram: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/part-log/histogram/${field}?${params}`, 'Failed to fetch part_log histogram');
 }
 
 export async function fetchPartLogTimeSeries(
@@ -807,9 +737,7 @@ export async function fetchParts(
   if (search) {
     params.set('search', search);
   }
-  const response = await fetch(`${API_BASE}/parts?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch parts: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/parts?${params}`, 'Failed to fetch parts');
 }
 
 export async function fetchPartsCount(
@@ -823,9 +751,7 @@ export async function fetchPartsCount(
   if (search) {
     params.set('search', search);
   }
-  const response = await fetch(`${API_BASE}/parts/count?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch parts count: ${response.statusText}`);
-  const data = await response.json();
+  const data = await fetchJson<{ count: number }>(`/parts/count?${params}`, 'Failed to fetch parts count');
   return data.count;
 }
 
@@ -834,15 +760,11 @@ export async function fetchPartsDistinctValues(
   limit = 100
 ): Promise<string[]> {
   const params = new URLSearchParams({ limit: limit.toString() });
-  const response = await fetch(`${API_BASE}/parts/distinct/${field}?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch parts distinct values: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/parts/distinct/${field}?${params}`, 'Failed to fetch parts distinct values');
 }
 
 export async function fetchPartsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/parts/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch parts columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/parts/columns`, 'Failed to fetch parts columns');
 }
 
 export async function fetchPartsHistogram(
@@ -858,54 +780,7 @@ export async function fetchPartsHistogram(
     params.set('filters', JSON.stringify(filters));
   }
 
-  const response = await fetch(`${API_BASE}/parts/histogram/${field}?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch parts histogram: ${response.statusText}`);
-  }
-  return response.json();
-}
-
-export async function fetchPartitions(
-  sortField = 'modification_time',
-  sortOrder: 'ASC' | 'DESC' = 'DESC',
-  filters: Record<string, string[]> = {},
-  limit = 1000,
-  offset = 0,
-  search = ''
-): Promise<Record<string, unknown>[]> {
-  const params = new URLSearchParams({ sortField, sortOrder, limit: limit.toString(), offset: offset.toString() });
-  if (Object.keys(filters).length > 0) {
-    params.set('filters', JSON.stringify(filters));
-  }
-  if (search) {
-    params.set('search', search);
-  }
-  const response = await fetch(`${API_BASE}/partitions?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch partitions: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchPartitionsCount(
-  filters: Record<string, string[]> = {},
-  search = ''
-): Promise<number> {
-  const params = new URLSearchParams();
-  if (Object.keys(filters).length > 0) {
-    params.set('filters', JSON.stringify(filters));
-  }
-  if (search) {
-    params.set('search', search);
-  }
-  const response = await fetch(`${API_BASE}/partitions/count?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch partitions count: ${response.statusText}`);
-  const data = await response.json();
-  return data.count;
-}
-
-export async function fetchPartitionsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/partitions/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch partitions columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/parts/histogram/${field}?${params}`, 'Failed to fetch parts histogram');
 }
 
 // Aggregated partitions (grouped by partition_id)
@@ -924,9 +799,7 @@ export async function fetchPartitionsSummary(
   if (search) {
     params.set('search', search);
   }
-  const response = await fetch(`${API_BASE}/partitions-summary?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch partitions summary: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/partitions-summary?${params}`, 'Failed to fetch partitions summary');
 }
 
 export async function fetchPartitionsSummaryCount(
@@ -940,16 +813,12 @@ export async function fetchPartitionsSummaryCount(
   if (search) {
     params.set('search', search);
   }
-  const response = await fetch(`${API_BASE}/partitions-summary/count?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch partitions summary count: ${response.statusText}`);
-  const data = await response.json();
+  const data = await fetchJson<{ count: number }>(`/partitions-summary/count?${params}`, 'Failed to fetch partitions summary count');
   return data.count;
 }
 
 export async function fetchPartitionsSummaryColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/partitions-summary/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch partitions summary columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/partitions-summary/columns`, 'Failed to fetch partitions summary columns');
 }
 
 export interface GroupedPartsEntry {
@@ -978,9 +847,7 @@ export async function fetchTableCompression(
   database: string,
   table: string
 ): Promise<ColumnCompressionEntry[]> {
-  const response = await fetch(`${API_BASE}/table-compression/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
-  if (!response.ok) throw new Error(`Failed to fetch table compression: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/table-compression/${encodeURIComponent(database)}/${encodeURIComponent(table)}`, 'Failed to fetch table compression');
 }
 
 export interface TablePartitionEntry {
@@ -1000,9 +867,7 @@ export async function fetchTablePartitions(
   activeOnly = true
 ): Promise<TablePartitionEntry[]> {
   const params = new URLSearchParams({ activeOnly: activeOnly ? '1' : '0' });
-  const response = await fetch(`${API_BASE}/table-partitions/${encodeURIComponent(database)}/${encodeURIComponent(table)}?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch table partitions: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/table-partitions/${encodeURIComponent(database)}/${encodeURIComponent(table)}?${params}`, 'Failed to fetch table partitions');
 }
 
 export type MergeTreeIndexEntry = Record<string, unknown>;
@@ -1011,18 +876,14 @@ export async function fetchMergeTreeIndex(
   database: string,
   table: string
 ): Promise<MergeTreeIndexEntry[]> {
-  const response = await fetch(`${API_BASE}/table-mergetree-index/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
-  if (!response.ok) throw new Error(`Failed to fetch MergeTree index: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/table-mergetree-index/${encodeURIComponent(database)}/${encodeURIComponent(table)}`, 'Failed to fetch MergeTree index');
 }
 
 export async function fetchTableDefinition(
   database: string,
   table: string
 ): Promise<string> {
-  const response = await fetch(`${API_BASE}/table-definition/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
-  if (!response.ok) throw new Error(`Failed to fetch table definition: ${response.statusText}`);
-  const data = await response.json();
+  const data = await fetchJson<{ definition: string }>(`/table-definition/${encodeURIComponent(database)}/${encodeURIComponent(table)}`, 'Failed to fetch table definition');
   return data.definition;
 }
 
@@ -1048,9 +909,7 @@ export async function fetchPartitionParts(
   activeOnly = true
 ): Promise<PartitionPartEntry[]> {
   const params = new URLSearchParams({ activeOnly: activeOnly ? '1' : '0' });
-  const response = await fetch(`${API_BASE}/partition-parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(partitionId)}?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch partition parts: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/partition-parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(partitionId)}?${params}`, 'Failed to fetch partition parts');
 }
 
 export async function fetchGroupedParts(
@@ -1084,15 +943,11 @@ export async function fetchProcesses(filters: Record<string, string[]> = {}): Pr
 }
 
 export async function fetchProcessesColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/processes/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch processes columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/processes/columns`, 'Failed to fetch processes columns');
 }
 
 export async function fetchProcessesDistinct(field: string): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/processes/distinct/${field}`);
-  if (!response.ok) throw new Error(`Failed to fetch processes distinct: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/processes/distinct/${field}`, 'Failed to fetch processes distinct');
 }
 
 export async function fetchMerges(filters: Record<string, string[]> = {}): Promise<Record<string, unknown>[]> {
@@ -1107,15 +962,11 @@ export async function fetchMerges(filters: Record<string, string[]> = {}): Promi
 }
 
 export async function fetchMergesColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/merges/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch merges columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/merges/columns`, 'Failed to fetch merges columns');
 }
 
 export async function fetchMergesDistinct(field: string): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/merges/distinct/${field}`);
-  if (!response.ok) throw new Error(`Failed to fetch merges distinct: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/merges/distinct/${field}`, 'Failed to fetch merges distinct');
 }
 
 export async function fetchMutations(filters: Record<string, string[]> = {}): Promise<Record<string, unknown>[]> {
@@ -1130,15 +981,11 @@ export async function fetchMutations(filters: Record<string, string[]> = {}): Pr
 }
 
 export async function fetchMutationsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/mutations/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch mutations columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/mutations/columns`, 'Failed to fetch mutations columns');
 }
 
 export async function fetchMutationsDistinct(field: string): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/mutations/distinct/${field}`);
-  if (!response.ok) throw new Error(`Failed to fetch mutations distinct: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/mutations/distinct/${field}`, 'Failed to fetch mutations distinct');
 }
 
 // ==================== VIEW REFRESHES API ====================
@@ -1155,15 +1002,11 @@ export async function fetchViewRefreshes(filters: Record<string, string[]> = {})
 }
 
 export async function fetchViewRefreshesColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/view-refreshes/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch view refreshes columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/view-refreshes/columns`, 'Failed to fetch view refreshes columns');
 }
 
 export async function fetchViewRefreshesDistinct(field: string): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/view-refreshes/distinct/${field}`);
-  if (!response.ok) throw new Error(`Failed to fetch view refreshes distinct: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/view-refreshes/distinct/${field}`, 'Failed to fetch view refreshes distinct');
 }
 
 // ==================== QUERY CACHE API ====================
@@ -1180,34 +1023,7 @@ export async function fetchQueryCache(filters: Record<string, string[]> = {}): P
 }
 
 export async function fetchQueryCacheColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/query-cache/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch query cache columns: ${response.statusText}`);
-  return response.json();
-}
-
-// ==================== BACKGROUND JOBS API ====================
-
-export async function fetchBackgroundJobs(filters: Record<string, string[]> = {}): Promise<Record<string, unknown>[]> {
-  const params = new URLSearchParams();
-  if (Object.keys(filters).length > 0) {
-    params.set('filters', JSON.stringify(filters));
-  }
-  const url = Object.keys(filters).length > 0 ? `${API_BASE}/background-jobs?${params}` : `${API_BASE}/background-jobs`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch background jobs: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchBackgroundJobsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/background-jobs/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch background jobs columns: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchBackgroundJobsDistinct(field: string): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/background-jobs/distinct/${field}`);
-  if (!response.ok) throw new Error(`Failed to fetch background jobs distinct: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/query-cache/columns`, 'Failed to fetch query cache columns');
 }
 
 // ==================== ASYNC INSERTS API ====================
@@ -1224,38 +1040,11 @@ export async function fetchAsyncInserts(filters: Record<string, string[]> = {}):
 }
 
 export async function fetchAsyncInsertsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/async-inserts/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch async inserts columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/async-inserts/columns`, 'Failed to fetch async inserts columns');
 }
 
 export async function fetchAsyncInsertsDistinct(field: string): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/async-inserts/distinct/${field}`);
-  if (!response.ok) throw new Error(`Failed to fetch async inserts distinct: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchAsyncInsertLog(filters: Record<string, string[]> = {}): Promise<Record<string, unknown>[]> {
-  const params = new URLSearchParams();
-  if (Object.keys(filters).length > 0) {
-    params.set('filters', JSON.stringify(filters));
-  }
-  const url = Object.keys(filters).length > 0 ? `${API_BASE}/async-insert-log?${params}` : `${API_BASE}/async-insert-log`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch async insert log: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchAsyncInsertLogColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/async-insert-log/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch async insert log columns: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchAsyncInsertLogDistinct(field: string): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/async-insert-log/distinct/${field}`);
-  if (!response.ok) throw new Error(`Failed to fetch async insert log distinct: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/async-inserts/distinct/${field}`, 'Failed to fetch async inserts distinct');
 }
 
 // ==================== DISTRIBUTED DDL API ====================
@@ -1272,87 +1061,61 @@ export async function fetchDistributedDDL(filters: Record<string, string[]> = {}
 }
 
 export async function fetchDistributedDDLColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/distributed-ddl/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch distributed DDL columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/distributed-ddl/columns`, 'Failed to fetch distributed DDL columns');
 }
 
 export async function fetchDistributedDDLDistinct(field: string): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/distributed-ddl/distinct/${field}`);
-  if (!response.ok) throw new Error(`Failed to fetch distributed DDL distinct: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/distributed-ddl/distinct/${field}`, 'Failed to fetch distributed DDL distinct');
 }
 
 // ==================== DISKS API ====================
 
 export async function fetchDisks(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/disks`);
-  if (!response.ok) throw new Error(`Failed to fetch disks: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/disks`, 'Failed to fetch disks');
 }
 
 export async function fetchDisksColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/disks/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch disks columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/disks/columns`, 'Failed to fetch disks columns');
 }
 
 // ==================== STORAGE POLICIES API ====================
 
 export async function fetchStoragePolicies(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/storage-policies`);
-  if (!response.ok) throw new Error(`Failed to fetch storage policies: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/storage-policies`, 'Failed to fetch storage policies');
 }
 
 export async function fetchStoragePoliciesColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/storage-policies/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch storage policies columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/storage-policies/columns`, 'Failed to fetch storage policies columns');
 }
 
 // ==================== METRICS API ====================
 
 export async function fetchMetrics(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/metrics`);
-  if (!response.ok) throw new Error(`Failed to fetch metrics: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/metrics`, 'Failed to fetch metrics');
 }
 
 export async function fetchAsyncMetrics(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/async-metrics`);
-  if (!response.ok) throw new Error(`Failed to fetch async metrics: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/async-metrics`, 'Failed to fetch async metrics');
 }
 
 export async function fetchEvents(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/events`);
-  if (!response.ok) throw new Error(`Failed to fetch events: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/events`, 'Failed to fetch events');
 }
 
 export async function fetchErrors(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/errors`);
-  if (!response.ok) throw new Error(`Failed to fetch errors: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/errors`, 'Failed to fetch errors');
 }
 
 export async function fetchErrorsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/errors/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch errors columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/errors/columns`, 'Failed to fetch errors columns');
 }
 
 export async function fetchWarnings(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/warnings`);
-  if (!response.ok) throw new Error(`Failed to fetch warnings: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/warnings`, 'Failed to fetch warnings');
 }
 
 export async function fetchWarningsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/warnings/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch warnings columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/warnings/columns`, 'Failed to fetch warnings columns');
 }
 
 // ==================== DATABASE BROWSER API ====================
@@ -1416,33 +1179,23 @@ export interface DatabaseSummary {
 }
 
 export async function fetchDatabasesSummary(): Promise<DatabaseSummary[]> {
-  const response = await fetch(`${API_BASE}/databases/summary`);
-  if (!response.ok) throw new Error(`Failed to fetch databases summary: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/databases/summary`, 'Failed to fetch databases summary');
 }
 
 export async function fetchBrowserDatabases(): Promise<BrowserDatabase[]> {
-  const response = await fetch(`${API_BASE}/browser/databases`);
-  if (!response.ok) throw new Error(`Failed to fetch databases: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/browser/databases`, 'Failed to fetch databases');
 }
 
 export async function fetchBrowserTables(database: string): Promise<BrowserTable[]> {
-  const response = await fetch(`${API_BASE}/browser/tables/${encodeURIComponent(database)}`);
-  if (!response.ok) throw new Error(`Failed to fetch tables: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/browser/tables/${encodeURIComponent(database)}`, 'Failed to fetch tables');
 }
 
 export async function fetchBrowserPartitions(database: string, table: string): Promise<BrowserPartition[]> {
-  const response = await fetch(`${API_BASE}/browser/partitions/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
-  if (!response.ok) throw new Error(`Failed to fetch partitions: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/browser/partitions/${encodeURIComponent(database)}/${encodeURIComponent(table)}`, 'Failed to fetch partitions');
 }
 
 export async function fetchBrowserParts(database: string, table: string, partition: string): Promise<BrowserPart[]> {
-  const response = await fetch(`${API_BASE}/browser/parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(partition)}`);
-  if (!response.ok) throw new Error(`Failed to fetch parts: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/browser/parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(partition)}`, 'Failed to fetch parts');
 }
 
 export interface BrowserColumn {
@@ -1458,15 +1211,11 @@ export interface BrowserColumn {
 }
 
 export async function fetchBrowserColumns(database: string, table: string): Promise<BrowserColumn[]> {
-  const response = await fetch(`${API_BASE}/browser/columns/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
-  if (!response.ok) throw new Error(`Failed to fetch columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/browser/columns/${encodeURIComponent(database)}/${encodeURIComponent(table)}`, 'Failed to fetch columns');
 }
 
 export async function fetchBrowserSampleData(database: string, table: string): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/browser/sample/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
-  if (!response.ok) throw new Error(`Failed to fetch sample data: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/browser/sample/${encodeURIComponent(database)}/${encodeURIComponent(table)}`, 'Failed to fetch sample data');
 }
 
 export interface BrowserProjection {
@@ -1494,15 +1243,11 @@ export interface BrowserProjectionPart {
 }
 
 export async function fetchBrowserProjections(database: string, table: string): Promise<BrowserProjection[]> {
-  const response = await fetch(`${API_BASE}/browser/projections/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
-  if (!response.ok) throw new Error(`Failed to fetch projections: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/browser/projections/${encodeURIComponent(database)}/${encodeURIComponent(table)}`, 'Failed to fetch projections');
 }
 
 export async function fetchBrowserProjectionParts(database: string, table: string, projection: string): Promise<BrowserProjectionPart[]> {
-  const response = await fetch(`${API_BASE}/browser/projection-parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(projection)}`);
-  if (!response.ok) throw new Error(`Failed to fetch projection parts: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/browser/projection-parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(projection)}`, 'Failed to fetch projection parts');
 }
 
 // System-wide projections API
@@ -1537,9 +1282,7 @@ export async function fetchProjectionParts(
   table: string,
   projection: string
 ): Promise<BrowserProjectionPart[]> {
-  const response = await fetch(`${API_BASE}/projection-parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(projection)}`);
-  if (!response.ok) throw new Error(`Failed to fetch projection parts: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/projection-parts/${encodeURIComponent(database)}/${encodeURIComponent(table)}/${encodeURIComponent(projection)}`, 'Failed to fetch projection parts');
 }
 
 // System-wide views API
@@ -1573,9 +1316,7 @@ export async function fetchViewDefinition(
   database: string,
   view: string
 ): Promise<string> {
-  const response = await fetch(`${API_BASE}/view-definition/${encodeURIComponent(database)}/${encodeURIComponent(view)}`);
-  if (!response.ok) throw new Error(`Failed to fetch view definition: ${response.statusText}`);
-  const data = await response.json();
+  const data = await fetchJson<{ definition: string }>(`/view-definition/${encodeURIComponent(database)}/${encodeURIComponent(view)}`, 'Failed to fetch view definition');
   return data.definition;
 }
 
@@ -1623,37 +1364,6 @@ export async function fetchDictionaries(
   return response.json();
 }
 
-// System-wide data skipping indexes API
-export interface SystemIndex {
-  database: string;
-  table: string;
-  name: string;
-  type: string;
-  type_full: string;
-  expr: string;
-  granularity: number;
-  data_compressed_bytes: number;
-  data_uncompressed_bytes: number;
-  marks: number;
-}
-
-export async function fetchSystemIndexes(
-  filters: Record<string, string[]> = {},
-  search = ''
-): Promise<SystemIndex[]> {
-  const params = new URLSearchParams();
-  if (Object.keys(filters).length > 0) {
-    params.set('filters', JSON.stringify(filters));
-  }
-  if (search) {
-    params.set('search', search);
-  }
-  const url = params.toString() ? `${API_BASE}/indexes?${params}` : `${API_BASE}/indexes`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch indexes: ${response.statusText}`);
-  return response.json();
-}
-
 // Browser endpoint for indexes per table
 export interface BrowserIndex {
   name: string;
@@ -1667,9 +1377,7 @@ export interface BrowserIndex {
 }
 
 export async function fetchBrowserIndexes(database: string, table: string): Promise<BrowserIndex[]> {
-  const response = await fetch(`${API_BASE}/browser/indexes/${encodeURIComponent(database)}/${encodeURIComponent(table)}`);
-  if (!response.ok) throw new Error(`Failed to fetch indexes: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/browser/indexes/${encodeURIComponent(database)}/${encodeURIComponent(table)}`, 'Failed to fetch indexes');
 }
 
 // Data skipping indexes (formatted size)
@@ -1748,11 +1456,7 @@ export async function fetchTextLog(
     params.set('filters', JSON.stringify(filters));
   }
 
-  const response = await fetch(`${API_BASE}/text-log?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch text log: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/text-log?${params}`, 'Failed to fetch text log');
 }
 
 export async function fetchTextLogCount(
@@ -1796,11 +1500,7 @@ export async function fetchTextLogTimeSeries(
     params.set('filters', JSON.stringify(filters));
   }
 
-  const response = await fetch(`${API_BASE}/text-log/timeseries?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch text log time series: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/text-log/timeseries?${params}`, 'Failed to fetch text log time series');
 }
 
 export async function fetchTextLogDistinct(
@@ -1812,160 +1512,94 @@ export async function fetchTextLogDistinct(
     end: formatDateTime(timeRange.end),
   });
 
-  const response = await fetch(`${API_BASE}/text-log/distinct/${field}?${params}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch text log distinct values: ${response.statusText}`);
-  }
-  return response.json();
+  return fetchJson(`/text-log/distinct/${field}?${params}`, 'Failed to fetch text log distinct values');
 }
 
 // ==================== INSTANCE API ====================
 
 export async function fetchUsers(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/users`);
-  if (!response.ok) throw new Error(`Failed to fetch users: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/users`, 'Failed to fetch users');
 }
 
 export async function fetchUsersColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/users/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch users columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/users/columns`, 'Failed to fetch users columns');
 }
 
 export async function fetchSettings(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/settings`);
-  if (!response.ok) throw new Error(`Failed to fetch settings: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/settings`, 'Failed to fetch settings');
 }
 
 export async function fetchSettingsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/settings/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch settings columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/settings/columns`, 'Failed to fetch settings columns');
 }
 
 // ==================== USERS & SECURITY API ====================
 
 export async function fetchGrants(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/grants`);
-  if (!response.ok) throw new Error(`Failed to fetch grants: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/grants`, 'Failed to fetch grants');
 }
 
 export async function fetchGrantsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/grants/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch grants columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/grants/columns`, 'Failed to fetch grants columns');
 }
 
 export async function fetchRoles(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/roles`);
-  if (!response.ok) throw new Error(`Failed to fetch roles: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/roles`, 'Failed to fetch roles');
 }
 
 export async function fetchRolesColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/roles/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch roles columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/roles/columns`, 'Failed to fetch roles columns');
 }
 
 export async function fetchRoleGrants(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/role-grants`);
-  if (!response.ok) throw new Error(`Failed to fetch role grants: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/role-grants`, 'Failed to fetch role grants');
 }
 
 export async function fetchRoleGrantsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/role-grants/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch role grants columns: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchCurrentRoles(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/current-roles`);
-  if (!response.ok) throw new Error(`Failed to fetch current roles: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchEnabledRoles(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/enabled-roles`);
-  if (!response.ok) throw new Error(`Failed to fetch enabled roles: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/role-grants/columns`, 'Failed to fetch role grants columns');
 }
 
 export async function fetchQuotas(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/quotas`);
-  if (!response.ok) throw new Error(`Failed to fetch quotas: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/quotas`, 'Failed to fetch quotas');
 }
 
 export async function fetchQuotasColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/quotas/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch quotas columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/quotas/columns`, 'Failed to fetch quotas columns');
 }
 
 export async function fetchQuotaUsage(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/quota-usage`);
-  if (!response.ok) throw new Error(`Failed to fetch quota usage: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/quota-usage`, 'Failed to fetch quota usage');
 }
 
 export async function fetchQuotaUsageColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/quota-usage/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch quota usage columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/quota-usage/columns`, 'Failed to fetch quota usage columns');
 }
 
 export async function fetchQuotaLimits(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/quota-limits`);
-  if (!response.ok) throw new Error(`Failed to fetch quota limits: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/quota-limits`, 'Failed to fetch quota limits');
 }
 
 export async function fetchQuotaLimitsColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/quota-limits/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch quota limits columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/quota-limits/columns`, 'Failed to fetch quota limits columns');
 }
 
 export async function fetchRowPolicies(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/row-policies`);
-  if (!response.ok) throw new Error(`Failed to fetch row policies: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/row-policies`, 'Failed to fetch row policies');
 }
 
 export async function fetchRowPoliciesColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/row-policies/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch row policies columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/row-policies/columns`, 'Failed to fetch row policies columns');
 }
 
 export async function fetchSessionLog(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/session-log`);
-  if (!response.ok) throw new Error(`Failed to fetch session log: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/session-log`, 'Failed to fetch session log');
 }
 
 export async function fetchSessionLogColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/session-log/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch session log columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/session-log/columns`, 'Failed to fetch session log columns');
 }
 
 // ==================== EXPLAIN API ====================
-
-export async function fetchExplainPlan(query: string): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/explain`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
-  });
-  if (!response.ok) throw new Error(`Failed to run explain: ${response.statusText}`);
-  return response.json();
-}
 
 export type ExplainType = 'plan' | 'indexes' | 'actions' | 'pipeline' | 'ast' | 'syntax' | 'estimate' | 'json' | 'json-plan';
 
@@ -2056,155 +1690,92 @@ export async function fetchProfileEvents(
     params.set('search', search);
   }
 
-  const response = await fetch(`${API_BASE}/query-log/profile-events?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch profile events: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/query-log/profile-events?${params}`, 'Failed to fetch profile events');
 }
 
 // ==================== CLUSTER API ====================
 
 export async function fetchReplicationQueue(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/replication-queue`);
-  if (!response.ok) throw new Error(`Failed to fetch replication queue: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/replication-queue`, 'Failed to fetch replication queue');
 }
 
 export async function fetchReplicationQueueColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/cluster/replication-queue/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch replication queue columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/replication-queue/columns`, 'Failed to fetch replication queue columns');
 }
 
 export async function fetchReplicationQueueGrouped(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/replication-queue/grouped`);
-  if (!response.ok) throw new Error(`Failed to fetch grouped replication queue: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/replication-queue/grouped`, 'Failed to fetch grouped replication queue');
 }
 
 export async function fetchReplicas(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/replicas`);
-  if (!response.ok) throw new Error(`Failed to fetch replicas: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/replicas`, 'Failed to fetch replicas');
 }
 
 export async function fetchReplicasColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/cluster/replicas/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch replicas columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/replicas/columns`, 'Failed to fetch replicas columns');
 }
 
 export async function fetchClusters(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/clusters`);
-  if (!response.ok) throw new Error(`Failed to fetch clusters: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/clusters`, 'Failed to fetch clusters');
 }
 
 export async function fetchClustersColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/cluster/clusters/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch clusters columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/clusters/columns`, 'Failed to fetch clusters columns');
 }
 
 export async function fetchReplicatedFetches(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/fetches`);
-  if (!response.ok) throw new Error(`Failed to fetch replicated fetches: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/fetches`, 'Failed to fetch replicated fetches');
 }
 
 export async function fetchReplicatedFetchesColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/cluster/fetches/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch replicated fetches columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/fetches/columns`, 'Failed to fetch replicated fetches columns');
 }
 
 export async function fetchDistributedDdlQueue(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/distributed-ddl`);
-  if (!response.ok) throw new Error(`Failed to fetch distributed DDL queue: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/distributed-ddl`, 'Failed to fetch distributed DDL queue');
 }
 
 export async function fetchDistributedDdlQueueColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/cluster/distributed-ddl/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch distributed DDL queue columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/distributed-ddl/columns`, 'Failed to fetch distributed DDL queue columns');
 }
 
 export async function fetchZookeeper(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/zookeeper`);
-  if (!response.ok) throw new Error(`Failed to fetch zookeeper: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/zookeeper`, 'Failed to fetch zookeeper');
 }
 
 export async function fetchZookeeperColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/cluster/zookeeper/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch zookeeper columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/zookeeper/columns`, 'Failed to fetch zookeeper columns');
 }
 
 export async function fetchZookeeperConnection(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/zookeeper-connection`);
-  if (!response.ok) throw new Error(`Failed to fetch zookeeper_connection: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/zookeeper-connection`, 'Failed to fetch zookeeper_connection');
 }
 
 export async function fetchZookeeperConnectionColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/cluster/zookeeper-connection/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch zookeeper_connection columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/zookeeper-connection/columns`, 'Failed to fetch zookeeper_connection columns');
 }
 
 export async function fetchZookeeperConnectionLog(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/zookeeper-connection-log`);
-  if (!response.ok) throw new Error(`Failed to fetch zookeeper_connection_log: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/zookeeper-connection-log`, 'Failed to fetch zookeeper_connection_log');
 }
 
 export async function fetchZookeeperConnectionLogColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/cluster/zookeeper-connection-log/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch zookeeper_connection_log columns: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchZookeeperLog(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/zookeeper-log`);
-  if (!response.ok) throw new Error(`Failed to fetch zookeeper_log: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchZookeeperLogColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/cluster/zookeeper-log/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch zookeeper_log columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/zookeeper-connection-log/columns`, 'Failed to fetch zookeeper_connection_log columns');
 }
 
 export async function fetchDistributionQueue(): Promise<Record<string, unknown>[]> {
-  const response = await fetch(`${API_BASE}/cluster/distribution-queue`);
-  if (!response.ok) throw new Error(`Failed to fetch distribution_queue: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/distribution-queue`, 'Failed to fetch distribution_queue');
 }
 
 export async function fetchDistributionQueueColumns(): Promise<ColumnMetadata[]> {
-  const response = await fetch(`${API_BASE}/cluster/distribution-queue/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch distribution_queue columns: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/cluster/distribution-queue/columns`, 'Failed to fetch distribution_queue columns');
 }
 
 // ==================== METRIC LOG API (Dashboard) ====================
 
-export interface MetricLogColumn {
-  name: string;
-  type: string;
-}
-
 export interface MetricLogTimeSeriesPoint {
   time: string;
   [key: string]: string | number;
-}
-
-export async function fetchMetricLogColumns(): Promise<MetricLogColumn[]> {
-  const response = await fetch(`${API_BASE}/metric-log/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch metric_log columns: ${response.statusText}`);
-  return response.json();
 }
 
 export async function fetchMetricLogTimeSeries(
@@ -2223,28 +1794,10 @@ export async function fetchMetricLogTimeSeries(
     params.set('metrics', metrics.join(','));
   }
 
-  const response = await fetch(`${API_BASE}/metric-log/timeseries?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch metric_log timeseries: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchMetricLogDefaults(): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/metric-log/defaults`);
-  if (!response.ok) throw new Error(`Failed to fetch metric_log defaults: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/metric-log/timeseries?${params}`, 'Failed to fetch metric_log timeseries');
 }
 
 // ==================== ASYNC METRIC LOG API (Dashboard) ====================
-
-export interface AsyncMetricLogColumn {
-  name: string;
-}
-
-export async function fetchAsyncMetricLogColumns(): Promise<AsyncMetricLogColumn[]> {
-  const response = await fetch(`${API_BASE}/async-metric-log/columns`);
-  if (!response.ok) throw new Error(`Failed to fetch async metric_log columns: ${response.statusText}`);
-  return response.json();
-}
 
 export async function fetchAsyncMetricLogTimeSeries(
   start: Date,
@@ -2262,13 +1815,5 @@ export async function fetchAsyncMetricLogTimeSeries(
     params.set('metrics', metrics.join(','));
   }
 
-  const response = await fetch(`${API_BASE}/async-metric-log/timeseries?${params}`);
-  if (!response.ok) throw new Error(`Failed to fetch async metric_log timeseries: ${response.statusText}`);
-  return response.json();
-}
-
-export async function fetchAsyncMetricLogDefaults(): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/async-metric-log/defaults`);
-  if (!response.ok) throw new Error(`Failed to fetch async metric_log defaults: ${response.statusText}`);
-  return response.json();
+  return fetchJson(`/async-metric-log/timeseries?${params}`, 'Failed to fetch async metric_log timeseries');
 }

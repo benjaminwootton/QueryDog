@@ -4,6 +4,18 @@ import type { ChartMetric, ChartAggregation } from '../stores/queryStore';
 import { format } from 'date-fns';
 import { Activity, Clock, HardDrive, Rows3, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
+import { useIsLightMode } from '../hooks/useTheme';
+
+function useChartColors() {
+  const isLight = useIsLightMode();
+  return useMemo(() => ({
+    grid: isLight ? '#e5e7eb' : '#374151',
+    tick: isLight ? '#6b7280' : '#9ca3af',
+    tooltipBg: isLight ? '#ffffff' : '#1f2937',
+    tooltipBorder: isLight ? '#e5e7eb' : '#374151',
+    tooltipText: isLight ? '#111827' : '#ffffff',
+  }), [isLight]);
+}
 
 const AGGREGATION_LABELS: Record<ChartAggregation, string> = {
   avg: 'Average',
@@ -78,6 +90,7 @@ function getChartConfig(metric: ChartMetric, aggregation: ChartAggregation, isSc
 
 export function TimelineChart() {
   const { timeSeries, stackedTimeSeries, entries, bucketSize, loading, chartMetric, chartType, chartAggregation, setChartMetric, setTimeRange, setSearch } = useQueryStore();
+  const cc = useChartColors();
 
   // For Count metric, allow line and stacked but not scatter
   // For non-Count metrics, don't allow stacked charts (they only make sense for count by query_kind)
@@ -228,34 +241,34 @@ export function TimelineChart() {
         <div className="h-72 bg-gray-900 border border-gray-700 rounded cursor-pointer">
           <ResponsiveContainer width="100%" height="100%">
             <ScatterChart margin={{ top: 15, right: 15, left: 5, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} />
               <XAxis
                 type="number"
                 dataKey="time"
                 domain={['dataMin', 'dataMax']}
                 tickFormatter={formatScatterTime}
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
               />
               <YAxis
                 type="number"
                 dataKey="value"
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
                 width={60}
                 tickFormatter={config.formatter}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
+                  backgroundColor: cc.tooltipBg,
+                  border: `1px solid ${cc.tooltipBorder}`,
                   borderRadius: '4px',
                   fontSize: '11px',
                 }}
-                itemStyle={{ color: '#ffffff' }}
-                labelStyle={{ color: '#ffffff' }}
+                itemStyle={{ color: cc.tooltipText }}
+                labelStyle={{ color: cc.tooltipText }}
                 formatter={(value: number, name: string) => {
                   if (name === 'value') return [config.formatter(value), config.label];
                   if (name === 'time') return [formatScatterTime(value), 'Time'];
@@ -296,25 +309,25 @@ export function TimelineChart() {
         <div className="h-72 bg-gray-900 border border-gray-700 rounded cursor-pointer">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={stackedTimeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }} onClick={handleChartClick}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} />
               <XAxis
                 dataKey="time"
                 tickFormatter={formatTime}
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
               />
               <YAxis
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
                 width={50}
                 tickFormatter={(v) => v.toLocaleString()}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
+                  backgroundColor: cc.tooltipBg,
+                  border: `1px solid ${cc.tooltipBorder}`,
                   borderRadius: '4px',
                   fontSize: '11px',
                 }}
@@ -381,25 +394,25 @@ export function TimelineChart() {
                   <stop offset="95%" stopColor="#a855f7" stopOpacity={0.1} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} />
               <XAxis
                 dataKey="time"
                 tickFormatter={formatTime}
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
               />
               <YAxis
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
                 width={50}
                 tickFormatter={(v) => v.toLocaleString()}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
+                  backgroundColor: cc.tooltipBg,
+                  border: `1px solid ${cc.tooltipBorder}`,
                   borderRadius: '4px',
                   fontSize: '11px',
                 }}
@@ -471,25 +484,25 @@ export function TimelineChart() {
         <div className="h-72 bg-gray-900 border border-gray-700 rounded cursor-pointer">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={timeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }} onClick={handleChartClick}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} />
               <XAxis
                 dataKey="time"
                 tickFormatter={formatTime}
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
               />
               <YAxis
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
                 width={50}
                 tickFormatter={config.formatter}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
+                  backgroundColor: cc.tooltipBg,
+                  border: `1px solid ${cc.tooltipBorder}`,
                   borderRadius: '4px',
                   fontSize: '11px',
                 }}
@@ -524,21 +537,21 @@ export function TimelineChart() {
             <XAxis
               dataKey="time"
               tickFormatter={formatTime}
-              tick={{ fontSize: 9, fill: '#9ca3af' }}
-              axisLine={{ stroke: '#374151' }}
-              tickLine={{ stroke: '#374151' }}
+              tick={{ fontSize: 9, fill: cc.tick }}
+              axisLine={{ stroke: cc.grid }}
+              tickLine={{ stroke: cc.grid }}
             />
             <YAxis
-              tick={{ fontSize: 9, fill: '#9ca3af' }}
-              axisLine={{ stroke: '#374151' }}
-              tickLine={{ stroke: '#374151' }}
+              tick={{ fontSize: 9, fill: cc.tick }}
+              axisLine={{ stroke: cc.grid }}
+              tickLine={{ stroke: cc.grid }}
               width={50}
               tickFormatter={config.formatter}
             />
             <Tooltip
               contentStyle={{
-                backgroundColor: '#1f2937',
-                border: '1px solid #374151',
+                backgroundColor: cc.tooltipBg,
+                border: `1px solid ${cc.tooltipBorder}`,
                 borderRadius: '4px',
                 fontSize: '11px',
               }}

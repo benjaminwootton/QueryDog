@@ -14,7 +14,7 @@ export interface Environment {
   tls_reject_unauthorized?: boolean;
 }
 
-export interface QuerydogConfig {
+interface QuerydogConfig {
   environments: Environment[];
 }
 
@@ -29,7 +29,7 @@ function findProjectRoot(): string {
   return process.cwd();
 }
 
-export function loadConfig(): QuerydogConfig {
+function loadConfig(): QuerydogConfig {
   const locations = [
     path.join(findProjectRoot(), 'querydog.yml'),
     path.resolve(process.cwd(), 'querydog.yml'),

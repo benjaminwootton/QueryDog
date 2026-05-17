@@ -1,32 +1,15 @@
 import { useState, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, RowClassParams, SortChangedEvent, ICellRendererParams } from 'ag-grid-community';
 import { Eye, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useQueryStore } from '../stores/queryStore';
 import { fetchProfileEvents } from '../services/api';
 import type { QueryLogEntry } from '../types/queryLog';
+import { useGridTheme } from '../hooks/useTheme';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-// Create dark theme with JetBrains Mono for cells, lighter weight
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
 
 // All available profile events
 const ALL_PROFILE_EVENTS = [
@@ -250,9 +233,6 @@ interface ProfileEventRow {
   [key: string]: string | number | undefined;
 }
 
-// Export constants for use in parent
-export { ALL_PROFILE_EVENTS, DEFAULT_VISIBLE_EVENTS };
-
 // Exported ref interface for parent to control
 export interface ProfileEventsTableRef {
   openChart: () => void;
@@ -264,6 +244,7 @@ export interface ProfileEventsTableRef {
 }
 
 export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(function ProfileEventsTable(_props, ref) {
+  const gridTheme = useGridTheme();
   const { timeRange, bucketSize, fieldFilters, rangeFilters, search, pinnedEntries, sortField, sortOrder, pageSize, currentPage, setSortField, setSortOrder, setSelectedEntry } = useQueryStore();
   const [apiData, setApiData] = useState<ProfileEventRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -528,7 +509,7 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
       {/* AG Grid */}
       <div className="flex-1">
         <AgGridReact
-          theme={darkTheme}
+          theme={gridTheme}
           rowData={unpinnedData}
           pinnedTopRowData={pinnedData}
           columnDefs={columnDefs}

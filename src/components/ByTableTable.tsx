@@ -1,30 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent } from 'ag-grid-community';
 import { Eye, X } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import { fetchByTableStats, type ByTableEntry } from '../services/api';
+import { useGridTheme } from '../hooks/useTheme';
+import { formatBytes, formatNumber, formatDuration, formatDateTime } from '../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-// Create dark theme with JetBrains Mono for cells
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
 
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -38,47 +22,10 @@ function toNumber(value: unknown): number | null {
   return null;
 }
 
-function formatBytes(value: unknown): string {
-  const bytes = toNumber(value);
-  if (bytes === null || bytes === 0) return '-';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function formatNumber(value: unknown): string {
-  const num = toNumber(value);
-  if (num === null) return '-';
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-  return num.toLocaleString();
-}
-
-function formatDuration(value: unknown): string {
-  const ms = toNumber(value);
-  if (ms === null) return '-';
-  if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
-  return ms.toFixed(0) + 'ms';
-}
-
 function formatPercent(value: unknown, digits = 1): string {
   const num = toNumber(value);
   if (num === null) return '-';
   return `${num.toFixed(digits)}%`;
-}
-
-function formatDateTime(date: string): string {
-  if (!date) return '-';
-  const d = new Date(date);
-  return d.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
 }
 
 // Numeric comparator for AG Grid sorting
@@ -95,6 +42,7 @@ function numericComparator(valueA: unknown, valueB: unknown): number {
 }
 
 export function ByTableTable() {
+  const gridTheme = useGridTheme();
   const {
     timeRange,
     bucketSize,
@@ -302,7 +250,7 @@ export function ByTableTable() {
           rowData={data}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}
-          theme={darkTheme}
+          theme={gridTheme}
           onSortChanged={onSortChanged}
           animateRows={false}
           suppressCellFocus={true}

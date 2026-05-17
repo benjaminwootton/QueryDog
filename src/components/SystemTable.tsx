@@ -1,45 +1,15 @@
 import { useMemo, useCallback, useEffect, useState, useRef, useImperativeHandle, forwardRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent, ICellRendererParams, FirstDataRenderedEvent } from 'ag-grid-community';
 import { Settings, X, Eye, RefreshCw } from 'lucide-react';
 import type { ColumnMetadata } from '../types/queryLog';
 import { createColumnsFromMetadata, type ColumnConfig } from '../types/queryLog';
 import { useQueryStore } from '../stores/queryStore';
+import { useGridTheme } from '../hooks/useTheme';
+import { formatBytes, formatNumber } from '../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-// Create dark theme with JetBrains Mono for cells, lighter weight
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function formatNumber(num: number): string {
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-  return num.toLocaleString();
-}
 
 // Numeric comparator for AG Grid sorting - handles null values and ensures numeric sorting
 function numericComparator(valueA: unknown, valueB: unknown): number {
@@ -113,6 +83,7 @@ function SystemTableInner({
   defaultSort,
   search,
 }: SystemTableProps, ref: React.ForwardedRef<SystemTableRef>) {
+  const gridTheme = useGridTheme();
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns || []);
   const [loading, setLoading] = useState(true);
@@ -380,7 +351,7 @@ function SystemTableInner({
       )}
       <div className="flex-1">
         <AgGridReact
-          theme={darkTheme}
+          theme={gridTheme}
           rowData={data}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}

@@ -1,63 +1,41 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent } from 'ag-grid-community';
 import { Eye, X } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
-import { fetchQueryViewsLog, fetchQueryViewsLogCount, type QueryViewsLogEntry } from '../services/api';
+import { fetchQueryViewsLog, type QueryViewsLogEntry } from '../services/api';
+import { useGridTheme } from '../hooks/useTheme';
+import { formatBytes, formatNumber, formatDuration, formatDateTime } from '../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
-
-function formatBytes(bytes: number): string {
-  if (bytes === null || bytes === undefined || bytes === 0) return '-';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function formatNumber(num: number): string {
-  if (num === null || num === undefined) return '-';
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-  return num.toLocaleString();
-}
-
-function formatDuration(ms: number): string {
-  if (ms === null || ms === undefined) return '-';
-  if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
-  return ms.toFixed(0) + 'ms';
-}
-
-function formatDateTime(date: string): string {
-  if (!date) return '-';
-  const d = new Date(date);
-  return d.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-}
+// Columns that exist on system.query_views_log. Filters set on the shared
+// query store (e.g. `type` from query_log) must be dropped before being sent
+// here, otherwise ClickHouse errors with "Unknown expression or function
+// identifier".
+const QUERY_VIEWS_LOG_COLUMNS = new Set([
+  'hostname',
+  'event_date',
+  'event_time',
+  'event_time_microseconds',
+  'view_duration_ms',
+  'initial_query_id',
+  'view_name',
+  'view_uuid',
+  'view_type',
+  'view_query',
+  'view_target',
+  'read_rows',
+  'read_bytes',
+  'written_rows',
+  'written_bytes',
+  'peak_memory_usage',
+  'status',
+  'exception_code',
+  'exception',
+  'stack_trace',
+]);
 
 function numericComparator(valueA: unknown, valueB: unknown): number {
   const a = valueA === null || valueA === undefined ? null : Number(valueA);
@@ -72,10 +50,10 @@ function numericComparator(valueA: unknown, valueB: unknown): number {
 }
 
 export function QueryViewsLogTable() {
+  const gridTheme = useGridTheme();
   const { search, fieldFilters, globalRefreshTrigger } = useQueryStore();
   const [data, setData] = useState<QueryViewsLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [, setTotalCount] = useState(0);
   const [sortField, setSortField] = useState('event_time');
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
 
@@ -87,24 +65,29 @@ export function QueryViewsLogTable() {
     return useQueryStore.getState().timeRange;
   }, []);
 
+  const scopedFilters = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    for (const [field, values] of Object.entries(fieldFilters)) {
+      if (QUERY_VIEWS_LOG_COLUMNS.has(field)) {
+        result[field] = values;
+      }
+    }
+    return result;
+  }, [fieldFilters]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const currentTimeRange = getLatestTimeRange();
-      const [entries, count] = await Promise.all([
-        fetchQueryViewsLog(currentTimeRange, sortField, sortOrder, fieldFilters, search),
-        fetchQueryViewsLogCount(currentTimeRange, fieldFilters, search),
-      ]);
+      const entries = await fetchQueryViewsLog(currentTimeRange, sortField, sortOrder, scopedFilters, search);
       setData(entries);
-      setTotalCount(count);
     } catch (error) {
       console.error('Failed to fetch query views log:', error);
       setData([]);
-      setTotalCount(0);
     } finally {
       setLoading(false);
     }
-  }, [sortField, sortOrder, fieldFilters, search, getLatestTimeRange]);
+  }, [sortField, sortOrder, scopedFilters, search, getLatestTimeRange]);
 
   useEffect(() => {
     loadData();
@@ -251,7 +234,7 @@ export function QueryViewsLogTable() {
       {/* Table */}
       <div className="flex-1 bg-gray-900 border border-gray-700 rounded overflow-hidden">
         <AgGridReact<QueryViewsLogEntry>
-          theme={darkTheme}
+          theme={gridTheme}
           rowData={data}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}

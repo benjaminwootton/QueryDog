@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Dog, Database, HardDrive, Activity, Server, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network, Circle, RefreshCw } from 'lucide-react';
+import { Dog, Database, HardDrive, Activity, Server, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network, Circle, RefreshCw, Sun, Moon } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
 import { PartsPage } from './components/pages/PartsPage';
@@ -45,6 +45,20 @@ function setCookie(name: string, value: string, days: number = 365) {
 function App() {
   const [navItem, setNavItem] = useState<NavItem>('queries');
   const [refreshInterval, setRefreshInterval] = useState<RefreshInterval>('off');
+  const [lightMode, setLightMode] = useState(() => {
+    const saved = localStorage.getItem('querydog_theme');
+    return saved === 'light';
+  });
+
+  // Apply theme class to root element
+  useEffect(() => {
+    if (lightMode) {
+      document.documentElement.classList.add('light');
+    } else {
+      document.documentElement.classList.remove('light');
+    }
+    localStorage.setItem('querydog_theme', lightMode ? 'light' : 'dark');
+  }, [lightMode]);
   // Show about modal on first visit only (check cookie)
   const [aboutOpen, setAboutOpen] = useState(() => {
     const hasVisited = getCookie('querydog_visited');
@@ -82,7 +96,7 @@ function App() {
   const connectionReady = !!connectionInfo && !backendError;
   const { refresh } = useQueryData(connectionReady);
   const activeEnvName = environments[activeEnvIndex]?.name;
-  const [initialConnectOpen, setInitialConnectOpen] = useState(false);
+  const [initialConnectOpen, setInitialConnectOpen] = useState(true);
   const [checkedExistingConnection, setCheckedExistingConnection] = useState(false);
 
   const ENV_CACHE_KEY = 'querydog_envs';
@@ -367,6 +381,13 @@ function App() {
           >
             <Terminal className="w-3.5 h-3.5" />
             Query
+          </button>
+          <button
+            onClick={() => setLightMode(!lightMode)}
+            className="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 hover:text-white"
+            title={lightMode ? 'Switch to dark mode' : 'Switch to light mode'}
+          >
+            {lightMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
           </button>
           <button
             onClick={refresh}

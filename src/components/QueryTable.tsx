@@ -1,47 +1,15 @@
 import { useMemo, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent, ICellRendererParams, SelectionChangedEvent, RowClassParams } from 'ag-grid-community';
 import { Eye, Pin } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import type { QueryLogEntry } from '../types/queryLog';
+import { useGridTheme, useIsLightMode } from '../hooks/useTheme';
+import { formatBytes, formatNumber } from '../utils/formatters';
 
 // Register AG Grid Community modules
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-// Create dark theme with JetBrains Mono for cells, lighter weight
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
-
-function formatBytes(bytes: number): string {
-  if (bytes === null || bytes === undefined || isNaN(bytes)) return '-';
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function formatNumber(num: number): string {
-  if (num === null || num === undefined || isNaN(num)) return '-';
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-  return num.toString();
-}
 
 // Numeric comparator for AG Grid sorting - handles null values and ensures numeric sorting
 function numericComparator(valueA: unknown, valueB: unknown): number {
@@ -69,8 +37,10 @@ function ArrayCellRenderer({ value }: { value: string[] }) {
 }
 
 export function QueryTable() {
+  const gridTheme = useGridTheme();
   const { entries, columns, sortField, sortOrder, search, setSortField, setSortOrder, setSelectedEntry, setSelectedEntries, pinnedEntries, pinEntry, unpinEntry, loading } = useQueryStore();
   const gridRef = useRef<AgGridReact<QueryLogEntry>>(null);
+  const isLight = useIsLightMode();
 
   const normalizedSearch = useMemo(() => search.trim().toLowerCase(), [search]);
 
@@ -133,6 +103,11 @@ export function QueryTable() {
     setSelectedEntries(selectedRows.slice(0, 10)); // Limit to 10
   }, [setSelectedEntries]);
 
+  // Theme-aware cell colors
+  const colorTimestamp = isLight ? '#991b1b' : '#fca5a5';
+  const colorBlue = isLight ? '#1e40af' : '#93c5fd';
+  const colorNumeric = isLight ? '#166534' : '#86efac';
+
   const columnDefs: ColDef<QueryLogEntry>[] = useMemo(() => {
     const visibleCols = columns.filter((c) => c.visible);
 
@@ -190,7 +165,7 @@ export function QueryTable() {
             const ms = date.getMilliseconds().toString().padStart(3, '0');
             return `${base}.${ms}`;
           };
-          def.cellStyle = { color: '#fca5a5' };
+          def.cellStyle = { color: colorTimestamp };
           break;
         case 'query':
           def.tooltipValueGetter = (params) => {
@@ -208,14 +183,14 @@ export function QueryTable() {
             const q = params.value as string;
             return q?.length > 80 ? q.substring(0, 80) + '...' : q;
           };
-          def.cellStyle = { color: '#93c5fd' };
+          def.cellStyle = { color: colorBlue };
           break;
         case 'tables':
-          def.cellStyle = { color: '#93c5fd' };
+          def.cellStyle = { color: colorBlue };
           break;
         case 'user':
         case 'client_hostname':
-          def.cellStyle = { color: '#93c5fd' };
+          def.cellStyle = { color: colorBlue };
           break;
         case 'memory_usage':
         case 'read_bytes':
@@ -223,14 +198,14 @@ export function QueryTable() {
         case 'result_bytes':
           def.valueFormatter = (params) => formatBytes(Number(params.value));
           def.comparator = numericComparator;
-          def.cellStyle = { textAlign: 'right', color: '#86efac' };
+          def.cellStyle = { textAlign: 'right', color: colorNumeric };
           break;
         case 'read_rows':
         case 'written_rows':
         case 'result_rows':
           def.valueFormatter = (params) => formatNumber(Number(params.value));
           def.comparator = numericComparator;
-          def.cellStyle = { textAlign: 'right', color: '#86efac' };
+          def.cellStyle = { textAlign: 'right', color: colorNumeric };
           break;
         case 'query_duration_ms':
           def.valueFormatter = (params) => {
@@ -240,7 +215,7 @@ export function QueryTable() {
             return ms + 'ms';
           };
           def.comparator = numericComparator;
-          def.cellStyle = { textAlign: 'right', color: '#86efac' };
+          def.cellStyle = { textAlign: 'right', color: colorNumeric };
           break;
       }
 
@@ -248,21 +223,21 @@ export function QueryTable() {
       if (col.field.endsWith('_bytes') && !def.valueFormatter) {
         def.valueFormatter = (params) => formatBytes(Number(params.value));
         def.comparator = numericComparator;
-        def.cellStyle = { textAlign: 'right', color: '#86efac' };
+        def.cellStyle = { textAlign: 'right', color: colorNumeric };
       }
 
       // Format rows for any _rows field
       if (col.field.endsWith('_rows') && !def.valueFormatter) {
         def.valueFormatter = (params) => formatNumber(Number(params.value));
         def.comparator = numericComparator;
-        def.cellStyle = { textAlign: 'right', color: '#86efac' };
+        def.cellStyle = { textAlign: 'right', color: colorNumeric };
       }
 
       defs.push(def);
     });
 
     return defs;
-  }, [columns, ActionCellRenderer, PinCellRenderer]);
+  }, [columns, ActionCellRenderer, PinCellRenderer, colorTimestamp, colorBlue, colorNumeric]);
 
   const onSortChanged = useCallback(
     (event: SortChangedEvent) => {
@@ -301,7 +276,7 @@ export function QueryTable() {
       `}</style>
       <AgGridReact<QueryLogEntry>
         ref={gridRef}
-        theme={darkTheme}
+        theme={gridTheme}
         rowData={unpinnedEntries}
         pinnedTopRowData={visiblePinnedEntries}
         columnDefs={columnDefs}

@@ -18,7 +18,7 @@ export interface QuerydogConfig {
   environments: Environment[];
 }
 
-export interface ColumnConfig {
+interface ColumnConfig {
   columns: string[];
   order_by?: string;
   limit?: number;
@@ -64,7 +64,7 @@ export class ConfigNotFoundError extends Error {
   }
 }
 
-export function getConfigSearchPaths(): string[] {
+function getConfigSearchPaths(): string[] {
   return [
     path.join(findProjectRoot(), 'querydog.yml'),
     path.resolve(__dirname, '../../../querydog.yml'),  // When running from dist
@@ -74,7 +74,7 @@ export function getConfigSearchPaths(): string[] {
   ];
 }
 
-export function loadQuerydogConfig(): QuerydogConfig {
+function loadQuerydogConfig(): QuerydogConfig {
   const locations = getConfigSearchPaths();
 
   for (const configPath of locations) {

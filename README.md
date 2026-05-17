@@ -5,24 +5,13 @@ By [Benjamin Wootton](https://benjaminwootton.com).
 <img width="2054" height="1101" alt="Screenshot 2025-12-09 at 11 31 53 pm" src="https://github.com/user-attachments/assets/e1b52d42-028a-4c46-8631-7fdcaba44747" />
 <img width="2055" height="1101" alt="Screenshot 2025-12-09 at 11 32 10 pm" src="https://github.com/user-attachments/assets/81150e55-b47b-4feb-89cd-02bee733ad4b" />
 
-## Prerequisites
-
-- A ClickHouse database with query logs
-- Node.js 22+ if running from source
-- Docker if running via containers
-
 ## Running
 
-Clone the repository:
+Clone the repository and create your config:
 
 ```bash
 git clone https://github.com/benjaminwootton/querydog
 cd querydog
-```
-
-Copy `querydog.yml.example` to `querydog.yml`:
-
-```bash
 cp querydog.yml.example querydog.yml
 ```
 
@@ -46,51 +35,85 @@ environments:
     database: "default"
 ```
 
-### Run With Docker Compose (Preferred)
-
-This builds the image locally from the `Dockerfile` and starts the web UI:
+Start with Docker Compose:
 
 ```bash
 docker compose up --build
 ```
 
-Subsequent starts (no source changes) can just use:
-
-```bash
-docker compose up
-```
-
 Access the UI at http://localhost:3001.
 
-### Running The CLI Through Docker
+## CLI
 
-The same image also ships the QueryDog CLI. Anything other than `server` passed to the container falls through to the CLI, so you can run one-off CLI commands against the built image with `docker compose run`:
+The same image ships the `querydog` CLI. The container entrypoint routes `server` to the web UI and forwards anything else to the CLI, so you can run one-off commands with `docker compose run`:
 
 ```bash
 docker compose run --rm querydog help
 docker compose run --rm querydog tables
-docker compose run --rm querydog query "SELECT 1"
+docker compose run --rm querydog queries --mode slowest --hours 6
 ```
 
-`--rm` cleans up the container after the command exits, and your `querydog.yml` and `./queries` mounts are preserved automatically.
+Your `querydog.yml` and `./queries` mounts come along automatically, and `--rm` cleans up the container after the command exits.
 
-For convenience, add a shell alias so you can call the CLI like a local binary:
+### Setting an alias
+
+For day-to-day use, add a shell alias so you can call the CLI like a local binary:
 
 ```bash
-alias qd='docker compose run --rm querydog'
-# then:
+# ~/.zshrc or ~/.bashrc
+alias qd='docker compose -f /path/to/querydog/docker-compose.yml run --rm querydog'
+```
+
+Then:
+
+```bash
 qd help
-qd tables
-qd query "SELECT 1"
+qd envs
+qd tables -e Production
 ```
 
-### Run From Source
+### Example commands
+
+Pick an environment with `-e <name|number>` (matches names from `querydog.yml`; partial names work too). Output defaults to a table; use `-f json` or `-f csv` to pipe into other tools.
 
 ```bash
-npm install
-npm run dev:all
+# Schema exploration
+qd tables -e Production
+qd databases
+qd ddl -d analytics -t events
+qd schema-nullables -d analytics       # find Nullable columns worth optimising
+qd schema-oversized                     # find oversized integer columns
+
+# Query log analysis
+qd queries --mode slowest --hours 24 --limit 20
+qd queries --mode highestmemory --hours 6
+qd queries --mode bytable -d analytics
+qd queries --mode errors --hours 1
+
+# Live activity & background work
+qd processes
+qd merges
+qd mutations
+qd async-inserts
+qd background-jobs
+
+# Storage & cluster
+qd partitions -d analytics -t events
+qd disks
+qd replicas
+qd replication-queue
+
+# Logs & metrics
+qd text-log --level Error --hours 1
+qd metrics
+qd system-errors
+
+# Machine-readable output
+qd queries --mode slowest -f json | jq '.[].query'
+qd tables -f csv > tables.csv
 ```
-Access at http://localhost:3001
+
+Run `qd help` for the full command list, or `qd <command> --help` for per-command flags. Add `-i` to drop into an interactive REPL after the first command.
 
 ### Next Steps
 

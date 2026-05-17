@@ -1,28 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, FirstDataRenderedEvent } from 'ag-grid-community';
 import { Eye, X, Loader2 } from 'lucide-react';
 import { fetchSystemViews, fetchViewDefinition, type SystemView } from '../services/api';
+import { useGridTheme } from '../hooks/useTheme';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
 
 interface ViewsTabProps {
   filters: Record<string, string[]>;
@@ -30,6 +14,7 @@ interface ViewsTabProps {
 }
 
 export function ViewsTab({ filters, search }: ViewsTabProps) {
+  const gridTheme = useGridTheme();
   const [views, setViews] = useState<SystemView[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -175,7 +160,7 @@ export function ViewsTab({ filters, search }: ViewsTabProps) {
   return (
     <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
       <AgGridReact<SystemView>
-        theme={darkTheme}
+        theme={gridTheme}
         rowData={views}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}

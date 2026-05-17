@@ -1,29 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, SelectionChangedEvent } from 'ag-grid-community';
 import { Play, RotateCcw, Loader2, Eye, X, Copy, Check, Search, PlayCircle, ExternalLink, BarChart2, GitCompare, Pencil } from 'lucide-react';
 import { QueryCompareModal } from '../QueryCompareModal';
 import type { QueryLogEntry } from '../../types/queryLog';
+import { useGridTheme } from '../../hooks/useTheme';
+import { formatBytes, formatDuration, formatDateTime } from '../../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 32,
-  headerHeight: 30,
-});
 
 interface MyQuery {
   filename: string;
@@ -61,34 +46,8 @@ interface RunLogEntry {
   queryLog: QueryLogInfo | null;
 }
 
-function formatDuration(ms: number | null | undefined): string {
-  if (ms === null || ms === undefined) return '-';
-  if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
-  return ms.toFixed(0) + 'ms';
-}
-
-function formatDateTime(isoString: string | null): string {
-  if (!isoString) return '-';
-  const date = new Date(isoString);
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-}
-
-function formatBytes(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined) return '-';
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-}
-
 export function MyQueriesPage() {
+  const gridTheme = useGridTheme();
   const [queries, setQueries] = useState<MyQuery[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningQuery, setRunningQuery] = useState<string | null>(null);
@@ -881,7 +840,7 @@ export function MyQueriesPage() {
       {/* Grid */}
       <div className="flex-1 mx-4 mb-4 mt-3 bg-gray-900 border border-gray-700 rounded overflow-hidden">
         <AgGridReact<MyQuery>
-          theme={darkTheme}
+          theme={gridTheme}
           rowData={filteredQueries}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}

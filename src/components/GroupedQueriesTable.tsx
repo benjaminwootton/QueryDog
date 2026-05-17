@@ -1,54 +1,15 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, SortChangedEvent, ICellRendererParams, CellStyle } from 'ag-grid-community';
 import { Loader2, Copy, Check, X, Eye, ExternalLink, List, Pin } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import { fetchGroupedQueryLog, type GroupedQueryEntry } from '../services/api';
+import { useGridTheme } from '../hooks/useTheme';
+import { formatBytes, formatNumber, formatDuration, formatDateTime } from '../utils/formatters';
 
 // Register AG Grid Community modules
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-// Create dark theme with JetBrains Mono for cells, lighter weight
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
-
-function formatDuration(ms: number): string {
-  if (ms == null) return 'N/A';
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
-  return `${(ms / 60000).toFixed(2)}m`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes == null) return 'N/A';
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function formatNumber(num: number): string {
-  if (num == null) return 'N/A';
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-  return num.toLocaleString();
-}
 
 // Numeric comparator for AG Grid sorting - handles null values and ensures numeric sorting
 function numericComparator(valueA: unknown, valueB: unknown): number {
@@ -61,19 +22,6 @@ function numericComparator(valueA: unknown, valueB: unknown): number {
   if (isNaN(a)) return 1;
   if (isNaN(b)) return -1;
   return a - b;
-}
-
-function formatDateTime(dateStr: string): string {
-  if (!dateStr) return 'N/A';
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return 'N/A';
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -98,6 +46,7 @@ function CopyButton({ text }: { text: string }) {
 }
 
 export function GroupedQueriesTable() {
+  const gridTheme = useGridTheme();
   const {
     timeRange,
     bucketSize,
@@ -358,7 +307,7 @@ export function GroupedQueriesTable() {
       )}
       <div className="flex-1 min-h-0">
         <AgGridReact
-          theme={darkTheme}
+          theme={gridTheme}
           rowData={groupedEntries}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}

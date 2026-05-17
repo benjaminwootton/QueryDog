@@ -48,11 +48,12 @@ export interface ColumnConfig {
   sortable: boolean;
 }
 
-// Columns visible by default
+// Columns visible by default — the most important columns for query analysis
 const DEFAULT_VISIBLE_COLUMNS = new Set([
-  'event_time', 'query_id', 'query', 'query_kind', 'query_duration_ms',
+  'event_time', 'type', 'query_id', 'query', 'query_kind', 'query_duration_ms',
   'read_rows', 'read_bytes', 'written_rows', 'written_bytes',
-  'result_rows', 'result_bytes', 'memory_usage', 'user', 'current_database'
+  'result_rows', 'result_bytes', 'memory_usage', 'peak_memory_usage',
+  'user', 'current_database', 'exception_code',
 ]);
 
 // Array types that shouldn't be sortable
@@ -96,7 +97,6 @@ export function createColumnsFromMetadata(metadata: ColumnMetadata[], tableName:
   const priorityColumns = tableName === 'part_log' ? PART_LOG_PRIORITY_COLUMNS : QUERY_LOG_PRIORITY_COLUMNS;
 
   const columns = metadata
-    .filter(col => !col.name.startsWith('ProfileEvents.') && !col.name.startsWith('Settings.'))
     .map(col => ({
       field: col.name,
       headerName: formatHeaderName(col.name),

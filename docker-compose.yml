@@ -7,6 +7,12 @@ services:
       - "3001:3001"
     volumes:
       - ./queries:/app/queries
-      # Mount querydog.yml from current directory or home directory
-      - ${QUERYDOG_CONFIG:-./querydog.yml}:/app/querydog.yml
+      # Mount querydog.yml from current directory (or QUERYDOG_CONFIG override).
+      # create_host_path: false tells Docker to fail if the source file is missing
+      # instead of silently materialising an empty directory at that path.
+      - type: bind
+        source: ${QUERYDOG_CONFIG:-./querydog.yml}
+        target: /app/querydog.yml
+        bind:
+          create_host_path: false
     restart: unless-stopped

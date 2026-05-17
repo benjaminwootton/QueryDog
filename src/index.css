@@ -47,3 +47,94 @@ input[type="checkbox"] {
 select {
   color-scheme: dark;
 }
+
+/* ==================== Light Mode ==================== */
+
+.light {
+  /* --- Gray palette: invert dark↔light --- */
+  --color-white: #030712;
+  --color-gray-50: #0f172a;
+  --color-gray-100: #1e293b;
+  --color-gray-200: #1f2937;
+  --color-gray-300: #374151;
+  --color-gray-400: #4b5563;
+  --color-gray-500: #9ca3af;
+  --color-gray-600: #d1d5db;
+  --color-gray-700: #e5e7eb;
+  --color-gray-800: #f3f4f6;
+  --color-gray-900: #f9fafb;
+  --color-gray-950: #ffffff;
+
+  /* --- Blue: darken text shades, keep buttons vivid --- */
+  --color-blue-300: #1d4ed8;
+  --color-blue-400: #2563eb;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #dbeafe;
+  --color-blue-800: #bfdbfe;
+  --color-blue-900: #eff6ff;
+
+  /* --- Green: darken text shades, brighten button bg, lighten tint bg --- */
+  --color-green-100: #166534;
+  --color-green-300: #15803d;
+  --color-green-400: #16a34a;
+  --color-green-500: #15803d;
+  --color-green-600: #16a34a;
+  --color-green-700: #16a34a;
+  --color-green-800: #bbf7d0;
+  --color-green-900: #f0fdf4;
+
+  /* --- Red: darken text shades, lighten tint bg --- */
+  --color-red-100: #991b1b;
+  --color-red-200: #b91c1c;
+  --color-red-300: #b91c1c;
+  --color-red-400: #dc2626;
+  --color-red-500: #dc2626;
+  --color-red-600: #dc2626;
+  --color-red-700: #fecaca;
+  --color-red-800: #fee2e2;
+  --color-red-900: #fef2f2;
+  --color-red-950: #fff1f2;
+
+  /* --- Yellow: darken for contrast --- */
+  --color-yellow-300: #a16207;
+  --color-yellow-400: #ca8a04;
+  --color-yellow-500: #a16207;
+  --color-yellow-700: #fef9c3;
+  --color-yellow-800: #fefce8;
+  --color-yellow-900: #fefce8;
+}
+
+/* Ensure text stays actually white on colored button backgrounds in light mode */
+.light .bg-blue-600,
+.light .bg-blue-500,
+.light .bg-green-700,
+.light .bg-green-600,
+.light .bg-green-500,
+.light .bg-red-700,
+.light .bg-red-600,
+.light .bg-red-500 {
+  color: #ffffff;
+}
+
+/* Light mode scrollbar */
+.light ::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+.light ::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+}
+
+.light ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Light mode form elements */
+.light input[type="datetime-local"] {
+  color-scheme: light;
+}
+
+.light select {
+  color-scheme: light;
+}

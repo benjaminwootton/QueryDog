@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Play, X, Loader2, Copy, Check, ChevronDown, ChevronRight, Clock, Table as TableIcon, AlertCircle, Activity, GitBranch } from 'lucide-react';
 import { executeQuery, fetchExplainByType, fetchExplainJson, type ExplainType, type QueryResult } from '../services/api';
 import { QueryPlanVisualizer } from './QueryPlanVisualizer';
+import { formatNumber, formatDuration } from '../utils/formatters';
 
 interface QueryEditorProps {
   initialQuery?: string;
@@ -21,19 +22,10 @@ const EXPLAIN_TABS: { id: ExplainTab; label: string; description: string }[] = [
   { id: 'estimate', label: 'Estimate', description: 'Estimated rows/bytes' },
 ];
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-}
-
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return 'NULL';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
-}
-
-function formatNumber(num: number): string {
-  return num.toLocaleString();
 }
 
 export function QueryEditor({ initialQuery = '', onClose }: QueryEditorProps) {

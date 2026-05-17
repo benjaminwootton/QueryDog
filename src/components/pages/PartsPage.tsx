@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { HardDrive, ChevronLeft, ChevronRight, Layers, Grid3X3, BarChart2, Settings, X, Eye, Search, Sparkles, Zap, Server, Loader2, FileCode, BookOpen } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, FirstDataRenderedEvent } from 'ag-grid-community';
 import { SystemTable, type SystemTableRef } from '../SystemTable';
 import { PartsFilterPanel } from '../PartsFilterPanel';
@@ -12,26 +12,10 @@ import { ViewsTab } from '../ViewsTab';
 import { DictionariesTab } from '../DictionariesTab';
 import { fetchParts, fetchPartsColumns, fetchPartsCount, fetchPartitionsSummary, fetchPartitionsSummaryColumns, fetchPartitionsSummaryCount, fetchGroupedParts, fetchTablePartitions, fetchPartitionParts, fetchTableCompression, fetchBrowserColumns, fetchBrowserSampleData, fetchBrowserTables, fetchMergeTreeIndex, fetchTableDefinition, fetchDatabasesSummary, type GroupedPartsEntry, type TablePartitionEntry, type PartitionPartEntry, type ColumnCompressionEntry, type BrowserColumn, type BrowserTable, type MergeTreeIndexEntry, type DatabaseSummary } from '../../services/api';
 import { useQueryStore } from '../../stores/queryStore';
+import { useGridTheme } from '../../hooks/useTheme';
+import { formatBytes, formatNumber } from '../../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-// Create dark theme
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
 
 type PartsTab = 'databases' | 'parts' | 'partitions' | 'grouped' | 'views' | 'dictionaries' | 'projections' | 'secondary-indexes' | 'histograms';
 
@@ -48,21 +32,6 @@ const PARTS_DEFAULT_VISIBLE_FIELDS = [
   'marks',
 ];
 
-function formatBytes(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined || bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function formatNumber(num: number | null | undefined): string {
-  if (num === null || num === undefined) return '0';
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-  return num.toLocaleString();
-}
-
 // Numeric comparator for AG Grid sorting - handles null values and ensures numeric sorting
 function numericComparator(valueA: unknown, valueB: unknown): number {
   const a = valueA === null || valueA === undefined ? null : Number(valueA);
@@ -77,6 +46,7 @@ function numericComparator(valueA: unknown, valueB: unknown): number {
 }
 
 export function PartsPage() {
+  const gridTheme = useGridTheme();
   const {
     partsTotalCount,
     partsPageSize,
@@ -1155,7 +1125,7 @@ export function PartsPage() {
           <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
             <AgGridReact<DatabaseSummary>
               key={`databases-${databaseFilter}-${databasesHiddenColumns.size}`}
-              theme={darkTheme}
+              theme={gridTheme}
               rowData={filteredDatabasesData}
               columnDefs={visibleDatabasesColumnDefs}
               defaultColDef={defaultColDef}
@@ -1177,7 +1147,7 @@ export function PartsPage() {
           <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
             <AgGridReact<GroupedPartsEntry>
               key={`grouped-${JSON.stringify(partsFilters)}-${partsSearch}-${groupedHiddenColumns.size}`}
-              theme={darkTheme}
+              theme={gridTheme}
               rowData={groupedData}
               columnDefs={visibleGroupedColumnDefs}
               defaultColDef={defaultColDef}

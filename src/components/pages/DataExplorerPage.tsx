@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Database, Table, Loader2, AlertCircle, Play, X, ChevronDown, ChevronRight, BarChart3 } from 'lucide-react';
 import { fetchBrowserDatabases, fetchBrowserTables, fetchBrowserColumns, type BrowserDatabase, type BrowserTable, type BrowserColumn } from '../../services/api';
+import { formatNumber, formatDuration } from '../../utils/formatters';
 
 interface ExploreResult {
   columns: string[];
@@ -79,17 +80,6 @@ function formatValue(value: unknown): string {
     return value.toLocaleString();
   }
   return String(value);
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-}
-
-function formatNumber(num: number): string {
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-  return num.toLocaleString();
 }
 
 interface DataExplorerPageProps {

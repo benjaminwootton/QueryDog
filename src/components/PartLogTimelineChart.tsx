@@ -4,6 +4,17 @@ import { useQueryStore } from '../stores/queryStore';
 import type { ChartAggregation, PartLogStackedTimeSeriesPoint } from '../stores/queryStore';
 import { Activity, Clock } from 'lucide-react';
 import { format } from 'date-fns';
+import { useIsLightMode } from '../hooks/useTheme';
+
+function useChartColors() {
+  const isLight = useIsLightMode();
+  return useMemo(() => ({
+    grid: isLight ? '#e5e7eb' : '#374151',
+    tick: isLight ? '#6b7280' : '#9ca3af',
+    tooltipBg: isLight ? '#ffffff' : '#1f2937',
+    tooltipBorder: isLight ? '#e5e7eb' : '#374151',
+  }), [isLight]);
+}
 
 const AGGREGATION_LABELS: Record<ChartAggregation, string> = {
   avg: 'Avg',
@@ -43,6 +54,7 @@ function getChartConfig(metric: 'count' | 'duration', aggregation: ChartAggregat
 }
 
 export function PartLogTimelineChart() {
+  const cc = useChartColors();
   const { partLogTimeSeries, partLogStackedTimeSeries, bucketSize, partLogLoading, chartAggregation, chartType, setTimeRange, partLogChartMetric, setPartLogChartMetric } = useQueryStore();
 
   const config = useMemo(() => getChartConfig(partLogChartMetric, chartAggregation), [partLogChartMetric, chartAggregation]);
@@ -122,25 +134,25 @@ export function PartLogTimelineChart() {
         <div className="h-72 bg-gray-900 border border-gray-700 rounded cursor-pointer">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={partLogStackedTimeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }} onClick={handleChartClick}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} vertical={false} />
               <XAxis
                 dataKey="time"
                 tickFormatter={formatTime}
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
               />
               <YAxis
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
                 width={50}
                 tickFormatter={(v) => v.toLocaleString()}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
+                  backgroundColor: cc.tooltipBg,
+                  border: `1px solid ${cc.tooltipBorder}`,
                   borderRadius: '4px',
                   fontSize: '11px',
                 }}
@@ -188,25 +200,25 @@ export function PartLogTimelineChart() {
                   </linearGradient>
                 ))}
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} vertical={false} />
               <XAxis
                 dataKey="time"
                 tickFormatter={formatTime}
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
               />
               <YAxis
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
                 width={50}
                 tickFormatter={(v) => v.toLocaleString()}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
+                  backgroundColor: cc.tooltipBg,
+                  border: `1px solid ${cc.tooltipBorder}`,
                   borderRadius: '4px',
                   fontSize: '11px',
                 }}
@@ -248,25 +260,25 @@ export function PartLogTimelineChart() {
         <div className="h-72 bg-gray-900 border border-gray-700 rounded cursor-pointer">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={partLogTimeSeries} margin={{ top: 15, right: 15, left: 5, bottom: 5 }} onClick={handleChartClick}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} vertical={false} />
               <XAxis
                 dataKey="time"
                 tickFormatter={formatTime}
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
               />
               <YAxis
-                tick={{ fontSize: 9, fill: '#9ca3af' }}
-                axisLine={{ stroke: '#374151' }}
-                tickLine={{ stroke: '#374151' }}
+                tick={{ fontSize: 9, fill: cc.tick }}
+                axisLine={{ stroke: cc.grid }}
+                tickLine={{ stroke: cc.grid }}
                 width={50}
                 tickFormatter={config.formatter}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
+                  backgroundColor: cc.tooltipBg,
+                  border: `1px solid ${cc.tooltipBorder}`,
                   borderRadius: '4px',
                   fontSize: '11px',
                 }}
@@ -300,25 +312,25 @@ export function PartLogTimelineChart() {
                 <stop offset="95%" stopColor={config.color} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} vertical={false} />
             <XAxis
               dataKey="time"
               tickFormatter={formatTime}
-              tick={{ fontSize: 9, fill: '#9ca3af' }}
-              axisLine={{ stroke: '#374151' }}
-              tickLine={{ stroke: '#374151' }}
+              tick={{ fontSize: 9, fill: cc.tick }}
+              axisLine={{ stroke: cc.grid }}
+              tickLine={{ stroke: cc.grid }}
             />
             <YAxis
-              tick={{ fontSize: 9, fill: '#9ca3af' }}
-              axisLine={{ stroke: '#374151' }}
-              tickLine={{ stroke: '#374151' }}
+              tick={{ fontSize: 9, fill: cc.tick }}
+              axisLine={{ stroke: cc.grid }}
+              tickLine={{ stroke: cc.grid }}
               width={50}
               tickFormatter={config.formatter}
             />
             <Tooltip
               contentStyle={{
-                backgroundColor: '#1f2937',
-                border: '1px solid #374151',
+                backgroundColor: cc.tooltipBg,
+                border: `1px solid ${cc.tooltipBorder}`,
                 borderRadius: '4px',
                 fontSize: '11px',
               }}

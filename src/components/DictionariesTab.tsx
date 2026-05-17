@@ -1,47 +1,17 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { ColDef, ICellRendererParams, FirstDataRenderedEvent } from 'ag-grid-community';
 import { Eye, X } from 'lucide-react';
 import { fetchDictionaries, type SystemDictionary } from '../services/api';
+import { useGridTheme } from '../hooks/useTheme';
+import { formatBytes, formatNumber } from '../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-const darkTheme = themeAlpine.withParams({
-  backgroundColor: '#111827',
-  headerBackgroundColor: '#1f2937',
-  oddRowBackgroundColor: '#111827',
-  rowHoverColor: '#1f2937',
-  borderColor: '#374151',
-  foregroundColor: '#9ca3af',
-  headerTextColor: '#f3f4f6',
-  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  fontSize: 9,
-  headerFontSize: 11,
-  headerFontWeight: 600,
-  cellTextColor: '#9ca3af',
-  rowHeight: 26,
-  headerHeight: 30,
-});
 
 interface DictionariesTabProps {
   filters: Record<string, string[]>;
   search: string;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function formatNumber(num: number): string {
-  if (num >= 1000000000) return (num / 1000000000).toFixed(1) + 'B';
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-  return num.toLocaleString();
 }
 
 function formatPercent(rate: number): string {
@@ -49,6 +19,7 @@ function formatPercent(rate: number): string {
 }
 
 export function DictionariesTab({ filters, search }: DictionariesTabProps) {
+  const gridTheme = useGridTheme();
   const [dictionaries, setDictionaries] = useState<SystemDictionary[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -194,7 +165,7 @@ export function DictionariesTab({ filters, search }: DictionariesTabProps) {
   return (
     <div className="h-full bg-gray-900 border border-gray-700 rounded overflow-hidden">
       <AgGridReact<SystemDictionary>
-        theme={darkTheme}
+        theme={gridTheme}
         rowData={dictionaries}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
