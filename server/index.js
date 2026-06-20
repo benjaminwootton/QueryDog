@@ -182,6 +182,16 @@ async function pingWithTimeout(timeoutMs = CONNECTION_TIMEOUT_MS) {
 }
 
 const getQueriesPath = () => path.isAbsolute(QUERIES_FOLDER) ? QUERIES_FOLDER : path.join(process.cwd(), QUERIES_FOLDER);
+
+// ==================== ALERTS RUN-LOG STUBS ====================
+// The alerts UI also reads aggregated run history and per-alert run logs.
+// Until the persistent run-log feature lands, return empty values so the
+// UI renders without throwing.
+function getAggregatesByFilename(/* type */) { return {}; }
+function getRunLog(/* type, filename, limit */) { return []; }
+function recordRun() { /* no-op */ }
+// ==================== END ALERTS RUN-LOG STUBS ====================
+
 // ==================== ALERTS HELPERS ====================
 const ALERTS_FOLDER = 'alerts';
 const getAlertsPath = () => path.join(process.cwd(), ALERTS_FOLDER);
