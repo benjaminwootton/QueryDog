@@ -184,12 +184,78 @@ async function pingWithTimeout(timeoutMs = CONNECTION_TIMEOUT_MS) {
 const getQueriesPath = () => path.isAbsolute(QUERIES_FOLDER) ? QUERIES_FOLDER : path.join(process.cwd(), QUERIES_FOLDER);
 
 // ==================== ALERTS RUN-LOG STUBS ====================
-// The alerts UI also reads aggregated run history and per-alert run logs.
-// Until the persistent run-log feature lands, return empty values so the
-// UI renders without throwing.
+// We persist nothing yet; future versions can swap these for a real store.
 function getAggregatesByFilename(/* type */) { return {}; }
+function getAggregatesForFilename(/* type, filename */) { return null; }
 function getRunLog(/* type, filename, limit */) { return []; }
 function recordRun() { /* no-op */ }
+
+// Returns a coarse identifier for the currently-connected ClickHouse env so
+// the portal can route an alert to the right environment row. Falls back to
+// env vars when the active env can't be resolved from the config.
+function currentEnv() {
+  try {
+    const envs = (typeof config !== 'undefined' && config && Array.isArray(config.environments)) ? config.environments : [];
+    const active = envs.find(e => e._active) || envs[0];
+    if (active) {
+      return {
+        name: active.name,
+        _embeddedId: active._embeddedId || process.env.QUERYDOG_EMBEDDED_ENV_ID || null,
+      };
+    }
+  } catch {}
+  return { name: process.env.CLICKHOUSE_HOST || 'default', _embeddedId: process.env.QUERYDOG_EMBEDDED_ENV_ID || null };
+}
+
+// Slack: incoming-webhook POST. Fire-and-forget. URL from env.
+async function sendSlackAlert({ filename, description, data, rowCount }) {
+  const url = process.env.SLACK_WEBHOOK_URL;
+  if (!url) return;
+  const preview = JSON.stringify(data.slice(0, 5), null, 2).slice(0, 1500);
+  const rowsLabel = rowCount === 1 ? 'row' : 'rows';
+  const descLine = description ? '\n' + description : '';
+  const text = '*' + filename + '* — ' + rowCount + ' ' + rowsLabel + descLine + '\n\n```' + preview + '```';
+  try {
+    await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+  } catch (e) {
+    console.error('[alert] slack post failed:', e.message);
+  }
+}
+
+// Portal webhook: HMAC-signed POST to ALERT_WEBHOOK_URL using the shared
+// QUERYDOG_BOOTSTRAP_SECRET. The portal's /api/alerts/ingest endpoint
+// verifies the X-Bootstrap-Auth header before persisting.
+function alertWebhookConfig(/* env */) {
+  return process.env.ALERT_WEBHOOK_URL
+    ? { url: process.env.ALERT_WEBHOOK_URL, secret: process.env.QUERYDOG_BOOTSTRAP_SECRET || '' }
+    : null;
+}
+async function sendAlertWebhook({ filename, description, data, rowCount, env }) {
+  const cfg = alertWebhookConfig(env);
+  if (!cfg) return;
+  const body = JSON.stringify({
+    filename,
+    description,
+    rowCount,
+    sample: data.slice(0, 25),
+    environment: env || null,
+    timestamp: new Date().toISOString(),
+  });
+  const crypto = await import('node:crypto');
+  const sig = crypto.createHmac('sha256', cfg.secret).update(body).digest('hex');
+  try {
+    await fetch(cfg.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Bootstrap-Auth': sig,
+      },
+      body,
+    });
+  } catch (e) {
+    console.error('[alert] portal webhook failed:', e.message);
+  }
+}
 // ==================== END ALERTS RUN-LOG STUBS ====================
 
 // ==================== ALERTS HELPERS ====================

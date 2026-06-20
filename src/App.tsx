@@ -327,7 +327,7 @@ function App() {
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="bg-gray-900 border-b border-gray-700 px-1.5 py-1.5 flex items-center justify-between shrink-0">
+      <header className="bg-gray-900 border-b border-gray-700 px-3 sm:px-4 py-1.5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-6">
           <button
             onClick={() => {
@@ -415,7 +415,7 @@ function App() {
 
 
       {/* Main Content */}
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-hidden px-3 sm:px-4">
         {navItem === 'queries' && <QueriesPage />}
         {navItem === 'textlog' && <TextLogPage />}
         {navItem === 'partlog' && <PartLogPage />}
@@ -430,7 +430,7 @@ function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-gray-900 border-t border-gray-700 px-1.5 py-1.5 flex items-center justify-between shrink-0">
+      <footer className="bg-gray-900 border-t border-gray-700 px-3 sm:px-4 py-1.5 flex items-center justify-between shrink-0">
         <button
           onClick={() => setAboutOpen(true)}
           className="text-xs text-gray-400 hover:text-blue-400 hover:underline cursor-pointer"
