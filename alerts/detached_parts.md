@@ -1,0 +1,1 @@
+Groups detached parts by table and reason prefix, showing counts, byte totals, and oldest and newest timestamps per group. Highlights broken or unexpected parts that may signal corruption or merge failures.
