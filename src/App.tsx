@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Dog, Database, HardDrive, Activity, Server, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Users, Network, Circle, RefreshCw, Sun, Moon } from 'lucide-react';
+import { Dog, Database, HardDrive, Activity, Server, X, FolderTree, Terminal, FileText, Layers, FileCode, Table, AlertTriangle, Bell, Users, Network, Circle, RefreshCw, Sun, Moon } from 'lucide-react';
 import { AutoRefreshToggle } from './components/AutoRefreshToggle';
 import { QueriesPage } from './components/pages/QueriesPage';
 import { PartsPage } from './components/pages/PartsPage';
@@ -11,6 +11,7 @@ import { ClusterPage } from './components/pages/ClusterPage';
 import { TextLogPage } from './components/pages/TextLogPage';
 import { MyQueriesPage } from './components/pages/MyQueriesPage';
 import { DataExplorerPage } from './components/pages/DataExplorerPage';
+import { AlertsPage } from './components/pages/AlertsPage';
 import { ProfileEventsModal } from './components/ProfileEventsModal';
 import { DatabaseBrowser } from './components/DatabaseBrowser';
 import { DatabaseManager } from './components/DatabaseManager';
@@ -19,7 +20,7 @@ import { useQueryStore } from './stores/queryStore';
 import { useQueryData } from './hooks/useQueryData';
 import { fetchEnvironments, type EnvironmentInfo } from './services/api';
 
-type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'users' | 'cluster' | 'instance' | 'myqueries';
+type NavItem = 'queries' | 'textlog' | 'partlog' | 'parts' | 'activity' | 'users' | 'cluster' | 'instance' | 'myqueries' | 'alerts';
 type RefreshInterval = 'off' | 5 | 10 | 60 | 600;
 
 interface ConnectionInfo {
@@ -75,6 +76,7 @@ function App() {
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
   const [backendError, setBackendError] = useState<{ message: string; envName?: string; isBackendServer?: boolean } | null>(null);
   const [hasQueriesFolder, setHasQueriesFolder] = useState(false);
+  const [hasAlertsFolder, setHasAlertsFolder] = useState(false);
   const [environments, setEnvironments] = useState<EnvironmentInfo[]>([]);
   const [activeEnvIndex, setActiveEnvIndex] = useState(0);
   const [connectedEnvIndex, setConnectedEnvIndex] = useState<number | null>(null);
@@ -229,6 +231,13 @@ function App() {
       .catch(() => setHasQueriesFolder(false));
   }, []);
 
+  useEffect(() => {
+    fetch('/api/alerts/exists')
+      .then(res => res.json())
+      .then(data => setHasAlertsFolder(data.exists))
+      .catch(() => setHasAlertsFolder(false));
+  }, []);
+
   // Expose function to open query editor with a query (for use by ProfileEventsModal)
   useEffect(() => {
     (window as unknown as { openQueryEditor: (query: string) => void }).openQueryEditor = (query: string) => {
@@ -312,6 +321,7 @@ function App() {
     { id: 'users', label: 'Users', icon: Users },
     { id: 'cluster', label: 'Cluster', icon: Network },
     ...(hasQueriesFolder ? [{ id: 'myqueries' as const, label: 'My Queries', icon: FileCode }] : []),
+    ...(hasAlertsFolder ? [{ id: 'alerts' as const, label: 'Alerts', icon: Bell }] : []),
   ];
 
   return (
@@ -415,6 +425,7 @@ function App() {
         {navItem === 'users' && <UsersPage />}
         {navItem === 'cluster' && <ClusterPage />}
         {navItem === 'instance' && <InstancePage />}
+        {navItem === 'alerts' && <AlertsPage />}
         {navItem === 'myqueries' && <MyQueriesPage />}
       </main>
 

@@ -182,6 +182,21 @@ async function pingWithTimeout(timeoutMs = CONNECTION_TIMEOUT_MS) {
 }
 
 const getQueriesPath = () => path.isAbsolute(QUERIES_FOLDER) ? QUERIES_FOLDER : path.join(process.cwd(), QUERIES_FOLDER);
+// ==================== ALERTS HELPERS ====================
+const ALERTS_FOLDER = 'alerts';
+const getAlertsPath = () => path.join(process.cwd(), ALERTS_FOLDER);
+const descriptionPathFor = (folder, sqlFilename) =>
+  path.join(folder, sqlFilename.replace(/.sql$/, '.md'));
+function readDescription(folder, sqlFilename) {
+  try { return fs.readFileSync(descriptionPathFor(folder, sqlFilename), 'utf-8').trim(); }
+  catch { return ''; }
+}
+function writeDescription(folder, sqlFilename, description) {
+  const mdPath = descriptionPathFor(folder, sqlFilename);
+  if (description && description.trim()) fs.writeFileSync(mdPath, description.trim() + '\n', 'utf-8');
+  else if (fs.existsSync(mdPath)) fs.unlinkSync(mdPath);
+}
+
 
 // Helper to get system table reference - uses clusterAllReplicas() if cluster is configured
 function getSystemTable(tableName) {
@@ -5362,6 +5377,239 @@ function shutdown(signal) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+
+// ==================== ALERTS ROUTES ====================
+app.get('/api/alerts/exists', (req, res) => {
+  const alertsPath = getAlertsPath();
+  const exists = fs.existsSync(alertsPath) && fs.statSync(alertsPath).isDirectory();
+  res.json({ exists, path: alertsPath });
+});
+
+app.get('/api/alerts', (req, res) => {
+  try {
+    const alertsPath = getAlertsPath();
+
+    if (!fs.existsSync(alertsPath)) {
+      return res.json({ alerts: [], path: alertsPath });
+    }
+
+    const files = fs.readdirSync(alertsPath).filter(f => f.endsWith('.sql'));
+    const aggregates = getAggregatesByFilename('alert');
+    const alerts = files.map(filename => {
+      const filePath = path.join(alertsPath, filename);
+      const content = fs.readFileSync(filePath, 'utf-8').trim();
+      const agg = aggregates.get(filename) || {
+        avgRunTime: null, fastestRunTime: null, slowestRunTime: null,
+        lastRunTime: null, lastDuration: null, lastRowCount: null, runCount: 0,
+      };
+
+      return {
+        filename,
+        query: content,
+        description: readDescription(alertsPath, filename),
+        lastRunTime: agg.lastRunTime,
+        lastDuration: agg.lastDuration,
+        lastRowCount: agg.lastRowCount,
+        avgRunTime: agg.avgRunTime,
+        slowestRunTime: agg.slowestRunTime,
+        fastestRunTime: agg.fastestRunTime,
+        runCount: agg.runCount,
+      };
+    });
+
+    res.json({ alerts, path: alertsPath });
+  } catch (error) {
+    console.error('Error reading alerts folder:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/alerts/run', async (req, res) => {
+  try {
+    const { filename, query } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ error: 'Query is required' });
+    }
+
+    // Strip leading SQL line and block comments before checking the first keyword
+    const stripped = query
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .map(line => line.replace(/^\s*--.*$/, ''))
+      .join('\n')
+      .trim();
+    const upperQuery = stripped.toUpperCase();
+    if (!upperQuery.startsWith('SELECT') && !upperQuery.startsWith('WITH')) {
+      return res.status(403).json({ error: 'Only SELECT and WITH (CTE) queries are allowed for alerts' });
+    }
+
+    const startTime = Date.now();
+    const result = await client.query({
+      query,
+      format: 'JSON',
+      clickhouse_settings: { max_execution_time: 0 },
+      request_timeout: 3600000,
+    });
+
+    const jsonResponse = await result.json();
+    const data = jsonResponse.data || [];
+    const rowCount = jsonResponse.rows || data.length;
+    const stats = jsonResponse.statistics || {};
+    const duration = stats.elapsed ? Math.round(stats.elapsed * 1000) : Date.now() - startTime;
+    const readRows = stats.rows_read || null;
+    const readBytes = stats.bytes_read || null;
+    const queryId = result.query_id;
+
+    let updatedStats = null;
+    if (filename) {
+      recordRun('alert', filename, {
+        queryId,
+        runTime: new Date().toISOString(),
+        duration,
+        rowCount,
+        readRows,
+        readBytes,
+      });
+      updatedStats = getAggregatesForFilename('alert', filename);
+    }
+
+    // Fire sinks when the alert is firing (i.e. the query returned rows).
+    // Fire-and-forget — don't delay the HTTP response on webhook latency.
+    if (data.length > 0 && filename) {
+      const description = readDescription(getAlertsPath(), filename);
+      const env = currentEnv();
+      console.log(`[alert] firing: ${filename} (${rowCount} rows) embeddedEnv=${env?._embeddedId || 'n/a'}`);
+      if (process.env.SLACK_WEBHOOK_URL) {
+        void sendSlackAlert({ filename, description, data, rowCount });
+      }
+      if (alertWebhookConfig(env)) {
+        void sendAlertWebhook({ filename, description, data, rowCount, env });
+      }
+    }
+
+    res.json({ data, rowCount, duration, queryId, stats: updatedStats });
+  } catch (error) {
+    console.error('Error running alert:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/alerts/stats', (req, res) => {
+  clearRunStats('alert');
+  res.json({ success: true });
+});
+
+app.delete('/api/alerts/stats/:filename', (req, res) => {
+  clearRunStats('alert', req.params.filename);
+  res.json({ success: true });
+});
+
+app.get('/api/alerts/run-log/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const entries = getRunLog('alert', filename, 50);
+    if (entries.length === 0) return res.json({ runLog: [] });
+
+    const queryIds = entries.map(r => r.queryId).filter(Boolean);
+    let queryLogData = {};
+    if (queryIds.length > 0) {
+      try {
+        const queryLogTable = getSystemTable('query_log');
+        const queryLogQuery = `
+          SELECT query_id, type, query_duration_ms, read_rows, read_bytes,
+                 result_rows, result_bytes, memory_usage, ProfileEvents
+          FROM ${queryLogTable}
+          WHERE query_id IN (${queryIds.map(id => `'${id}'`).join(', ')})
+            AND type = 'QueryFinish'
+        `;
+        const result = await client.query({ query: queryLogQuery, format: 'JSONEachRow' });
+        const data = await result.json();
+        data.forEach(row => { queryLogData[row.query_id] = row; });
+      } catch (err) {
+        console.error('Error fetching query_log data for alert run log:', err);
+      }
+    }
+
+    const runLog = entries.map(entry => ({
+      queryId: entry.queryId,
+      runTime: entry.runTime,
+      duration: entry.duration,
+      rowCount: entry.rowCount,
+      readRows: entry.readRows,
+      readBytes: entry.readBytes,
+      queryLog: queryLogData[entry.queryId] || null,
+    }));
+
+    res.json({ runLog });
+  } catch (error) {
+    console.error('Error fetching alert run log:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/alerts/update', (req, res) => {
+  try {
+    const { filename, query, description } = req.body;
+    if (!filename || !query) {
+      return res.status(400).json({ error: 'Filename and query are required' });
+    }
+    if (!filename.endsWith('.sql') || filename.includes('/') || filename.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const alertsPath = getAlertsPath();
+    const filePath = path.join(alertsPath, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Alert file not found' });
+    }
+    fs.writeFileSync(filePath, query.trim() + '\n', 'utf-8');
+    if (description !== undefined) {
+      writeDescription(alertsPath, filename, description);
+    }
+    res.json({ success: true, filename });
+  } catch (error) {
+    console.error('Error updating alert:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/alerts/clone', (req, res) => {
+  try {
+    const { sourceFilename, newFilename, query } = req.body;
+    if (!sourceFilename || !newFilename || !query) {
+      return res.status(400).json({ error: 'Source filename, new filename, and query are required' });
+    }
+    if (!newFilename.endsWith('.sql') || newFilename.includes('/') || newFilename.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const alertsPath = getAlertsPath();
+    const newFilePath = path.join(alertsPath, newFilename);
+
+    if (fs.existsSync(newFilePath)) {
+      let counter = 1;
+      let uniqueFilename = newFilename;
+      let uniqueFilePath = newFilePath;
+      while (fs.existsSync(uniqueFilePath)) {
+        const baseName = newFilename.replace(/\.sql$/, '');
+        uniqueFilename = `${baseName}_${counter}.sql`;
+        uniqueFilePath = path.join(alertsPath, uniqueFilename);
+        counter++;
+      }
+      fs.writeFileSync(uniqueFilePath, query.trim() + '\n', 'utf-8');
+      return res.json({ success: true, filename: uniqueFilename });
+    }
+
+    fs.writeFileSync(newFilePath, query.trim() + '\n', 'utf-8');
+    res.json({ success: true, filename: newFilename });
+  } catch (error) {
+    console.error('Error cloning alert:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// ==================== END ALERTS ROUTES ====================
 
 // Start the application
 startup();
