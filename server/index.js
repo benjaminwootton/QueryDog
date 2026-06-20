@@ -185,7 +185,7 @@ const getQueriesPath = () => path.isAbsolute(QUERIES_FOLDER) ? QUERIES_FOLDER : 
 
 // ==================== ALERTS RUN-LOG STUBS ====================
 // We persist nothing yet; future versions can swap these for a real store.
-function getAggregatesByFilename(/* type */) { return {}; }
+function getAggregatesByFilename(/* type */) { return new Map(); }
 function getAggregatesForFilename(/* type, filename */) { return null; }
 function getRunLog(/* type, filename, limit */) { return []; }
 function recordRun() { /* no-op */ }
