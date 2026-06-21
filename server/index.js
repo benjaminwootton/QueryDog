@@ -233,31 +233,32 @@ function alertWebhookConfig(/* env */) {
 async function sendAlertWebhook({ filename, description, data, rowCount, env }) {
   const cfg = alertWebhookConfig(env);
   if (!cfg) return;
-  // Map filename -> portal severity. Names containing _crit/_high get 'high';
-  // _warn/_medium get 'medium'; everything else defaults to 'medium'.
   let severity = 'medium';
   if (/(_crit|_critical|_high)/i.test(filename)) severity = 'high';
   else if (/(_low|_info)/i.test(filename)) severity = 'low';
-  // Portal contract: { environmentId, check, title?, description?, severity?, status?, rowCount? }
   const body = JSON.stringify({
     environmentId: (env && env._embeddedId) || process.env.QUERYDOG_EMBEDDED_ENV_ID || '',
     check: filename,
     title: filename.replace(/\.sql$/, '').replace(/_/g, ' '),
-    description: description || `${rowCount} row${rowCount === 1 ? '' : 's'} returned by ${filename}.`,
+    description: description || (rowCount + ' row' + (rowCount === 1 ? '' : 's') + ' returned by ' + filename + '.'),
     severity,
     status: 'firing',
     rowCount,
   });
+  // Portal expects header shape: 't=<unix>,sig=<hex>' where sig = HMAC(secret, '<unix>.<body>')
+  const t = Math.floor(Date.now() / 1000);
   const crypto = await import('node:crypto');
-  const sig = crypto.createHmac('sha256', cfg.secret).update(body).digest('hex');
+  const sig = crypto.createHmac('sha256', cfg.secret).update(t + '.' + body).digest('hex');
   try {
     const res = await fetch(cfg.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Bootstrap-Auth': sig },
+      headers: { 'Content-Type': 'application/json', 'X-Bootstrap-Auth': 't=' + t + ',sig=' + sig },
       body,
     });
     if (!res.ok) {
       console.error('[alert] portal webhook ' + res.status + ': ' + await res.text());
+    } else {
+      console.log('[alert] portal webhook ok for ' + filename);
     }
   } catch (e) {
     console.error('[alert] portal webhook failed:', e.message);
