@@ -226,7 +226,6 @@ function getRunLog(type, filename, limit = 50) {
   if (type !== 'alert') return [];
   return (_alertRuns.get(filename) || []).slice(0, limit);
 }
-function recordRun() { /* no-op */ }
 
 // Returns a coarse identifier for the currently-connected ClickHouse env so
 // the portal can route an alert to the right environment row. Falls back to
