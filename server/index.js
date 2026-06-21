@@ -233,25 +233,32 @@ function alertWebhookConfig(/* env */) {
 async function sendAlertWebhook({ filename, description, data, rowCount, env }) {
   const cfg = alertWebhookConfig(env);
   if (!cfg) return;
+  // Map filename -> portal severity. Names containing _crit/_high get 'high';
+  // _warn/_medium get 'medium'; everything else defaults to 'medium'.
+  let severity = 'medium';
+  if (/(_crit|_critical|_high)/i.test(filename)) severity = 'high';
+  else if (/(_low|_info)/i.test(filename)) severity = 'low';
+  // Portal contract: { environmentId, check, title?, description?, severity?, status?, rowCount? }
   const body = JSON.stringify({
-    filename,
-    description,
+    environmentId: (env && env._embeddedId) || process.env.QUERYDOG_EMBEDDED_ENV_ID || '',
+    check: filename,
+    title: filename.replace(/\.sql$/, '').replace(/_/g, ' '),
+    description: description || `${rowCount} row${rowCount === 1 ? '' : 's'} returned by ${filename}.`,
+    severity,
+    status: 'firing',
     rowCount,
-    sample: data.slice(0, 25),
-    environment: env || null,
-    timestamp: new Date().toISOString(),
   });
   const crypto = await import('node:crypto');
   const sig = crypto.createHmac('sha256', cfg.secret).update(body).digest('hex');
   try {
-    await fetch(cfg.url, {
+    const res = await fetch(cfg.url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Bootstrap-Auth': sig,
-      },
+      headers: { 'Content-Type': 'application/json', 'X-Bootstrap-Auth': sig },
       body,
     });
+    if (!res.ok) {
+      console.error('[alert] portal webhook ' + res.status + ': ' + await res.text());
+    }
   } catch (e) {
     console.error('[alert] portal webhook failed:', e.message);
   }
