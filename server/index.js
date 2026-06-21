@@ -244,6 +244,7 @@ async function sendAlertWebhook({ filename, description, data, rowCount, env }) 
     severity,
     status: 'firing',
     rowCount,
+    sample: data.slice(0, 25),
   });
   // Portal expects header shape: 't=<unix>,sig=<hex>' where sig = HMAC(secret, '<unix>.<body>')
   const t = Math.floor(Date.now() / 1000);
