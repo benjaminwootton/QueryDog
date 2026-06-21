@@ -200,13 +200,13 @@ function _aggregateOne(list) {
   const durations = list.map(e => e.duration).filter(n => Number.isFinite(n));
   const sum = durations.reduce((a, b) => a + b, 0);
   return {
-    runs: list.length,
-    lastRun: list[0].runTime,
-    lastRows: list[0].rowCount,
+    runCount: list.length,
+    lastRunTime: list[0].runTime,
+    lastRowCount: list[0].rowCount,
     lastDuration: list[0].duration,
-    avgTime: durations.length ? Math.round(sum / durations.length) : null,
-    fastest: durations.length ? Math.min(...durations) : null,
-    slowest: durations.length ? Math.max(...durations) : null,
+    avgRunTime: durations.length ? Math.round(sum / durations.length) : null,
+    fastestRunTime: durations.length ? Math.min(...durations) : null,
+    slowestRunTime: durations.length ? Math.max(...durations) : null,
   };
 }
 function getAggregatesForFilename(type, filename) {

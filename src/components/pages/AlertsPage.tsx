@@ -736,11 +736,7 @@ export function AlertsPage() {
           onSelectionChanged={onSelectionChanged}
           initialState={{
             sort: {
-              sortModel: [
-                { colId: 'filename', sort: 'asc' },
-                { colId: 'lastRunTime', sort: 'desc' },
-                { colId: 'lastDuration', sort: 'asc' }
-              ]
+              sortModel: [{ colId: 'lastRunTime', sort: 'desc' }]
             }
           }}
         />
