@@ -183,11 +183,49 @@ async function pingWithTimeout(timeoutMs = CONNECTION_TIMEOUT_MS) {
 
 const getQueriesPath = () => path.isAbsolute(QUERIES_FOLDER) ? QUERIES_FOLDER : path.join(process.cwd(), QUERIES_FOLDER);
 
-// ==================== ALERTS RUN-LOG STUBS ====================
-// We persist nothing yet; future versions can swap these for a real store.
-function getAggregatesByFilename(/* type */) { return new Map(); }
-function getAggregatesForFilename(/* type, filename */) { return null; }
-function getRunLog(/* type, filename, limit */) { return []; }
+// ==================== ALERTS RUN-LOG STORE (in-memory) ====================
+// Process-local — loses history on container restart. Enough for the live
+// stats the UI shows (Last Run / Avg Time / Runs). A persistent backend can
+// swap these out without changing the call sites.
+const _alertRuns = new Map(); // filename -> [{ runTime, duration, rowCount, ... }]
+function recordRun(type, filename, entry) {
+  if (type !== 'alert' || !filename) return;
+  const list = _alertRuns.get(filename) || [];
+  list.unshift(entry);
+  if (list.length > 100) list.length = 100;
+  _alertRuns.set(filename, list);
+}
+function _aggregateOne(list) {
+  if (!list || list.length === 0) return null;
+  const durations = list.map(e => e.duration).filter(n => Number.isFinite(n));
+  const sum = durations.reduce((a, b) => a + b, 0);
+  return {
+    runs: list.length,
+    lastRun: list[0].runTime,
+    lastRows: list[0].rowCount,
+    lastDuration: list[0].duration,
+    avgTime: durations.length ? Math.round(sum / durations.length) : null,
+    fastest: durations.length ? Math.min(...durations) : null,
+    slowest: durations.length ? Math.max(...durations) : null,
+  };
+}
+function getAggregatesForFilename(type, filename) {
+  if (type !== 'alert') return null;
+  return _aggregateOne(_alertRuns.get(filename));
+}
+function getAggregatesByFilename(type) {
+  const out = new Map();
+  if (type !== 'alert') return out;
+  for (const [filename, list] of _alertRuns) {
+    const agg = _aggregateOne(list);
+    if (agg) out.set(filename, agg);
+  }
+  return out;
+}
+function getRunLog(type, filename, limit = 50) {
+  if (type !== 'alert') return [];
+  return (_alertRuns.get(filename) || []).slice(0, limit);
+}
 function recordRun() { /* no-op */ }
 
 // Returns a coarse identifier for the currently-connected ClickHouse env so
