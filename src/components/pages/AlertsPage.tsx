@@ -244,7 +244,7 @@ export function AlertsPage() {
 
     setRunAllProgress(null);
     setRunningAll(false);
-    setLoadMessage(`Completed: ${firingCount} firing, ${failCount} failed out of ${total} alerts`);
+    setLoadMessage(`Completed: ${firingCount} firing, ${failCount} errors out of ${total} alerts`);
   }, [runningAll, filteredAlerts, runAlert]);
 
   const PlayButtonRenderer = useCallback((params: ICellRendererParams<Alert>) => {
