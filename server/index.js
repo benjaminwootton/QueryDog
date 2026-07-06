@@ -84,6 +84,7 @@ function loadConfig(options = {}) {
         tls_reject_unauthorized: env.tls_reject_unauthorized !== false,
         cluster: env.cluster || null,
         queries_folder: env.queries_folder || 'queries',
+        http_headers: env.http_headers || {},
       }));
     }
   }
@@ -145,6 +146,7 @@ function createClientForEnv(env) {
     clickhouse_settings: { max_execution_time: 0 },
     keep_alive: { enabled: false },  // Disabled - chproxy blocks ping requests
     tls: env.secure ? { rejectUnauthorized: env.tls_reject_unauthorized } : undefined,
+    http_headers: env.http_headers || undefined,
   });
 }
 
@@ -503,6 +505,9 @@ function saveConfig(envs) {
     if (env.queries_folder && env.queries_folder !== 'queries') {
       result.queries_folder = env.queries_folder;
     }
+    if (env.http_headers && Object.keys(env.http_headers).length > 0) {
+      result.http_headers = env.http_headers;
+    }
     return result;
   })};
   fs.writeFileSync(yamlPath, yaml.dump(data, { lineWidth: -1, quotingType: '"' }), 'utf-8');
@@ -532,6 +537,7 @@ app.get('/api/config/environments/full', (req, res) => {
       tls_reject_unauthorized: env.tls_reject_unauthorized,
       cluster: env.cluster || '',
       queries_folder: env.queries_folder || 'queries',
+      http_headers: env.http_headers || {},
     })),
   });
 });
@@ -539,7 +545,7 @@ app.get('/api/config/environments/full', (req, res) => {
 // Add new environment
 app.post('/api/config/environments', (req, res) => {
   try {
-    const { name, host, port, user, password, database, secure, tls_reject_unauthorized, cluster, queries_folder } = req.body;
+    const { name, host, port, user, password, database, secure, tls_reject_unauthorized, cluster, queries_folder, http_headers } = req.body;
 
     // Validate required fields
     if (!name || !host) {
@@ -558,6 +564,7 @@ app.post('/api/config/environments', (req, res) => {
       tls_reject_unauthorized: tls_reject_unauthorized !== false,
       cluster: cluster || null,
       queries_folder: queries_folder || 'queries',
+      http_headers: http_headers || {},
     };
 
     envs.push(newEnv);
@@ -593,7 +600,7 @@ app.put('/api/config/environments/:index', (req, res) => {
       return res.status(400).json({ error: 'Invalid environment index' });
     }
 
-    const { name, host, port, user, password, database, secure, tls_reject_unauthorized, cluster, queries_folder } = req.body;
+    const { name, host, port, user, password, database, secure, tls_reject_unauthorized, cluster, queries_folder, http_headers } = req.body;
 
     // Validate required fields
     if (!name || !host) {
@@ -611,6 +618,7 @@ app.put('/api/config/environments/:index', (req, res) => {
       tls_reject_unauthorized: tls_reject_unauthorized !== false,
       cluster: cluster || null,
       queries_folder: queries_folder || 'queries',
+      http_headers: http_headers || {},
     };
 
     saveConfig(envs);
@@ -676,7 +684,7 @@ app.delete('/api/config/environments/:index', (req, res) => {
 
 // Test connection without switching
 app.post('/api/config/environments/test', async (req, res) => {
-  const { host, port, user, password, database, secure, tls_reject_unauthorized } = req.body;
+  const { host, port, user, password, database, secure, tls_reject_unauthorized, http_headers } = req.body;
 
   if (!host) {
     return res.status(400).json({ error: 'Host is required' });
@@ -690,6 +698,7 @@ app.post('/api/config/environments/test', async (req, res) => {
     database: database || 'default',
     secure: secure || false,
     tls_reject_unauthorized: tls_reject_unauthorized !== false,
+    http_headers: http_headers || {},
   };
 
   let testClient = null;

@@ -10,6 +10,9 @@ environments:
     # cluster: "default"
     # Optional: custom queries folder path
     # queries_folder: "queries"
+    # Optional: custom HTTP headers sent with every ClickHouse request
+    # http_headers:
+    #   X-Custom-Header: "value"
 
   - name: "Test"
     host: "localhost"

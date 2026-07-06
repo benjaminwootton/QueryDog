@@ -28,6 +28,10 @@ export function connect(env: Environment): void {
     });
   }
 
+  if (env.http_headers && Object.keys(env.http_headers).length > 0) {
+    options.http_headers = env.http_headers;
+  }
+
   client = createClient(options);
   currentEnv = env;
 }
