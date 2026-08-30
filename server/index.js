@@ -86,6 +86,27 @@ function loadConfig(options = {}) {
         queries_folder: env.queries_folder || 'queries',
         http_headers: env.http_headers || {},
       }));
+      return raw.environments.map((env, i) => {
+        const name = env.name || 'Default';
+        if (!env.host || !String(env.host).trim()) {
+          throw new Error(
+            `Environment "${name}" (#${i + 1} in ${yamlPath}) has no host. ` +
+            `Set a hostname for it, or remove the environment from the config.`
+          );
+        }
+        return {
+          name,
+          host: String(env.host).trim(),
+          port: env.port || (env.secure ? 8443 : 8123),
+          user: env.user || 'default',
+          password: env.password || '',
+          database: env.database || 'default',
+          secure: env.secure || false,
+          tls_reject_unauthorized: env.tls_reject_unauthorized !== false,
+          cluster: env.cluster || null,
+          queries_folder: env.queries_folder || 'queries',
+        };
+      });
     }
   }
 
@@ -862,6 +883,23 @@ function getEffectiveEndTime(start, end, bucket = 'minute') {
   return endDate.toISOString().replace('T', ' ').slice(0, 19);
 }
 
+// Helper: Add event_date and event_time conditions for query_log queries.
+// If force_index_by_date is enabled, ClickHouse requires an event_date predicate
+// so the merge-tree engine can prune partitions before scanning.
+function applyQueryLogDateRange(start, end, bucket, whereConditions, params) {
+  if (start) {
+    whereConditions.push('event_date >= toDate({start:DateTime})');
+    whereConditions.push('event_time >= {start:DateTime}');
+    params.start = start;
+  }
+  if (end) {
+    const effectiveEnd = getEffectiveEndTime(start, end, bucket);
+    whereConditions.push('event_date <= toDate({end:DateTime})');
+    whereConditions.push('event_time <= {end:DateTime}');
+    params.end = effectiveEnd;
+  }
+}
+
 // Get query log entries
 app.get('/api/query-log', asyncHandler(async (req, res) => {
   const { start, end, bucket = 'minute', search, limit = 1000, offset = 0, sortField = 'event_time', sortOrder = 'DESC', filters, rangeFilters } = req.query;
@@ -869,14 +907,7 @@ app.get('/api/query-log', asyncHandler(async (req, res) => {
   let whereConditions = [];
   const params = {};
 
-  if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
-    params.start = start;
-  }
-  if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
-    params.end = getEffectiveEndTime(start, end, bucket);
-  }
+  applyQueryLogDateRange(start, end, bucket, whereConditions, params);
   applyQueryLogSearch(search, whereConditions, params);
 
   // Parse and apply field filters with array support
@@ -932,14 +963,7 @@ app.get('/api/query-log/timeseries', async (req, res) => {
     let whereConditions = [];
     const params = {};
 
-    if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
-      params.start = start;
-    }
-    if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
-      params.end = getEffectiveEndTime(start, end, bucket);
-    }
+    applyQueryLogDateRange(start, end, bucket, whereConditions, params);
     applyQueryLogSearch(search, whereConditions, params);
 
     if (filters) {
@@ -1022,14 +1046,7 @@ app.get('/api/query-log/timeseries-stacked', asyncHandler(async (req, res) => {
   let whereConditions = [];
   const params = {};
 
-  if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
-    params.start = start;
-  }
-  if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
-    params.end = getEffectiveEndTime(start, end, bucket);
-  }
+  applyQueryLogDateRange(start, end, bucket, whereConditions, params);
   applyQueryLogSearch(search, whereConditions, params);
 
   if (filters) {
@@ -1093,14 +1110,7 @@ app.get('/api/query-log/profile-events', asyncHandler(async (req, res) => {
   let whereConditions = [];
   const params = {};
 
-  if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
-    params.start = start;
-  }
-  if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
-    params.end = getEffectiveEndTime(start, end, bucket);
-  }
+  applyQueryLogDateRange(start, end, bucket, whereConditions, params);
   applyQueryLogSearch(search, whereConditions, params);
 
   // Apply field filters
@@ -1171,14 +1181,7 @@ app.get('/api/query-log/histogram/:field', asyncHandler(async (req, res) => {
   let whereConditions = [];
   const params = {};
 
-  if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
-    params.start = start;
-  }
-  if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
-    params.end = getEffectiveEndTime(start, end, bucket);
-  }
+  applyQueryLogDateRange(start, end, bucket, whereConditions, params);
   applyQueryLogSearch(search, whereConditions, params);
 
   if (filters) {
@@ -1245,14 +1248,7 @@ app.get('/api/query-log/distinct/:field', asyncHandler(async (req, res) => {
   let whereConditions = [];
   const params = {};
 
-  if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
-    params.start = start;
-  }
-  if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
-    params.end = getEffectiveEndTime(start, end, bucket);
-  }
+  applyQueryLogDateRange(start, end, bucket, whereConditions, params);
 
   const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
   params.limit = parseInt(limit);
@@ -3742,10 +3738,12 @@ app.get('/api/part-log', async (req, res) => {
     const params = {};
 
     if (start) {
+      whereConditions.push('event_date >= toDate({start:DateTime})');
       whereConditions.push('event_time >= {start:DateTime}');
       params.start = start;
     }
     if (end) {
+      whereConditions.push('event_date <= toDate({end:DateTime})');
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
@@ -3840,10 +3838,12 @@ app.get('/api/part-log/count', async (req, res) => {
     const params = {};
 
     if (start) {
+      whereConditions.push('event_date >= toDate({start:DateTime})');
       whereConditions.push('event_time >= {start:DateTime}');
       params.start = start;
     }
     if (end) {
+      whereConditions.push('event_date <= toDate({end:DateTime})');
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
@@ -3925,10 +3925,12 @@ app.get('/api/part-log/timeseries', async (req, res) => {
     const params = {};
 
     if (start) {
+      whereConditions.push('event_date >= toDate({start:DateTime})');
       whereConditions.push('event_time >= {start:DateTime}');
       params.start = start;
     }
     if (end) {
+      whereConditions.push('event_date <= toDate({end:DateTime})');
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
@@ -4032,10 +4034,12 @@ app.get('/api/part-log/timeseries-stacked', async (req, res) => {
     const params = {};
 
     if (start) {
+      whereConditions.push('event_date >= toDate({start:DateTime})');
       whereConditions.push('event_time >= {start:DateTime}');
       params.start = start;
     }
     if (end) {
+      whereConditions.push('event_date <= toDate({end:DateTime})');
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
@@ -4143,10 +4147,12 @@ app.get('/api/part-log/histogram/:field', async (req, res) => {
     const params = {};
 
     if (start) {
+      whereConditions.push('event_date >= toDate({start:DateTime})');
       whereConditions.push('event_time >= {start:DateTime}');
       params.start = start;
     }
     if (end) {
+      whereConditions.push('event_date <= toDate({end:DateTime})');
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
@@ -4241,10 +4247,12 @@ app.get('/api/part-log/distinct/:field', async (req, res) => {
     const params = {};
 
     if (start) {
+      whereConditions.push('event_date >= toDate({start:DateTime})');
       whereConditions.push('event_time >= {start:DateTime}');
       params.start = start;
     }
     if (end) {
+      whereConditions.push('event_date <= toDate({end:DateTime})');
       whereConditions.push('event_time <= {end:DateTime}');
       params.end = getEffectiveEndTime(start, end);
     }
@@ -4540,14 +4548,7 @@ app.get('/api/query-log/grouped', asyncHandler(async (req, res) => {
   let whereConditions = [];
   const params = {};
 
-  if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
-    params.start = start;
-  }
-  if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
-    params.end = getEffectiveEndTime(start, end, bucket);
-  }
+  applyQueryLogDateRange(start, end, bucket, whereConditions, params);
   applyQueryLogSearch(search, whereConditions, params);
 
   // Parse and apply field filters
@@ -4623,14 +4624,7 @@ app.get('/api/query-log/by-table', asyncHandler(async (req, res) => {
   let whereConditions = [];
   const params = {};
 
-  if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
-    params.start = start;
-  }
-  if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
-    params.end = getEffectiveEndTime(start, end, bucket);
-  }
+  applyQueryLogDateRange(start, end, bucket, whereConditions, params);
   applyQueryLogSearch(search, whereConditions, params);
 
   // Parse and apply field filters
@@ -4702,14 +4696,7 @@ app.get('/api/query-log/count', asyncHandler(async (req, res) => {
   let whereConditions = [];
   const params = {};
 
-  if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
-    params.start = start;
-  }
-  if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
-    params.end = getEffectiveEndTime(start, end, bucket);
-  }
+  applyQueryLogDateRange(start, end, bucket, whereConditions, params);
   applyQueryLogSearch(search, whereConditions, params);
 
   if (filters) {
@@ -5306,7 +5293,8 @@ app.get('/api/metric-log/timeseries', asyncHandler(async (req, res) => {
       ${truncFunc} as time,
       ${selectClauses}
     FROM system.metric_log
-    WHERE event_time >= '${start}' AND event_time <= '${end}'
+    WHERE event_date >= toDate('${start}') AND event_date <= toDate('${end}')
+      AND event_time >= '${start}' AND event_time <= '${end}'
     GROUP BY time
     ORDER BY time
   `;
@@ -5392,7 +5380,8 @@ app.get('/api/async-metric-log/timeseries', asyncHandler(async (req, res) => {
       ${truncFunc} as time,
       ${selectClauses}
     FROM system.asynchronous_metric_log
-    WHERE event_time >= '${start}' AND event_time <= '${end}'
+    WHERE event_date >= toDate('${start}') AND event_date <= toDate('${end}')
+      AND event_time >= '${start}' AND event_time <= '${end}'
       AND metric IN (${whereMetrics})
     GROUP BY time
     ORDER BY time

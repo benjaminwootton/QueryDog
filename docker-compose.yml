@@ -15,4 +15,9 @@ services:
         target: /app/querydog.yml
         bind:
           create_host_path: false
+    # Lets `host: "host.docker.internal"` in querydog.yml reach a ClickHouse
+    # running on the host machine. Docker Desktop provides this name already;
+    # on Linux the mapping has to be declared explicitly.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

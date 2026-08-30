@@ -19,6 +19,14 @@ Edit `querydog.yml` with your connection details. You can configure multiple env
 
 ```yaml
 environments:
+  - name: "Local"
+    host: "host.docker.internal"   # your machine, as seen from the container
+    port: 8123
+    user: "default"
+    password: ""
+    database: "default"
+    secure: false
+
   - name: "Production"
     host: "your-clickhouse-host"
     port: 8443
@@ -26,14 +34,27 @@ environments:
     password: "your-password"
     database: "default"
     secure: true
-
-  - name: "Local"
-    host: "localhost"
-    port: 8123
-    user: "default"
-    password: ""
-    database: "default"
 ```
+
+Every environment needs a `host` — QueryDog refuses to start and names the offending entry if one is blank. To reach a ClickHouse running on your own machine, use `host.docker.internal` rather than `localhost`: inside the container `localhost` is the container itself. Use `localhost` only when running QueryDog directly with `npm run dev`.
+
+`querydog.yml.example` documents the optional settings (`cluster`, `queries_folder`, `tls_reject_unauthorized`).
+
+<details>
+<summary><strong>Connecting to a ClickHouse on your own machine (Linux)</strong></summary>
+
+Docker Desktop provides `host.docker.internal` out of the box. On Linux, `docker-compose.yml` declares it via `extra_hosts: host.docker.internal:host-gateway`, which resolves to the default bridge gateway (usually `172.17.0.1`). Two host-side settings commonly block the connection anyway:
+
+- **`Error: connect ETIMEDOUT 172.17.0.1:8123`** — a distro-packaged ClickHouse listens on loopback only. Uncomment `<listen_host>::</listen_host>` in `/etc/clickhouse-server/config.xml` and restart the server. Confirm with `ss -tlnp | grep 8123`, which should show `*:8123` rather than `127.0.0.1:8123`.
+- **Still timing out with the listener open** — a host firewall is dropping bridge traffic. A dropped packet times out; a closed port would be refused, so a timeout points here. For ufw:
+
+  ```bash
+  sudo ufw allow proto tcp from 172.16.0.0/12 to 172.17.0.1 port 8123 comment 'clickhouse-from-docker'
+  ```
+
+Both open ClickHouse to local containers, so weigh that against how the machine is used.
+
+</details>
 
 Start with Docker Compose:
 

@@ -1,7 +1,24 @@
+# QueryDog configuration.
+#
+#   cp querydog.yml.example querydog.yml
+#
+# Then edit the entries below. Every environment listed here appears in the
+# environment switcher in the UI and can be selected on the CLI with
+# `-e <name|number>` (partial names work too).
+#
+# Required per environment: name, host.
+# Everything else has the defaults shown.
+
 environments:
-  - name: "Production"
-    host: ""
-    port: 8443
+  # ClickHouse running on your own machine.
+  #
+  # Use `host.docker.internal` rather than `localhost` when QueryDog itself runs
+  # in Docker (as it does with `docker compose up`): inside the container,
+  # `localhost` is the container, not your machine. Use "localhost" only when
+  # running QueryDog directly with `npm run dev`.
+  - name: "Local"
+    host: "host.docker.internal"
+    port: 8123           # 8123 = HTTP, 8443 = HTTPS
     user: "default"
     password: ""
     database: "default"
@@ -13,10 +30,27 @@ environments:
     # Optional: custom HTTP headers sent with every ClickHouse request
     # http_headers:
     #   X-Custom-Header: "value"
+    secure: false        # true for HTTPS (ClickHouse Cloud and most managed hosts)
 
-  - name: "Test"
-    host: "localhost"
-    port: 8123
-    user: "default"
-    password: ""
-    database: "default"
+  # A remote cluster — e.g. ClickHouse Cloud. Uncomment and fill in the host.
+  # - name: "Production"
+  #   host: "abc123.us-east-1.aws.clickhouse.cloud"
+  #   port: 8443
+  #   user: "default"
+  #   password: "your-password"
+  #   database: "default"
+  #   secure: true
+  #
+  #   # Optional settings, all shown with their defaults:
+  #
+  #   # Cluster name. Set it on a multi-node cluster so QueryDog wraps system
+  #   # table reads in clusterAllReplicas() and reports across every node
+  #   # instead of only the one it connected to.
+  #   cluster: null
+  #
+  #   # Folder holding this environment's saved .sql queries, relative to the
+  #   # working directory (mounted at /app/queries under Docker Compose).
+  #   queries_folder: "queries"
+  #
+  #   # Set to false to accept self-signed / internal TLS certificates.
+  #   tls_reject_unauthorized: true
