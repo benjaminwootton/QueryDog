@@ -39,9 +39,35 @@ export function formatDuration(value: unknown): string {
   return ms.toFixed(0) + 'ms';
 }
 
+// ClickHouse DateTime values arrive as naive 'YYYY-MM-DD HH:MM:SS' strings with
+// no zone attached. The server pins its session timezone to UTC so they always
+// denote UTC, but `new Date(...)` reads that shape as *browser-local* time,
+// shifting every timestamp by the viewer's UTC offset. Parse them explicitly so
+// a viewer in any timezone sees the same instant, rendered in their own zone.
+// Values that already carry a zone (ISO strings ending in Z or +hh:mm) and epoch
+// numbers are passed through untouched.
+const NAIVE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/;
+
+export function parseServerTime(value: unknown): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === 'number') return new Date(value);
+  if (typeof value !== 'string' || value === '') return new Date(NaN);
+  const s = value.trim();
+  return NAIVE_TIMESTAMP.test(s) ? new Date(`${s.replace(' ', 'T')}Z`) : new Date(s);
+}
+
+// datetime-local inputs are read back by the browser as local wall-clock time,
+// so they must be *written* as local wall-clock too. toISOString() would write
+// UTC into a local-time field, shifting the range on every round trip.
+export function toDateTimeLocalValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return '-';
-  const d = new Date(value);
+  const d = parseServerTime(value);
   if (Number.isNaN(d.getTime())) return '-';
   return d.toLocaleString('en-US', {
     month: 'short',

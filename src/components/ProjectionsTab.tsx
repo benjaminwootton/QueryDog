@@ -5,7 +5,7 @@ import type { ColDef, ICellRendererParams, FirstDataRenderedEvent } from 'ag-gri
 import { Eye, X, Loader2 } from 'lucide-react';
 import { fetchSystemProjections, fetchProjectionParts, type SystemProjection, type BrowserProjectionPart } from '../services/api';
 import { useGridTheme } from '../hooks/useTheme';
-import { formatBytes, formatNumber } from '../utils/formatters';
+import { formatBytes, formatNumber, parseServerTime } from '../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -263,7 +263,7 @@ export function ProjectionsTab({ filters, search }: ProjectionsTabProps) {
                             <td className="p-2 font-mono text-gray-400">{part.parent_part_name || '-'}</td>
                             <td className="p-2 text-right text-red-300">
                               {part.modification_time
-                                ? new Date(part.modification_time).toLocaleString('en-US', {
+                                ? parseServerTime(part.modification_time).toLocaleString('en-US', {
                                     month: 'short',
                                     day: 'numeric',
                                     hour: '2-digit',

@@ -5,6 +5,7 @@ import type { ChartAggregation, PartLogStackedTimeSeriesPoint } from '../stores/
 import { Activity, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 import { useIsLightMode } from '../hooks/useTheme';
+import { parseServerTime } from '../utils/formatters';
 
 function useChartColors() {
   const isLight = useIsLightMode();
@@ -70,7 +71,7 @@ export function PartLogTimelineChart() {
     const timeStr = data?.activeLabel;
     if (!timeStr) return;
 
-    const clickedTime = new Date(timeStr.replace(' ', 'T'));
+    const clickedTime = parseServerTime(timeStr);
     if (isNaN(clickedTime.getTime())) return;
 
     // Set both start and end to the same clicked time
@@ -78,7 +79,7 @@ export function PartLogTimelineChart() {
   }, [setTimeRange]);
 
   const formatTime = (time: string) => {
-    const date = new Date(time);
+    const date = parseServerTime(time);
     switch (bucketSize) {
       case 'second':
         return format(date, 'HH:mm:ss');

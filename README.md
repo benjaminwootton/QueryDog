@@ -64,6 +64,23 @@ docker compose up --build
 
 Access the UI at http://localhost:3001.
 
+## Timezones
+
+**Queries are issued in UTC; timestamps are displayed in your local time.**
+
+The UI connects with `session_timezone` pinned to `UTC`, so ClickHouse parses
+every filter bound and returns every `DateTime` in UTC no matter which timezone
+the server itself runs in. The browser then renders those instants in the
+viewer's own local timezone.
+
+Two people in different timezones looking at the same cluster therefore select
+the same rows and each see the times on their own wall clock. It also means the
+times shown will not always match a `clickhouse-client` session on the server,
+which formats in the server's timezone.
+
+Timestamps you type into the From/To pickers are read as your local time and
+converted to UTC before being sent.
+
 ## CLI
 
 The same image ships the `querydog` CLI. The container entrypoint routes `server` to the web UI and forwards anything else to the CLI, so you can run one-off commands with `docker compose run`:

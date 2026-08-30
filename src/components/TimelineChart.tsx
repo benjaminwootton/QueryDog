@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { Activity, Clock, HardDrive, Rows3, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useIsLightMode } from '../hooks/useTheme';
+import { parseServerTime } from '../utils/formatters';
 
 function useChartColors() {
   const isLight = useIsLightMode();
@@ -123,7 +124,7 @@ export function TimelineChart() {
   const scatterData = useMemo(() => {
     if (effectiveChartType !== 'scatter') return [];
     return entries.map(entry => ({
-      time: new Date(entry.event_time as string).getTime(),
+      time: parseServerTime(entry.event_time as string).getTime(),
       value: getScatterValue(entry),
       query_id: entry.query_id,
       query: (entry.query as string)?.substring(0, 100),
@@ -150,7 +151,7 @@ export function TimelineChart() {
   }, [setSearch]);
 
   const formatTime = (time: string) => {
-    const date = new Date(time);
+    const date = parseServerTime(time);
     switch (bucketSize) {
       case 'second':
         return format(date, 'HH:mm:ss');
@@ -171,8 +172,7 @@ export function TimelineChart() {
       return;
     }
 
-    // ClickHouse returns time like "2025-12-05 10:30:00" - convert space to T for proper Date parsing
-    const clickedTime = new Date(timeStr.replace(' ', 'T'));
+    const clickedTime = parseServerTime(timeStr);
 
     if (isNaN(clickedTime.getTime())) {
       return;

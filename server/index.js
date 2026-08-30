@@ -164,7 +164,14 @@ function createClientForEnv(env) {
     database: env.database,
     request_timeout: 3600000,
     http_agent: agent,
-    clickhouse_settings: { max_execution_time: 0 },
+    clickhouse_settings: {
+      max_execution_time: 0,
+      // Emit and parse every DateTime in UTC, whatever timezone the ClickHouse
+      // server runs in. Results otherwise carry the server's wall clock with no
+      // zone attached, and the browser reads them as its own local time, so one
+      // row shows a different timestamp to viewers in different timezones.
+      session_timezone: 'UTC',
+    },
     keep_alive: { enabled: false },  // Disabled - chproxy blocks ping requests
     tls: env.secure ? { rejectUnauthorized: env.tls_reject_unauthorized } : undefined,
     http_headers: env.http_headers || undefined,
@@ -863,6 +870,13 @@ function applyQueryLogSearch(search, whereConditions, params) {
   }
 }
 
+// The browser sends start/end as naive 'YYYY-MM-DD HH:MM:SS' strings derived
+// from Date.toISOString(), so they are always UTC. A bare {start:DateTime}
+// makes ClickHouse parse them in the *server's* timezone, silently shifting
+// every window by the server's UTC offset and hiding rows. Every bound below
+// is therefore pinned with DateTime('UTC'); DateTime compares as epoch
+// seconds, so this is correct whatever timezone the server runs in.
+
 // Get effective end time - if start and end are the same, extend end to include the full bucket
 function getEffectiveEndTime(start, end, bucket = 'minute') {
   if (!start || !end || start !== end) return end;
@@ -887,15 +901,21 @@ function getEffectiveEndTime(start, end, bucket = 'minute') {
 // If force_index_by_date is enabled, ClickHouse requires an event_date predicate
 // so the merge-tree engine can prune partitions before scanning.
 function applyQueryLogDateRange(start, end, bucket, whereConditions, params) {
+  // event_date is materialised by the server in the server's own timezone,
+  // while these bounds are UTC (see EVENT_TIME_FROM). Within a few hours of
+  // midnight the two disagree by a day, so an exact event_date bound could
+  // prune a partition that event_time still matches. Widening by a day costs
+  // at most two extra partitions and is always enough: UTC offsets never
+  // exceed +/-14 hours. event_time remains the predicate that decides the rows.
   if (start) {
-    whereConditions.push('event_date >= toDate({start:DateTime})');
-    whereConditions.push('event_time >= {start:DateTime}');
+    whereConditions.push('event_date >= toDate({start:DateTime(\'UTC\')}) - 1');
+    whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
     params.start = start;
   }
   if (end) {
     const effectiveEnd = getEffectiveEndTime(start, end, bucket);
-    whereConditions.push('event_date <= toDate({end:DateTime})');
-    whereConditions.push('event_time <= {end:DateTime}');
+    whereConditions.push('event_date <= toDate({end:DateTime(\'UTC\')}) + 1');
+    whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
     params.end = effectiveEnd;
   }
 }
@@ -3551,11 +3571,11 @@ app.get('/api/query-views-log', async (req, res) => {
     const params = {};
 
     if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
+      whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
       params.start = start;
     }
     if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
+      whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
       params.end = getEffectiveEndTime(start, end);
     }
 
@@ -3631,11 +3651,11 @@ app.get('/api/query-views-log/count', async (req, res) => {
     const params = {};
 
     if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
+      whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
       params.start = start;
     }
     if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
+      whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
       params.end = getEffectiveEndTime(start, end);
     }
 
@@ -3687,11 +3707,11 @@ app.get('/api/query-views-log/distinct/:field', async (req, res) => {
     const params = {};
 
     if (start) {
-      whereConditions.push('event_time >= {start:DateTime}');
+      whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
       params.start = start;
     }
     if (end) {
-      whereConditions.push('event_time <= {end:DateTime}');
+      whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
       params.end = getEffectiveEndTime(start, end);
     }
 
@@ -3738,13 +3758,13 @@ app.get('/api/part-log', async (req, res) => {
     const params = {};
 
     if (start) {
-      whereConditions.push('event_date >= toDate({start:DateTime})');
-      whereConditions.push('event_time >= {start:DateTime}');
+      whereConditions.push('event_date >= toDate({start:DateTime(\'UTC\')})');
+      whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
       params.start = start;
     }
     if (end) {
-      whereConditions.push('event_date <= toDate({end:DateTime})');
-      whereConditions.push('event_time <= {end:DateTime}');
+      whereConditions.push('event_date <= toDate({end:DateTime(\'UTC\')})');
+      whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
       params.end = getEffectiveEndTime(start, end);
     }
 
@@ -3838,13 +3858,13 @@ app.get('/api/part-log/count', async (req, res) => {
     const params = {};
 
     if (start) {
-      whereConditions.push('event_date >= toDate({start:DateTime})');
-      whereConditions.push('event_time >= {start:DateTime}');
+      whereConditions.push('event_date >= toDate({start:DateTime(\'UTC\')})');
+      whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
       params.start = start;
     }
     if (end) {
-      whereConditions.push('event_date <= toDate({end:DateTime})');
-      whereConditions.push('event_time <= {end:DateTime}');
+      whereConditions.push('event_date <= toDate({end:DateTime(\'UTC\')})');
+      whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
       params.end = getEffectiveEndTime(start, end);
     }
 
@@ -3925,13 +3945,13 @@ app.get('/api/part-log/timeseries', async (req, res) => {
     const params = {};
 
     if (start) {
-      whereConditions.push('event_date >= toDate({start:DateTime})');
-      whereConditions.push('event_time >= {start:DateTime}');
+      whereConditions.push('event_date >= toDate({start:DateTime(\'UTC\')})');
+      whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
       params.start = start;
     }
     if (end) {
-      whereConditions.push('event_date <= toDate({end:DateTime})');
-      whereConditions.push('event_time <= {end:DateTime}');
+      whereConditions.push('event_date <= toDate({end:DateTime(\'UTC\')})');
+      whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
       params.end = getEffectiveEndTime(start, end);
     }
 
@@ -4034,13 +4054,13 @@ app.get('/api/part-log/timeseries-stacked', async (req, res) => {
     const params = {};
 
     if (start) {
-      whereConditions.push('event_date >= toDate({start:DateTime})');
-      whereConditions.push('event_time >= {start:DateTime}');
+      whereConditions.push('event_date >= toDate({start:DateTime(\'UTC\')})');
+      whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
       params.start = start;
     }
     if (end) {
-      whereConditions.push('event_date <= toDate({end:DateTime})');
-      whereConditions.push('event_time <= {end:DateTime}');
+      whereConditions.push('event_date <= toDate({end:DateTime(\'UTC\')})');
+      whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
       params.end = getEffectiveEndTime(start, end);
     }
 
@@ -4147,13 +4167,13 @@ app.get('/api/part-log/histogram/:field', async (req, res) => {
     const params = {};
 
     if (start) {
-      whereConditions.push('event_date >= toDate({start:DateTime})');
-      whereConditions.push('event_time >= {start:DateTime}');
+      whereConditions.push('event_date >= toDate({start:DateTime(\'UTC\')})');
+      whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
       params.start = start;
     }
     if (end) {
-      whereConditions.push('event_date <= toDate({end:DateTime})');
-      whereConditions.push('event_time <= {end:DateTime}');
+      whereConditions.push('event_date <= toDate({end:DateTime(\'UTC\')})');
+      whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
       params.end = getEffectiveEndTime(start, end);
     }
 
@@ -4247,13 +4267,13 @@ app.get('/api/part-log/distinct/:field', async (req, res) => {
     const params = {};
 
     if (start) {
-      whereConditions.push('event_date >= toDate({start:DateTime})');
-      whereConditions.push('event_time >= {start:DateTime}');
+      whereConditions.push('event_date >= toDate({start:DateTime(\'UTC\')})');
+      whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
       params.start = start;
     }
     if (end) {
-      whereConditions.push('event_date <= toDate({end:DateTime})');
-      whereConditions.push('event_time <= {end:DateTime}');
+      whereConditions.push('event_date <= toDate({end:DateTime(\'UTC\')})');
+      whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
       params.end = getEffectiveEndTime(start, end);
     }
 
@@ -4328,11 +4348,11 @@ app.get('/api/text-log', asyncHandler(async (req, res) => {
   const params = {};
 
   if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
+    whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
     params.start = start;
   }
   if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
+    whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
     params.end = getEffectiveEndTime(start, end);
   }
   if (search) {
@@ -4388,11 +4408,11 @@ app.get('/api/text-log/count', asyncHandler(async (req, res) => {
   const params = {};
 
   if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
+    whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
     params.start = start;
   }
   if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
+    whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
     params.end = getEffectiveEndTime(start, end);
   }
   if (search) {
@@ -4438,11 +4458,11 @@ app.get('/api/text-log/timeseries', asyncHandler(async (req, res) => {
   const params = {};
 
   if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
+    whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
     params.start = start;
   }
   if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
+    whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
     params.end = getEffectiveEndTime(start, end);
   }
 
@@ -4509,11 +4529,11 @@ app.get('/api/text-log/distinct/:field', asyncHandler(async (req, res) => {
   const params = {};
 
   if (start) {
-    whereConditions.push('event_time >= {start:DateTime}');
+    whereConditions.push('event_time >= {start:DateTime(\'UTC\')}');
     params.start = start;
   }
   if (end) {
-    whereConditions.push('event_time <= {end:DateTime}');
+    whereConditions.push('event_time <= {end:DateTime(\'UTC\')}');
     params.end = getEffectiveEndTime(start, end);
   }
 

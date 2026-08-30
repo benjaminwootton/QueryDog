@@ -1,6 +1,7 @@
 import { useQueryStore } from '../stores/queryStore';
 import type { BucketSize } from '../types/queryLog';
 import type { ChartAggregation, ChartType } from '../stores/queryStore';
+import { toDateTimeLocalValue } from '../utils/formatters';
 
 const AGGREGATION_LABELS: Record<ChartAggregation, string> = {
   avg: 'Average',
@@ -22,10 +23,7 @@ export function TimeRangeSelector({ usePartLogMetric = false }: TimeRangeSelecto
   const isCountMetric = effectiveMetric === 'count';
   const effectiveChartType = isCountMetric && chartType === 'scatter' ? 'line' : chartType;
 
-  const formatForInput = (date: Date) => {
-    // Include seconds: YYYY-MM-DDTHH:MM:SS
-    return date.toISOString().slice(0, 19);
-  };
+  const formatForInput = (date: Date) => toDateTimeLocalValue(date);
 
   const handleStartChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newStart = new Date(e.target.value);

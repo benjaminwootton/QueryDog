@@ -7,6 +7,7 @@ import {
   fetchAsyncMetricLogTimeSeries,
   type MetricLogTimeSeriesPoint,
 } from '../../services/api';
+import { parseServerTime, toDateTimeLocalValue } from '../../utils/formatters';
 
 type DashboardSource = 'queries' | 'merges' | 'memory' | 'io' | 'threadpool' | 'caches';
 
@@ -205,11 +206,11 @@ function getMetricColor(index: number): string {
 }
 
 function formatForInput(date: Date): string {
-  return date.toISOString().slice(0, 19);
+  return toDateTimeLocalValue(date);
 }
 
 function formatTimeAxis(time: string): string {
-  const d = new Date(time);
+  const d = parseServerTime(time);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
@@ -258,7 +259,7 @@ function MetricChart({ metric, data, colorIndex }: MetricChartProps) {
               contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '4px', fontSize: '11px' }}
               labelStyle={{ color: '#9ca3af' }}
               formatter={(value: number | string) => [formatValue(value), displayName]}
-              labelFormatter={(label) => new Date(label).toLocaleTimeString()}
+              labelFormatter={(label) => parseServerTime(label).toLocaleTimeString()}
             />
             <Line type="monotone" dataKey={metric} stroke={color} strokeWidth={1.5} dot={false} isAnimationActive={false} />
           </LineChart>
@@ -316,7 +317,7 @@ function PoolChart({ poolName, sizeMetric, taskMetric, data, colorIndex }: PoolC
                 formatValue(value),
                 name.includes('Size') ? 'Pool Size' : 'Active Tasks',
               ]}
-              labelFormatter={(label) => new Date(label).toLocaleTimeString()}
+              labelFormatter={(label) => parseServerTime(label).toLocaleTimeString()}
             />
             <Legend
               verticalAlign="top"

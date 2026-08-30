@@ -6,6 +6,7 @@ import { Play, RotateCcw, Loader2, Eye, X, Copy, Check, Search, PlayCircle, Exte
 import { QueryCompareModal } from '../QueryCompareModal';
 import { QueryResultsModal } from '../QueryResultsModal';
 import type { QueryLogEntry } from '../../types/queryLog';
+import { parseServerTime } from '../../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -69,7 +70,7 @@ function formatDuration(ms: number | null | undefined): string {
 
 function formatDateTime(isoString: string | null): string {
   if (!isoString) return '-';
-  const date = new Date(isoString);
+  const date = parseServerTime(isoString);
   return date.toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',

@@ -8,6 +8,7 @@ import { useQueryStore } from '../stores/queryStore';
 import { fetchProfileEvents } from '../services/api';
 import type { QueryLogEntry } from '../types/queryLog';
 import { useGridTheme } from '../hooks/useTheme';
+import { parseServerTime } from '../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -184,7 +185,7 @@ function formatQueryForTooltip(query: string): string {
 
 function formatEventTime(value: string): string {
   if (!value) return '-';
-  const date = new Date(value);
+  const date = parseServerTime(value);
   if (Number.isNaN(date.getTime())) return '-';
 
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -479,10 +480,10 @@ export const ProfileEventsTable = forwardRef<ProfileEventsTableRef, object>(func
   // Prepare chart data - sorted by time
   const chartData = useMemo(() => {
     return [...combinedData].sort((a, b) =>
-      new Date(a.event_time).getTime() - new Date(b.event_time).getTime()
+      parseServerTime(a.event_time).getTime() - parseServerTime(b.event_time).getTime()
     ).map(row => ({
       ...row,
-      time: new Date(row.event_time).toLocaleString('en-US', {
+      time: parseServerTime(row.event_time).toLocaleString('en-US', {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',

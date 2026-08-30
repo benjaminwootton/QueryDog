@@ -5,6 +5,7 @@ import type { ColDef, ICellRendererParams, FirstDataRenderedEvent } from 'ag-gri
 import { Eye, X, Loader2 } from 'lucide-react';
 import { fetchSystemViews, fetchViewDefinition, type SystemView } from '../services/api';
 import { useGridTheme } from '../hooks/useTheme';
+import { parseServerTime } from '../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -130,7 +131,7 @@ export function ViewsTab({ filters, search }: ViewsTabProps) {
       cellStyle: { color: '#fca5a5' },
       valueFormatter: (params) => {
         if (!params.value) return '-';
-        const date = new Date(params.value);
+        const date = parseServerTime(params.value);
         return date.toLocaleString('en-US', {
           month: 'short',
           day: 'numeric',
@@ -206,7 +207,7 @@ export function ViewsTab({ filters, search }: ViewsTabProps) {
                   <div className="text-xs text-gray-400">Last Modified</div>
                   <div className="text-sm font-semibold text-red-300 font-mono">
                     {selectedView.metadata_modification_time
-                      ? new Date(selectedView.metadata_modification_time).toLocaleString('en-US', {
+                      ? parseServerTime(selectedView.metadata_modification_time).toLocaleString('en-US', {
                           month: 'short',
                           day: 'numeric',
                           year: 'numeric',

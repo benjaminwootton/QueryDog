@@ -6,7 +6,7 @@ import { Eye, Pin } from 'lucide-react';
 import { useQueryStore } from '../stores/queryStore';
 import type { QueryLogEntry } from '../types/queryLog';
 import { useGridTheme, useIsLightMode } from '../hooks/useTheme';
-import { formatBytes, formatNumber } from '../utils/formatters';
+import { formatBytes, formatNumber, parseServerTime } from '../utils/formatters';
 
 // Register AG Grid Community modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -153,7 +153,7 @@ export function QueryTable() {
         case 'query_start_time':
           def.valueFormatter = (params) => {
             if (!params.value) return '';
-            const date = new Date(params.value);
+            const date = parseServerTime(params.value);
             const base = date.toLocaleString('en-US', {
               month: 'short',
               day: 'numeric',

@@ -7,7 +7,7 @@ import type { ColumnMetadata } from '../types/queryLog';
 import { createColumnsFromMetadata, type ColumnConfig } from '../types/queryLog';
 import { useQueryStore } from '../stores/queryStore';
 import { useGridTheme } from '../hooks/useTheme';
-import { formatBytes, formatNumber } from '../utils/formatters';
+import { formatBytes, formatNumber, parseServerTime } from '../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -252,7 +252,7 @@ function SystemTableInner({
       if (col.field.includes('time') && col.type.includes('DateTime')) {
         def.valueFormatter = (params) => {
           if (!params.value) return '-';
-          const date = new Date(params.value);
+          const date = parseServerTime(params.value);
           return date.toLocaleString('en-US', {
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
           });

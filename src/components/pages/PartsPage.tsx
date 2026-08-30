@@ -13,7 +13,7 @@ import { DictionariesTab } from '../DictionariesTab';
 import { fetchParts, fetchPartsColumns, fetchPartsCount, fetchPartitionsSummary, fetchPartitionsSummaryColumns, fetchPartitionsSummaryCount, fetchGroupedParts, fetchTablePartitions, fetchPartitionParts, fetchTableCompression, fetchBrowserColumns, fetchBrowserSampleData, fetchBrowserTables, fetchMergeTreeIndex, fetchTableDefinition, fetchDatabasesSummary, type GroupedPartsEntry, type TablePartitionEntry, type PartitionPartEntry, type ColumnCompressionEntry, type BrowserColumn, type BrowserTable, type MergeTreeIndexEntry, type DatabaseSummary } from '../../services/api';
 import { useQueryStore } from '../../stores/queryStore';
 import { useGridTheme } from '../../hooks/useTheme';
-import { formatBytes, formatNumber } from '../../utils/formatters';
+import { formatBytes, formatNumber, parseServerTime } from '../../utils/formatters';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -642,7 +642,7 @@ export function PartsPage() {
       cellStyle: { color: '#fca5a5' },
       valueFormatter: (params) => {
         if (!params.value) return '-';
-        const date = new Date(params.value);
+        const date = parseServerTime(params.value);
         return date.toLocaleString('en-US', {
           month: 'short',
           day: 'numeric',
@@ -777,7 +777,7 @@ export function PartsPage() {
       cellStyle: { color: '#fca5a5' },
       valueFormatter: (params) => {
         if (!params.value) return '-';
-        const date = new Date(params.value);
+        const date = parseServerTime(params.value);
         return date.toLocaleString('en-US', {
           month: 'short',
           day: 'numeric',
@@ -1357,7 +1357,7 @@ export function PartsPage() {
                     <div className="bg-gray-800 p-2 rounded">
                       <div className="text-xs text-gray-400">Last Modified</div>
                       <div className="text-sm font-semibold text-white">
-                        {new Date(Math.max(...partitionDetails.map(p => new Date(p.newest_part).getTime()))).toLocaleDateString()}
+                        {new Date(Math.max(...partitionDetails.map(p => parseServerTime(p.newest_part).getTime()))).toLocaleDateString()}
                       </div>
                     </div>
                     </div>
@@ -1479,7 +1479,7 @@ export function PartsPage() {
                               <td className="p-1.5 text-right text-gray-300 font-mono">{partition.min_block} - {partition.max_block}</td>
                               <td className="p-1.5 text-right text-red-300 font-mono">
                                 {partition.newest_part
-                                  ? new Date(partition.newest_part).toLocaleString('en-US', {
+                                  ? parseServerTime(partition.newest_part).toLocaleString('en-US', {
                                       month: 'short',
                                       day: 'numeric',
                                       hour: '2-digit',
@@ -1811,7 +1811,7 @@ export function PartsPage() {
                             <td className="p-2 text-right text-gray-300">{part.min_block_number} - {part.max_block_number}</td>
                             <td className="p-2 text-right text-red-300">
                               {part.modification_time
-                                ? new Date(part.modification_time).toLocaleString('en-US', {
+                                ? parseServerTime(part.modification_time).toLocaleString('en-US', {
                                     month: 'short',
                                     day: 'numeric',
                                     hour: '2-digit',
@@ -1896,7 +1896,7 @@ export function PartsPage() {
                   <div className="text-xs text-gray-400">Modification Time</div>
                   <div className="text-sm font-semibold text-red-300">
                     {selectedPart.modification_time
-                      ? new Date(String(selectedPart.modification_time)).toLocaleString()
+                      ? parseServerTime(String(selectedPart.modification_time)).toLocaleString()
                       : '-'}
                   </div>
                 </div>

@@ -16,7 +16,7 @@ import { TimeRangeSelector } from '../TimeRangeSelector';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { addSeconds, addMinutes, addHours } from 'date-fns';
 import { useGridTheme } from '../../hooks/useTheme';
-import { formatDateTime } from '../../utils/formatters';
+import { formatDateTime, parseServerTime } from '../../utils/formatters';
 
 // Register AG Grid Community modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -203,7 +203,7 @@ export function TextLogPage() {
     const timeStr = data?.activeLabel;
     if (!timeStr) return;
 
-    const clickedTime = new Date(timeStr.replace(' ', 'T'));
+    const clickedTime = parseServerTime(timeStr);
     if (isNaN(clickedTime.getTime())) return;
 
     let endTime: Date;
@@ -397,7 +397,7 @@ export function TextLogPage() {
                 <XAxis
                   dataKey="time"
                   tickFormatter={(value) => {
-                    const date = new Date(value);
+                    const date = parseServerTime(value);
                     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                   }}
                   tick={{ fontSize: 9, fill: '#9ca3af' }}
@@ -418,7 +418,7 @@ export function TextLogPage() {
                     borderRadius: '4px',
                     fontSize: '11px',
                   }}
-                  labelFormatter={(value) => new Date(value).toLocaleString()}
+                  labelFormatter={(value) => parseServerTime(value).toLocaleString()}
                 />
                 {chartTab === 'count' && (
                   <Bar dataKey="count" name="Total" fill="#3b82f6" />
@@ -455,7 +455,7 @@ export function TextLogPage() {
                 <XAxis
                   dataKey="time"
                   tickFormatter={(value) => {
-                    const date = new Date(value);
+                    const date = parseServerTime(value);
                     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                   }}
                   tick={{ fontSize: 9, fill: '#9ca3af' }}
@@ -476,7 +476,7 @@ export function TextLogPage() {
                     borderRadius: '4px',
                     fontSize: '11px',
                   }}
-                  labelFormatter={(value) => new Date(value).toLocaleString()}
+                  labelFormatter={(value) => parseServerTime(value).toLocaleString()}
                 />
                 {chartTab === 'count' && (
                   <Area type="monotone" dataKey="count" name="Total" stroke="#3b82f6" fillOpacity={1} fill="url(#color-total)" />
