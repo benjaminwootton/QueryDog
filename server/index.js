@@ -73,18 +73,27 @@ function loadConfig(options = {}) {
       if (!quiet) {
         console.log(`Loaded ${raw.environments.length} environment(s) from ${yamlPath}`);
       }
-      return raw.environments.map(env => ({
-        name: env.name || 'Default',
-        host: env.host,
-        port: env.port || (env.secure ? 8443 : 8123),
-        user: env.user || 'default',
-        password: env.password || '',
-        database: env.database || 'default',
-        secure: env.secure || false,
-        tls_reject_unauthorized: env.tls_reject_unauthorized !== false,
-        cluster: env.cluster || null,
-        queries_folder: env.queries_folder || 'queries',
-      }));
+      return raw.environments.map((env, i) => {
+        const name = env.name || 'Default';
+        if (!env.host || !String(env.host).trim()) {
+          throw new Error(
+            `Environment "${name}" (#${i + 1} in ${yamlPath}) has no host. ` +
+            `Set a hostname for it, or remove the environment from the config.`
+          );
+        }
+        return {
+          name,
+          host: String(env.host).trim(),
+          port: env.port || (env.secure ? 8443 : 8123),
+          user: env.user || 'default',
+          password: env.password || '',
+          database: env.database || 'default',
+          secure: env.secure || false,
+          tls_reject_unauthorized: env.tls_reject_unauthorized !== false,
+          cluster: env.cluster || null,
+          queries_folder: env.queries_folder || 'queries',
+        };
+      });
     }
   }
 

@@ -515,7 +515,7 @@ function App() {
                 🎵 Who let the logs out... 🎵
               </p>
               <a
-                href="https://x.com/BenjaminWootton"
+                href="https://benjaminwootton.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-blue-400 hover:text-blue-300"
