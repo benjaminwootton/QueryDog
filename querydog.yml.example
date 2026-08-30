@@ -22,6 +22,14 @@ environments:
     user: "default"
     password: ""
     database: "default"
+    secure: true
+    # Optional: cluster name for clusterAllReplicas() queries
+    # cluster: "default"
+    # Optional: custom queries folder path
+    # queries_folder: "queries"
+    # Optional: custom HTTP headers sent with every ClickHouse request
+    # http_headers:
+    #   X-Custom-Header: "value"
     secure: false        # true for HTTPS (ClickHouse Cloud and most managed hosts)
 
   # A remote cluster — e.g. ClickHouse Cloud. Uncomment and fill in the host.

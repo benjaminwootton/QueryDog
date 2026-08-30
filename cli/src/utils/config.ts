@@ -12,6 +12,7 @@ export interface Environment {
   secure: boolean;
   skip_tls_verify?: boolean;
   tls_reject_unauthorized?: boolean;  // alias: false = skip verification
+  http_headers?: Record<string, string>;
 }
 
 export interface QuerydogConfig {

@@ -131,6 +131,7 @@ export interface FullEnvironmentInfo {
   tls_reject_unauthorized: boolean;
   cluster: string;
   queries_folder: string;
+  http_headers: Record<string, string>;
 }
 
 export async function fetchFullEnvironments(): Promise<{ active: number; environments: FullEnvironmentInfo[] }> {
